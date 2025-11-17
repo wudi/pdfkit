@@ -197,6 +197,9 @@ func (s *pdfScanner) scanLiteralString() (Token, error) { /* PDF 7.3.4.2 */
 		if c == ')' { depth--; if depth == 0 { s.pos++; break }; buf.WriteByte(c); s.pos++; continue }
 		buf.WriteByte(c)
 		s.pos++
+		if s.cfg.MaxStringLength > 0 && int64(buf.Len()) > s.cfg.MaxStringLength {
+			return Token{}, errors.New("literal string too long")
+		}
 	}
 	return Token{Type: TokenString, Value: buf.Bytes(), Pos: start}, nil
 }
@@ -404,4 +407,3 @@ func (s *pdfScanner) scanNumberString() string {
 	if !seenDigit { s.pos = start; return "" }
 	return buf.String()
 }
-
