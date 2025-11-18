@@ -187,6 +187,7 @@ func (o *objectLoader) loadFromObjectStream(ctx context.Context, ref raw.ObjectR
 	if len(filterNames) > 0 {
 		p := filters.NewPipeline([]filters.Decoder{
 			filters.NewFlateDecoder(),
+			filters.NewLZWDecoder(),
 			filters.NewASCII85Decoder(),
 			filters.NewASCIIHexDecoder(),
 		}, filters.Limits{})

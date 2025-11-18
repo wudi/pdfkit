@@ -126,20 +126,21 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	}
 	// XRef
 	xrefOffset := buf.Len()
+	maxObjNum := ordered[len(ordered)-1].Num
 	buf.WriteString("xref\n0 ")
-	buf.WriteString(fmt.Sprintf("%d\n", len(ordered)+1))
+	buf.WriteString(fmt.Sprintf("%d\n", maxObjNum+1))
 	buf.WriteString("0000000000 65535 f \n")
-	for i := 1; i <= len(ordered)+1; i++ {
+	for i := 1; i <= maxObjNum; i++ {
 		if off, ok := offsets[i]; ok {
 			buf.WriteString(fmt.Sprintf("%010d 00000 n \n", off))
 		} else {
-			buf.WriteString("0000000000 00000 n \n")
+			buf.WriteString("0000000000 65535 f \n")
 		}
 	}
 	// Trailer
 	buf.WriteString("trailer\n<<")
 	buf.WriteString("/Size ")
-	buf.WriteString(fmt.Sprintf("%d ", len(ordered)+1))
+	buf.WriteString(fmt.Sprintf("%d ", maxObjNum+1))
 	buf.WriteString("/Root ")
 	buf.WriteString(fmt.Sprintf("%d 0 R", catalogRef.Num))
 	buf.WriteString(">>\nstartxref\n")

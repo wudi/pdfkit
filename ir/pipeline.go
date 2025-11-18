@@ -10,6 +10,7 @@ import (
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
 	"pdflib/observability"
+	"pdflib/parser"
 	"pdflib/recovery"
 	"pdflib/security"
 )
@@ -27,13 +28,14 @@ func NewDefault() *Pipeline {
 	fp := filters.NewPipeline(
 		[]filters.Decoder{
 			filters.NewFlateDecoder(),
+			filters.NewLZWDecoder(),
 			filters.NewASCII85Decoder(),
 			filters.NewASCIIHexDecoder(),
 		},
 		filters.Limits{},
 	)
 	return &Pipeline{
-		rawParser:       raw.NewParser(raw.ParserConfig{}),
+		rawParser:       parser.NewDocumentParser(parser.Config{}),
 		decoder:         decoded.NewDecoder(fp, security.NoopHandler()),
 		semanticBuilder: semantic.NewBuilder(),
 	}
