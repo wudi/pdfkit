@@ -14,6 +14,7 @@ type Document struct {
 	Info              *DocumentInfo
 	Metadata          *XMPMetadata
 	PageLabels        map[int]string // page index -> prefix
+	Outlines          []OutlineItem
 	StructTree        *StructureTree
 	decoded           *decoded.DecodedDocument
 	Permissions       raw.Permissions
@@ -121,6 +122,12 @@ type Annotation struct {
 	Rect     Rectangle
 	URI      string // used for Link annotations
 	Contents string
+}
+
+// OutlineItem describes a bookmark entry.
+type OutlineItem struct {
+	Title     string
+	PageIndex int
 }
 
 // Builder produces a Semantic document from Decoded IR.

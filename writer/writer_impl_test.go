@@ -732,6 +732,9 @@ func TestWriter_ViewerPreferences(t *testing.T) {
 		},
 		Info:       &semantic.DocumentInfo{Title: "Show Title"},
 		PageLabels: map[int]string{0: "A-", 1: "B-"},
+		Outlines: []semantic.OutlineItem{
+			{Title: "One", PageIndex: 0},
+		},
 	}
 	var buf bytes.Buffer
 	w := (&WriterBuilder{}).Build()
