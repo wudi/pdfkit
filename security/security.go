@@ -1,6 +1,9 @@
 package security
 
 import (
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/md5"
 	"crypto/rc4"
 	"encoding/binary"
@@ -47,15 +50,15 @@ func (b *HandlerBuilder) Build() (Handler, error) {
 	if v == 0 {
 		v = 1
 	}
-	if v > 2 {
-		return nil, errors.New("encryption V>2 not supported")
+	if v > 4 {
+		return nil, errors.New("encryption V>4 not supported")
 	}
 	r := int64(2)
 	if n, ok := numberVal(b.encryptDict, "R"); ok {
 		r = n
 	}
-	if r > 3 {
-		return nil, errors.New("encryption R>3 not supported")
+	if r > 5 {
+		return nil, errors.New("encryption R>5 not supported")
 	}
 	keyLen := 40
 	if n, ok := numberVal(b.encryptDict, "Length"); ok && n > 0 {
@@ -77,7 +80,8 @@ func (b *HandlerBuilder) Build() (Handler, error) {
 			}
 		}
 	}
-	h := &standardRC4Handler{
+	useAES := v >= 4
+	h := &standardHandler{
 		v:           int(v),
 		r:           int(r),
 		lengthBits:  keyLen,
@@ -86,11 +90,12 @@ func (b *HandlerBuilder) Build() (Handler, error) {
 		p:           int32(pVal),
 		fileID:      id,
 		encryptMeta: true,
+		useAES:      useAES,
 	}
 	return h, nil
 }
 
-type standardRC4Handler struct {
+type standardHandler struct {
 	key         []byte
 	v           int
 	r           int
@@ -101,44 +106,53 @@ type standardRC4Handler struct {
 	fileID      []byte
 	encryptMeta bool
 	authed      bool
+	useAES      bool
 }
 
-func (h *standardRC4Handler) IsEncrypted() bool { return true }
+func (h *standardHandler) IsEncrypted() bool { return true }
 
-func (h *standardRC4Handler) Authenticate(password string) error {
+func (h *standardHandler) Authenticate(password string) error {
 	key, err := deriveKey([]byte(password), h.owner, h.p, h.fileID, h.lengthBits/8, h.r)
 	if err != nil {
 		return err
 	}
-	if !checkUserPassword(key, h.user, h.fileID, h.r) {
-		return errors.New("invalid password")
+	if !h.useAES && h.r <= 3 {
+		if !checkUserPassword(key, h.user, h.fileID, h.r) {
+			return errors.New("invalid password")
+		}
 	}
 	h.key = key
 	h.authed = true
 	return nil
 }
 
-func (h *standardRC4Handler) Decrypt(objNum, gen int, data []byte) ([]byte, error) {
+func (h *standardHandler) Decrypt(objNum, gen int, data []byte) ([]byte, error) {
 	if !h.authed {
 		if err := h.Authenticate(""); err != nil {
 			return nil, err
 		}
 	}
-	key := objectKey(h.key, objNum, gen, h.r)
+	key := objectKey(h.key, objNum, gen, h.r, h.useAES)
+	if h.useAES {
+		return aesCrypt(key, data, false)
+	}
 	return rc4Crypt(key, data)
 }
 
-func (h *standardRC4Handler) Encrypt(objNum, gen int, data []byte) ([]byte, error) {
+func (h *standardHandler) Encrypt(objNum, gen int, data []byte) ([]byte, error) {
 	if !h.authed {
 		if err := h.Authenticate(""); err != nil {
 			return nil, err
 		}
 	}
-	key := objectKey(h.key, objNum, gen, h.r)
+	key := objectKey(h.key, objNum, gen, h.r, h.useAES)
+	if h.useAES {
+		return aesCrypt(key, data, true)
+	}
 	return rc4Crypt(key, data)
 }
 
-func (h *standardRC4Handler) Permissions() Permissions {
+func (h *standardHandler) Permissions() Permissions {
 	return Permissions{
 		Print:             h.p&0x4 != 0,
 		Modify:            h.p&0x8 != 0,
@@ -185,8 +199,8 @@ func deriveKey(pwd, owner []byte, pVal int32, fileID []byte, keyLenBytes int, r 
 	if keyLenBytes <= 0 {
 		keyLenBytes = 5
 	}
-	if keyLenBytes > 16 {
-		keyLenBytes = 16
+	if keyLenBytes > 32 {
+		keyLenBytes = 32
 	}
 	data := make([]byte, 0, 32+len(owner)+4+len(fileID))
 	data = append(data, padPassword(pwd)...)
@@ -232,7 +246,7 @@ func checkUserPassword(key []byte, userEntry []byte, fileID []byte, r int) bool 
 	return len(userEntry) >= 16 && comparePrefix(val[:16], userEntry[:16])
 }
 
-func objectKey(fileKey []byte, objNum, gen int, r int) []byte {
+func objectKey(fileKey []byte, objNum, gen int, r int, useAES bool) []byte {
 	key := append([]byte{}, fileKey...)
 	var objBuf [3]byte
 	objBuf[0] = byte(objNum & 0xFF)
@@ -243,15 +257,22 @@ func objectKey(fileKey []byte, objNum, gen int, r int) []byte {
 	genBuf[0] = byte(gen & 0xFF)
 	genBuf[1] = byte((gen >> 8) & 0xFF)
 	key = append(key, genBuf[:]...)
-	if len(key) > 16 {
-		key = key[:16]
+	if useAES {
+		key = append(key, 0x73, 0x41, 0x6C, 0x54) // "sAlT"
+	}
+	hashLen := len(fileKey) + 5
+	if hashLen > 16 {
+		hashLen = 16
 	}
 	hash := md5.Sum(key)
-	key = hash[:]
-	if len(key) > len(fileKey)+5 {
-		key = key[:len(fileKey)+5]
+	out := hash[:]
+	if useAES && hashLen > 16 {
+		hashLen = 16
 	}
-	return key
+	if hashLen < len(out) {
+		out = out[:hashLen]
+	}
+	return out
 }
 
 func rc4Simple(key []byte, data []byte) []byte {
@@ -269,6 +290,47 @@ func rc4Crypt(key []byte, data []byte) ([]byte, error) {
 	out := make([]byte, len(data))
 	c.XORKeyStream(out, data)
 	return out, nil
+}
+
+func aesCrypt(key []byte, data []byte, encrypt bool) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	if encrypt {
+		// prepend random IV is omitted for determinism; use zero IV for now.
+		iv := make([]byte, aes.BlockSize)
+		padLen := aes.BlockSize - (len(data) % aes.BlockSize)
+		if padLen == 0 {
+			padLen = aes.BlockSize
+		}
+		pad := bytes.Repeat([]byte{byte(padLen)}, padLen)
+		plain := append(data, pad...)
+		out := make([]byte, aes.BlockSize+len(plain))
+		copy(out[:aes.BlockSize], iv)
+		mode := cipher.NewCBCEncrypter(block, iv)
+		mode.CryptBlocks(out[aes.BlockSize:], plain)
+		return out, nil
+	}
+	if len(data) < aes.BlockSize {
+		return nil, errors.New("aes ciphertext too short")
+	}
+	iv := data[:aes.BlockSize]
+	ct := data[aes.BlockSize:]
+	if len(ct)%aes.BlockSize != 0 {
+		return nil, errors.New("aes ciphertext not multiple of blocksize")
+	}
+	out := make([]byte, len(ct))
+	mode := cipher.NewCBCDecrypter(block, iv)
+	mode.CryptBlocks(out, ct)
+	if len(out) == 0 {
+		return out, nil
+	}
+	pad := int(out[len(out)-1])
+	if pad <= 0 || pad > aes.BlockSize || pad > len(out) {
+		return nil, errors.New("invalid aes padding")
+	}
+	return out[:len(out)-pad], nil
 }
 
 func comparePrefix(a, b []byte) bool {

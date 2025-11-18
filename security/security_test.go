@@ -47,3 +47,39 @@ func TestStandardRC4RoundTrip(t *testing.T) {
 		t.Fatalf("roundtrip mismatch: got %q want %q", decData, plain)
 	}
 }
+
+func TestAESRoundTrip(t *testing.T) {
+	owner := raw.StringObj{Bytes: []byte("ownerpass")}
+	fileID := []byte("fileid1")
+	pVal := int32(-4)
+
+	enc := raw.Dict()
+	enc.Set(raw.NameObj{Val: "Filter"}, raw.NameObj{Val: "Standard"})
+	enc.Set(raw.NameObj{Val: "V"}, raw.NumberInt(4))
+	enc.Set(raw.NameObj{Val: "R"}, raw.NumberInt(4))
+	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberInt(128))
+	enc.Set(raw.NameObj{Val: "O"}, owner)
+	enc.Set(raw.NameObj{Val: "U"}, raw.StringObj{Bytes: passwordPadding})
+	enc.Set(raw.NameObj{Val: "P"}, raw.NumberObj{I: int64(pVal), IsInt: true})
+
+	h, err := (&HandlerBuilder{}).WithEncryptDict(enc).WithFileID(fileID).Build()
+	if err != nil {
+		t.Fatalf("build handler: %v", err)
+	}
+	if err := h.Authenticate(""); err != nil {
+		t.Fatalf("authenticate: %v", err)
+	}
+
+	plain := []byte("secret aes data 1234")
+	encData, err := h.Encrypt(7, 0, plain)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	decData, err := h.Decrypt(7, 0, encData)
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	if string(decData) != string(plain) {
+		t.Fatalf("roundtrip mismatch: got %q want %q", decData, plain)
+	}
+}
