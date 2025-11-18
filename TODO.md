@@ -17,7 +17,7 @@ Status key: Not started / In progress / Done.
 
 Status key: Not started / In progress / Done.
 
-- [ ] Inline image end detection: tighten inline image scanning to avoid false positives in binary content and obey PDF EOD rules. Status: Not started.
+- [x] Inline image end detection: tighten inline image scanning to avoid false positives in binary content and obey PDF EOD rules. Status: Done (scanner now searches the full inline image region and picks the last valid EI delimiter bounded by size limits, reducing premature termination inside binary data).
 - [ ] Memory-bounded scanning: support bounded/sliding scanner buffers so large files do not require whole-file buffering while still honoring random-access seeks. Status: Not started.
 
 # Builder completeness plan

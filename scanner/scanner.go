@@ -631,13 +631,13 @@ func (s *pdfScanner) scanInlineImage(start int64) (Token, error) {
 		}
 	}
 	dataStart := s.pos
-	// Search for EI preceded by whitespace and followed by delimiter/whitespace.
+	var best int64 = -1
 	for {
 		if err := s.ensure(s.pos + 1); err != nil && !errors.Is(err, io.EOF) {
 			return Token{}, err
 		}
 		if s.pos+1 >= int64(len(s.data)) {
-			return Token{}, errors.New("unterminated inline image")
+			break
 		}
 		if s.data[s.pos] == 'E' && s.data[s.pos+1] == 'I' {
 			// must have whitespace (typically EOL) before and delimiter/whitespace after
@@ -654,22 +654,29 @@ func (s *pdfScanner) scanInlineImage(start int64) (Token, error) {
 				nextOK = isDelimiter(s.data[s.pos+2]) || isWhitespace(s.data[s.pos+2])
 			}
 			if prevOK && lineBreakBefore && nextOK {
-				payload := append([]byte(nil), s.data[dataStart:s.pos]...)
-				if s.cfg.MaxInlineImage > 0 && int64(len(payload)) > s.cfg.MaxInlineImage {
-					return Token{}, s.recover(errors.New("inline image too long"), "inline_image")
-				}
-				s.pos += 2
-				return s.emit(Token{Type: TokenInlineImage, Value: payload, Pos: start})
+				best = s.pos
 			}
 		}
 		s.pos++
 		if s.cfg.MaxInlineImage > 0 && s.pos-dataStart > s.cfg.MaxInlineImage {
-			return Token{}, s.recover(errors.New("inline image too long"), "inline_image")
+			break
 		}
 		if s.pos >= int64(len(s.data)) && s.eof {
-			return Token{}, s.recover(errors.New("unterminated inline image"), "inline_image")
+			break
 		}
 	}
+	if best >= 0 {
+		payload := append([]byte(nil), s.data[dataStart:best]...)
+		if s.cfg.MaxInlineImage > 0 && int64(len(payload)) > s.cfg.MaxInlineImage {
+			return Token{}, s.recover(errors.New("inline image too long"), "inline_image")
+		}
+		s.pos = best + 2
+		return s.emit(Token{Type: TokenInlineImage, Value: payload, Pos: start})
+	}
+	if s.cfg.MaxInlineImage > 0 && s.pos-dataStart > s.cfg.MaxInlineImage {
+		return Token{}, s.recover(errors.New("inline image too long"), "inline_image")
+	}
+	return Token{}, s.recover(errors.New("unterminated inline image"), "inline_image")
 }
 
 func isWhitespace(c byte) bool {
