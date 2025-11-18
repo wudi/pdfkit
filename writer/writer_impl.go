@@ -69,29 +69,94 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	ensureFont := func(font *semantic.Font) raw.ObjectRef {
 		base := "Helvetica"
 		encoding := ""
+		subtype := "Type1"
 		if font != nil {
 			if font.BaseFont != "" {
 				base = font.BaseFont
 			}
 			encoding = font.Encoding
+			if font.Subtype != "" {
+				subtype = font.Subtype
+			}
 		}
-		key := fontKey(base, encoding, font)
+		key := fontKey(base, encoding, subtype, font)
 		if ref, ok := fontRefs[key]; ok {
 			return ref
 		}
 		ref := nextRef()
 		fontDict := raw.Dict()
 		fontDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Font"))
-		fontDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral("Type1"))
+		fontDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral(subtype))
 		fontDict.Set(raw.NameLiteral("BaseFont"), raw.NameLiteral(base))
-		if encoding != "" {
+
+		if subtype == "Type0" {
+			desc := font.DescendantFont
+			if encoding == "" {
+				encoding = "Identity-H"
+			}
 			fontDict.Set(raw.NameLiteral("Encoding"), raw.NameLiteral(encoding))
-		}
-		if font != nil && len(font.Widths) > 0 {
-			first, last, widthsArr := encodeWidths(font.Widths)
-			fontDict.Set(raw.NameLiteral("FirstChar"), raw.NumberInt(int64(first)))
-			fontDict.Set(raw.NameLiteral("LastChar"), raw.NumberInt(int64(last)))
-			fontDict.Set(raw.NameLiteral("Widths"), widthsArr)
+
+			descRef := nextRef()
+			descDict := raw.Dict()
+			descDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Font"))
+			descSubtype := "CIDFontType2"
+			if desc != nil && desc.Subtype != "" {
+				descSubtype = desc.Subtype
+			}
+			descDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral(descSubtype))
+			descBase := base
+			if desc != nil && desc.BaseFont != "" {
+				descBase = desc.BaseFont
+			}
+			descDict.Set(raw.NameLiteral("BaseFont"), raw.NameLiteral(descBase))
+
+			var csi *semantic.CIDSystemInfo
+			if font.CIDSystemInfo != nil {
+				csi = font.CIDSystemInfo
+			} else if desc != nil {
+				csi = &desc.CIDSystemInfo
+			}
+			if csi != nil {
+				cs := raw.Dict()
+				reg := csi.Registry
+				if reg == "" {
+					reg = "Adobe"
+				}
+				ord := csi.Ordering
+				if ord == "" {
+					ord = "Identity"
+				}
+				cs.Set(raw.NameLiteral("Registry"), raw.Str([]byte(reg)))
+				cs.Set(raw.NameLiteral("Ordering"), raw.Str([]byte(ord)))
+				cs.Set(raw.NameLiteral("Supplement"), raw.NumberInt(int64(csi.Supplement)))
+				descDict.Set(raw.NameLiteral("CIDSystemInfo"), cs)
+			}
+			dw := 1000
+			if desc != nil && desc.DW > 0 {
+				dw = desc.DW
+			}
+			descDict.Set(raw.NameLiteral("DW"), raw.NumberInt(int64(dw)))
+			widths := map[int]int{}
+			if desc != nil && len(desc.W) > 0 {
+				widths = desc.W
+			} else if font != nil && len(font.Widths) > 0 {
+				widths = font.Widths
+			}
+			if len(widths) > 0 {
+				descDict.Set(raw.NameLiteral("W"), encodeCIDWidths(widths))
+			}
+			objects[descRef] = descDict
+			fontDict.Set(raw.NameLiteral("DescendantFonts"), raw.NewArray(raw.Ref(descRef.Num, descRef.Gen)))
+		} else {
+			if encoding != "" {
+				fontDict.Set(raw.NameLiteral("Encoding"), raw.NameLiteral(encoding))
+			}
+			if font != nil && len(font.Widths) > 0 {
+				first, last, widthsArr := encodeWidths(font.Widths)
+				fontDict.Set(raw.NameLiteral("FirstChar"), raw.NumberInt(int64(first)))
+				fontDict.Set(raw.NameLiteral("LastChar"), raw.NumberInt(int64(last)))
+				fontDict.Set(raw.NameLiteral("Widths"), widthsArr)
+			}
 		}
 		objects[ref] = fontDict
 		fontRefs[key] = ref
@@ -1110,10 +1175,11 @@ func patternKey(name string, p semantic.Pattern) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func fontKey(base, encoding string, font *semantic.Font) string {
+func fontKey(base, encoding, subtype string, font *semantic.Font) string {
 	h := sha256.New()
 	h.Write([]byte(base))
 	h.Write([]byte(encoding))
+	h.Write([]byte(subtype))
 	if font != nil {
 		keys := make([]int, 0, len(font.Widths))
 		for k := range font.Widths {
@@ -1122,6 +1188,23 @@ func fontKey(base, encoding string, font *semantic.Font) string {
 		sort.Ints(keys)
 		for _, k := range keys {
 			h.Write([]byte(fmt.Sprintf("%d:%d", k, font.Widths[k])))
+		}
+		if font.DescendantFont != nil {
+			keys := make([]int, 0, len(font.DescendantFont.W))
+			for k := range font.DescendantFont.W {
+				keys = append(keys, k)
+			}
+			sort.Ints(keys)
+			for _, k := range keys {
+				h.Write([]byte(fmt.Sprintf("%d:%d", k, font.DescendantFont.W[k])))
+			}
+			h.Write([]byte(font.DescendantFont.Subtype))
+			h.Write([]byte(font.DescendantFont.BaseFont))
+		}
+		if font.CIDSystemInfo != nil {
+			h.Write([]byte(font.CIDSystemInfo.Registry))
+			h.Write([]byte(font.CIDSystemInfo.Ordering))
+			h.Write([]byte(fmt.Sprint(font.CIDSystemInfo.Supplement)))
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
@@ -1150,6 +1233,39 @@ func encodeWidths(widths map[int]int) (first, last int, arr *raw.ArrayObj) {
 		}
 	}
 	return first, last, arr
+}
+
+func encodeCIDWidths(widths map[int]int) *raw.ArrayObj {
+	arr := raw.NewArray()
+	if len(widths) == 0 {
+		return arr
+	}
+	codes := make([]int, 0, len(widths))
+	for c := range widths {
+		codes = append(codes, c)
+	}
+	sort.Ints(codes)
+	start := codes[0]
+	prev := codes[0]
+	current := widths[codes[0]]
+	for i := 1; i < len(codes); i++ {
+		code := codes[i]
+		w := widths[code]
+		if w == current && code == prev+1 {
+			prev = code
+			continue
+		}
+		arr.Append(raw.NumberInt(int64(start)))
+		arr.Append(raw.NumberInt(int64(prev)))
+		arr.Append(raw.NumberInt(int64(current)))
+		start = code
+		prev = code
+		current = w
+	}
+	arr.Append(raw.NumberInt(int64(start)))
+	arr.Append(raw.NumberInt(int64(prev)))
+	arr.Append(raw.NumberInt(int64(current)))
+	return arr
 }
 
 func shadingKey(name string, s semantic.Shading) string {

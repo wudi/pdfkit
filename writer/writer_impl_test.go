@@ -586,6 +586,67 @@ func TestWriter_FontWidths(t *testing.T) {
 	}
 }
 
+func TestWriter_FontTrueTypeAndCID(t *testing.T) {
+	trueType := &semantic.Font{BaseFont: "MyTrueType", Subtype: "TrueType", Encoding: "MacRomanEncoding", Widths: map[int]int{65: 600}}
+	cidFont := &semantic.Font{
+		BaseFont: "MyCIDFont",
+		Subtype:  "Type0",
+		Encoding: "Identity-H",
+		DescendantFont: &semantic.CIDFont{
+			Subtype:  "CIDFontType2",
+			BaseFont: "MyCIDFont",
+			CIDSystemInfo: semantic.CIDSystemInfo{
+				Registry:   "Adobe",
+				Ordering:   "Identity",
+				Supplement: 0,
+			},
+			DW: 750,
+			W:  map[int]int{1: 500, 2: 500, 5: 700},
+		},
+	}
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 10, URY: 10},
+				Resources: &semantic.Resources{
+					Fonts: map[string]*semantic.Font{
+						"FTrue": trueType,
+						"FCID":  cidFont,
+					},
+				},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT /FTrue 12 Tf (Hi) Tj ET")}},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	data := buf.Bytes()
+	if !regexp.MustCompile(`/Subtype\s*/TrueType`).Match(data) {
+		t.Fatalf("expected TrueType subtype in font dictionary")
+	}
+	if !regexp.MustCompile(`/Encoding\s*/MacRomanEncoding`).Match(data) {
+		t.Fatalf("expected MacRomanEncoding for TrueType font")
+	}
+	if !regexp.MustCompile(`/Subtype\s*/Type0`).Match(data) {
+		t.Fatalf("expected Type0 font for CID entry")
+	}
+	if !strings.Contains(string(data), "/DescendantFonts") {
+		t.Fatalf("expected DescendantFonts entry for CID font")
+	}
+	if !regexp.MustCompile(`/Subtype\s*/CIDFontType2`).Match(data) {
+		t.Fatalf("expected CIDFontType2 descendant")
+	}
+	if !regexp.MustCompile(`/CIDSystemInfo\s*<<`).Match(data) {
+		t.Fatalf("expected CIDSystemInfo dictionary")
+	}
+	if !regexp.MustCompile(`/W\s*\[\s*1\s+2\s+500\s+5\s+5\s+700\s*\]`).Match(data) {
+		t.Fatalf("expected W array for CID widths")
+	}
+}
+
 func TestWriter_EncryptDictionary(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{

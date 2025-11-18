@@ -98,10 +98,13 @@ type Resources struct {
 
 // Font represents a font resource.
 type Font struct {
-	BaseFont string
-	Encoding string
-	Widths   map[int]int // character code -> width
-	ref      raw.ObjectRef
+	Subtype        string // Type1 (default), TrueType, Type0
+	BaseFont       string
+	Encoding       string
+	Widths         map[int]int // character code -> width
+	CIDSystemInfo  *CIDSystemInfo
+	DescendantFont *CIDFont
+	ref            raw.ObjectRef
 }
 
 // ExtGState captures graphics state defaults such as transparency.
@@ -150,6 +153,22 @@ type Shading struct {
 // Rectangle represents a PDF rectangle.
 type Rectangle struct {
 	LLX, LLY, URX, URY float64
+}
+
+// CIDSystemInfo describes the registry/ordering of a CID font.
+type CIDSystemInfo struct {
+	Registry   string
+	Ordering   string
+	Supplement int
+}
+
+// CIDFont describes a descendant font for Type0 fonts.
+type CIDFont struct {
+	Subtype       string // CIDFontType0 or CIDFontType2
+	BaseFont      string
+	CIDSystemInfo CIDSystemInfo
+	DW            int
+	W             map[int]int // CID -> width
 }
 
 type Catalog struct{}
