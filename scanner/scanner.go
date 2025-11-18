@@ -21,6 +21,7 @@ const (
 	TokenNull                  // null
 	TokenRef                   // indirect ref '5 0 R'
 	TokenStream                // 'stream' keyword
+	TokenInlineImage           // inline image data following ID ... EI (content stream only)
 	TokenKeyword               // other keywords (obj, endobj, endstream, >>, ], etc.)
 )
 
@@ -33,6 +34,7 @@ type Config struct {
 	MaxArrayDepth   int
 	MaxDictDepth    int
 	MaxStreamLength int64
+	MaxInlineImage  int64
 	WindowSize      int64
 	Recovery        recovery.Strategy
 }
@@ -434,6 +436,53 @@ func (s *pdfScanner) scanStream(start int64) (Token, error) {
 	return Token{Type: TokenStream, Value: payload, Pos: start}, nil
 }
 
+// scanInlineImage consumes bytes after the ID keyword until the first EOL-terminated EI delimiter.
+// This is a content-stream-only construct; scanner does not interpret params.
+func (s *pdfScanner) scanInlineImage(start int64) (Token, error) {
+	// After ID there should be a single whitespace; consume one char if present.
+	if err := s.ensure(s.pos); err == nil && s.pos < int64(len(s.data)) && isWhitespace(s.data[s.pos]) {
+		s.pos++
+	}
+	dataStart := s.pos
+	// Search for EI preceded by whitespace and followed by delimiter/whitespace.
+	for {
+		if err := s.ensure(s.pos + 1); err != nil && !errors.Is(err, io.EOF) {
+			return Token{}, err
+		}
+		if s.pos+1 >= int64(len(s.data)) {
+			return Token{}, errors.New("unterminated inline image")
+		}
+		if s.data[s.pos] == 'E' && s.data[s.pos+1] == 'I' {
+			// must have whitespace before and delimiter/whitespace after
+			prevOK := s.pos == dataStart || isWhitespace(s.data[s.pos-1])
+			var nextOK bool
+			if err := s.ensure(s.pos + 2); err != nil && !errors.Is(err, io.EOF) {
+				return Token{}, err
+			}
+			if s.pos+2 >= int64(len(s.data)) {
+				nextOK = true
+			} else {
+				nextOK = isDelimiter(s.data[s.pos+2]) || isWhitespace(s.data[s.pos+2])
+			}
+			if prevOK && nextOK {
+				payload := append([]byte(nil), s.data[dataStart:s.pos]...)
+				if s.cfg.MaxInlineImage > 0 && int64(len(payload)) > s.cfg.MaxInlineImage {
+					return Token{}, errors.New("inline image too long")
+				}
+				s.pos += 2
+				return Token{Type: TokenInlineImage, Value: payload, Pos: start}, nil
+			}
+		}
+		s.pos++
+		if s.cfg.MaxInlineImage > 0 && s.pos-dataStart > s.cfg.MaxInlineImage {
+			return Token{}, errors.New("inline image too long")
+		}
+		if s.pos >= int64(len(s.data)) && s.eof {
+			return Token{}, errors.New("unterminated inline image")
+		}
+	}
+}
+
 func isWhitespace(c byte) bool { return c == 0x00 || c == 0x09 || c == 0x0A || c == 0x0C || c == 0x0D || c == 0x20 }
 func isDelimiter(c byte) bool {
 	switch c {
@@ -492,6 +541,8 @@ func (s *pdfScanner) scanKeyword() (Token, error) {
 		return Token{Type: TokenKeyword, Value: kw, Pos: start}, nil
 	case "stream":
 		return s.scanStream(start)
+	case "ID": // inline image data; caller should have parsed image dict already
+		return s.scanInlineImage(start)
 	default:
 		return Token{Type: TokenKeyword, Value: kw, Pos: start}, nil
 	}

@@ -176,3 +176,28 @@ func TestScanner_MaxStreamLength(t *testing.T) {
 		t.Fatalf("expected stream too long error, got %v", err)
 	}
 }
+
+func TestScanner_InlineImage(t *testing.T) {
+	data := "ID abc EI BT"
+	s := newScanner(t, data, Config{MaxInlineImage: 10})
+	tok := nextToken(t, s)
+	if tok.Type != TokenInlineImage {
+		t.Fatalf("expected inline image token, got %+v", tok)
+	}
+	if got := string(tok.Value.([]byte)); got != "abc " {
+		t.Fatalf("unexpected inline image payload: %q", got)
+	}
+	// Next token should be BT keyword
+	tok = nextToken(t, s)
+	if tok.Type != TokenKeyword || tok.Value != "BT" {
+		t.Fatalf("expected BT after inline image, got %+v", tok)
+	}
+}
+
+func TestScanner_InlineImageTooLong(t *testing.T) {
+	data := "ID abcdefghijk EI"
+	s := newScanner(t, data, Config{MaxInlineImage: 5})
+	if _, err := s.Next(); err == nil || !strings.Contains(err.Error(), "inline image too long") {
+		t.Fatalf("expected inline image too long error, got %v", err)
+	}
+}
