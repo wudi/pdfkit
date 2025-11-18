@@ -28,45 +28,71 @@ type Token struct { Type TokenType; Value interface{}; Pos int64 }
 
 type Scanner interface { Next() (Token, error); Position() int64; Seek(offset int64) error; SetNextStreamLength(n int64) }
 
-type Config struct { MaxStringLength int64; MaxArrayDepth int; MaxDictDepth int; MaxStreamLength int64; Recovery recovery.Strategy }
+type Config struct {
+	MaxStringLength int64
+	MaxArrayDepth   int
+	MaxDictDepth    int
+	MaxStreamLength int64
+	WindowSize      int64
+	Recovery        recovery.Strategy
+}
 
 type ReaderAt interface{ ReadAt(p []byte, off int64) (n int, err error) }
 
-// pdfScanner is a simple in-memory scanner implementation.
+// pdfScanner incrementally buffers PDF data from a ReaderAt in fixed-size windows.
 type pdfScanner struct {
-	data []byte
-	pos  int64
-	cfg  Config
+	reader ReaderAt
+	data   []byte
+	pos    int64
+	cfg    Config
 	nextStreamLen int64
+	chunkSize     int64
+	eof           bool
 }
 
 // New loads entire ReaderAt into memory and returns a scanner.
 func New(r ReaderAt, cfg Config) Scanner {
-	var buf bytes.Buffer
-	chunk := int64(32 * 1024)
-	for off := int64(0); ; off += chunk {
-		tmp := make([]byte, chunk)
-		n, err := r.ReadAt(tmp, off)
-		if n > 0 { buf.Write(tmp[:n]) }
-		if err != nil {
-			break
-		}
-		if int64(n) < chunk { // reached end
-			break
-		}
+	chunk := cfg.WindowSize
+	if chunk <= 0 {
+		chunk = 64 * 1024
 	}
-	return &pdfScanner{data: buf.Bytes(), cfg: cfg, nextStreamLen: -1}
+	return &pdfScanner{reader: r, cfg: cfg, nextStreamLen: -1, chunkSize: chunk}
 }
 
 func (s *pdfScanner) Position() int64 { return s.pos }
-func (s *pdfScanner) Seek(offset int64) error { if offset < 0 || offset > int64(len(s.data)) { return errors.New("seek out of range") }; s.pos = offset; return nil }
+func (s *pdfScanner) Seek(offset int64) error {
+	if offset < 0 {
+		return errors.New("seek out of range")
+	}
+	if err := s.ensure(offset); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	if offset > int64(len(s.data)) {
+		return errors.New("seek out of range")
+	}
+	s.pos = offset
+	return nil
+}
 func (s *pdfScanner) SetNextStreamLength(n int64) { s.nextStreamLen = n }
 
 func (s *pdfScanner) Next() (Token, error) {
-	s.skipWSAndComments()
-	if s.pos >= int64(len(s.data)) { return Token{}, io.EOF }
+	if err := s.skipWSAndComments(); err != nil {
+		if errors.Is(err, io.EOF) {
+			return Token{}, io.EOF
+		}
+		return Token{}, err
+	}
+	if s.pos >= int64(len(s.data)) {
+		return Token{}, io.EOF
+	}
+	if err := s.ensure(s.pos); err != nil {
+		if errors.Is(err, io.EOF) {
+			return Token{}, io.EOF
+		}
+		return Token{}, err
+	}
 	start := s.pos
-	c := s.peek()
+	c := s.data[s.pos]
 	// Structural tokens
 	switch c {
 	case '<':
@@ -104,23 +130,64 @@ func (s *pdfScanner) Next() (Token, error) {
 }
 
 // Helpers
-func (s *pdfScanner) skipWSAndComments() {
-	for s.pos < int64(len(s.data)) {
+func (s *pdfScanner) skipWSAndComments() error {
+	for {
+		if s.pos >= int64(len(s.data)) {
+			if err := s.ensure(s.pos); err != nil {
+				return err
+			}
+		}
+		if s.pos >= int64(len(s.data)) {
+			return io.EOF
+		}
 		c := s.data[s.pos]
 		// whitespace per PDF spec (space 0x20, tab, CR, LF, FF, null 0x00)
 		if c == 0x00 || c == 0x09 || c == 0x0A || c == 0x0C || c == 0x0D || c == 0x20 { s.pos++; continue }
 		if c == '%' { // comment
-			for s.pos < int64(len(s.data)) && s.data[s.pos] != '\n' && s.data[s.pos] != '\r' { s.pos++ }
+			for {
+				s.pos++
+				if err := s.ensure(s.pos); err != nil && !errors.Is(err, io.EOF) {
+					return err
+				}
+				if s.pos >= int64(len(s.data)) { return io.EOF }
+				if s.data[s.pos] == '\n' || s.data[s.pos] == '\r' { break }
+			}
 			continue
 		}
-		break
+		return nil
 	}
 }
 
-func (s *pdfScanner) peek() byte { return s.data[s.pos] }
-func (s *pdfScanner) peekAhead(n int64) byte {
-	if s.pos+n >= int64(len(s.data)) { return 0 }
-	return s.data[s.pos+n]
+func (s *pdfScanner) ensure(n int64) error {
+	for int64(len(s.data)) <= n {
+		if s.eof {
+			return io.EOF
+		}
+		if err := s.loadMore(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *pdfScanner) loadMore() error {
+	buf := make([]byte, s.chunkSize)
+	off := int64(len(s.data))
+	n, err := s.reader.ReadAt(buf, off)
+	if n > 0 {
+		s.data = append(s.data, buf[:n]...)
+	}
+	if err == io.EOF {
+		s.eof = true
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		s.eof = true
+	}
+	return nil
 }
 
 func isDigitStart(c byte) bool { return c == '+' || c == '-' || c == '.' || (c >= '0' && c <= '9') }
@@ -130,7 +197,14 @@ func (s *pdfScanner) scanName() (Token, error) {
 	start := s.pos
 	s.pos++ // skip '/'
 	var out bytes.Buffer
-	for s.pos < int64(len(s.data)) {
+	for {
+		if err := s.ensure(s.pos); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return Token{}, err
+		}
+		if s.pos >= int64(len(s.data)) { break }
 		c := s.data[s.pos]
 		if isDelimiter(c) { break }
 		if c == '#' { // hex escape in name
@@ -167,20 +241,44 @@ func (s *pdfScanner) scanLiteralString() (Token, error) { /* PDF 7.3.4.2 */
 	s.pos++ // skip '('
 	var buf bytes.Buffer
 	depth := 1
-	for s.pos < int64(len(s.data)) {
+	for {
+		if err := s.ensure(s.pos); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return Token{}, err
+		}
+		if s.pos >= int64(len(s.data)) { break }
 		c := s.data[s.pos]
 		if c == '\\' { // escape
 			s.pos++
+			if err := s.ensure(s.pos); err != nil {
+				if errors.Is(err, io.EOF) { break }
+				return Token{}, err
+			}
 			if s.pos >= int64(len(s.data)) { break }
 			esc := s.data[s.pos]
 			// Line continuation: backslash followed by EOL is ignored
-			if esc == '\r' { s.pos++; if s.pos < int64(len(s.data)) && s.data[s.pos] == '\n' { s.pos++ }; continue }
-			if esc == '\n' { s.pos++; continue }
+			if esc == '\r' {
+				s.pos++
+				if err := s.ensure(s.pos); err == nil && s.pos < int64(len(s.data)) && s.data[s.pos] == '\n' {
+					s.pos++
+				}
+				continue
+			}
+			if esc == '\n' {
+				s.pos++
+				continue
+			}
 			// Octal escape up to 3 digits
 			if esc >= '0' && esc <= '7' {
 				val := int(esc - '0')
 				s.pos++
 				for k := 0; k < 2 && s.pos < int64(len(s.data)); k++ {
+					if err := s.ensure(s.pos); err != nil {
+						if errors.Is(err, io.EOF) { break }
+						return Token{}, err
+					}
 					d := s.data[s.pos]
 					if d < '0' || d > '7' { break }
 					val = (val << 3) + int(d-'0')
@@ -208,7 +306,12 @@ func (s *pdfScanner) scanHexString() (Token, error) {
 	start := s.pos
 	s.pos++ // skip '<'
 	var hexbuf []byte
-	for s.pos < int64(len(s.data)) {
+	for {
+		if err := s.ensure(s.pos); err != nil {
+			if errors.Is(err, io.EOF) { break }
+			return Token{}, err
+		}
+		if s.pos >= int64(len(s.data)) { break }
 		c := s.data[s.pos]
 		if c == '>' { s.pos++; break }
 		if isWhitespace(c) { s.pos++; continue }
@@ -243,10 +346,11 @@ func fromHex(c byte) byte {
 // scanStream consumes bytes until the next 'endstream' keyword.
 func (s *pdfScanner) scanStream(start int64) (Token, error) {
 	// Optional EOL after 'stream'
+	if err := s.ensure(s.pos); err != nil && !errors.Is(err, io.EOF) { return Token{}, err }
 	if s.pos < int64(len(s.data)) {
 		if s.data[s.pos] == '\r' {
 			s.pos++
-			if s.pos < int64(len(s.data)) && s.data[s.pos] == '\n' { s.pos++ }
+			if err := s.ensure(s.pos); err == nil && s.pos < int64(len(s.data)) && s.data[s.pos] == '\n' { s.pos++ }
 		} else if s.data[s.pos] == '\n' {
 			s.pos++
 		}
@@ -256,13 +360,19 @@ func (s *pdfScanner) scanStream(start int64) (Token, error) {
 	if s.nextStreamLen >= 0 {
 		l := s.nextStreamLen
 		if s.cfg.MaxStreamLength > 0 && l > s.cfg.MaxStreamLength { return Token{}, errors.New("stream too long") }
+		if err := s.ensure(dataStart + l - 1); err != nil && !errors.Is(err, io.EOF) {
+			return Token{}, err
+		}
 		if dataStart+l > int64(len(s.data)) { l = int64(len(s.data)) - dataStart }
 		end := dataStart + l
 		payload := append([]byte(nil), s.data[dataStart:end]...)
 		// consume optional EOL after data
 		s.pos = end
+		if err := s.ensure(s.pos); err != nil && !errors.Is(err, io.EOF) {
+			return Token{}, err
+		}
 		if s.pos < int64(len(s.data)) {
-			if s.data[s.pos] == '\r' { s.pos++; if s.pos < int64(len(s.data)) && s.data[s.pos] == '\n' { s.pos++ } } else if s.data[s.pos] == '\n' { s.pos++ }
+			if s.data[s.pos] == '\r' { s.pos++; if err := s.ensure(s.pos); err == nil && s.pos < int64(len(s.data)) && s.data[s.pos] == '\n' { s.pos++ } } else if s.data[s.pos] == '\n' { s.pos++ }
 		}
 		// expect 'endstream'
 		needle := []byte("endstream")
@@ -278,7 +388,17 @@ func (s *pdfScanner) scanStream(start int64) (Token, error) {
 	}
 	needle := []byte("endstream")
 	idx := -1
-	for i := dataStart; i+int64(len(needle)) <= int64(len(s.data)); i++ {
+	for i := dataStart; ; i++ {
+		if err := s.ensure(i + int64(len(needle))-1); err != nil {
+			if errors.Is(err, io.EOF) {
+				if i+int64(len(needle)) > int64(len(s.data)) { break }
+			} else {
+				return Token{}, err
+			}
+		}
+		if i+int64(len(needle)) > int64(len(s.data)) {
+			break
+		}
 		if s.data[i] != 'e' { continue }
 		// require preceding is whitespace and following is delimiter/whitespace
 		prevOK := i == 0 || isWhitespace(s.data[i-1])
@@ -338,10 +458,25 @@ func translateEscape(c byte) byte {
 	}
 }
 
+func (s *pdfScanner) peekAhead(n int64) byte {
+	if err := s.ensure(s.pos + n); err != nil {
+		return 0
+	}
+	if s.pos+n >= int64(len(s.data)) {
+		return 0
+	}
+	return s.data[s.pos+n]
+}
+
 func (s *pdfScanner) scanKeyword() (Token, error) {
 	start := s.pos
 	var buf bytes.Buffer
-	for s.pos < int64(len(s.data)) {
+	for {
+		if err := s.ensure(s.pos); err != nil {
+			if errors.Is(err, io.EOF) { break }
+			return Token{}, err
+		}
+		if s.pos >= int64(len(s.data)) { break }
 		c := s.data[s.pos]
 		if isDelimiter(c) { break }
 		buf.WriteByte(c)
@@ -394,7 +529,12 @@ func (s *pdfScanner) scanNumberString() string {
 	start := s.pos
 	var buf bytes.Buffer
 	seenDigit := false
-	for s.pos < int64(len(s.data)) {
+	for {
+		if err := s.ensure(s.pos); err != nil {
+			if errors.Is(err, io.EOF) { break }
+			return ""
+		}
+		if s.pos >= int64(len(s.data)) { break }
 		c := s.data[s.pos]
 		if c == '+' || c == '-' || c == '.' || (c >= '0' && c <= '9') {
 			buf.WriteByte(c)
