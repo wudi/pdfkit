@@ -547,7 +547,7 @@ func lzwDecompress(src []byte, earlyChange bool) ([]byte, error) {
 				if earlyChange {
 					threshold--
 				}
-				if nextCode > threshold && bits < maxBits {
+				if nextCode >= threshold && bits < maxBits {
 					bits++
 				}
 			}
