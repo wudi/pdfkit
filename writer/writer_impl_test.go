@@ -562,6 +562,48 @@ func TestWriter_SerializeOperations(t *testing.T) {
 	}
 }
 
+func TestWriter_TrimBox(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 200, URY: 200},
+				CropBox:  semantic.Rectangle{URX: 180, URY: 180},
+				TrimBox:  semantic.Rectangle{LLX: 10, LLY: 20, URX: 150, URY: 160},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	foundTrim := false
+	for _, obj := range rawDoc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		typ, _ := dict.Get(raw.NameLiteral("Type"))
+		if n, ok := typ.(raw.NameObj); !ok || n.Value() != "Page" {
+			continue
+		}
+		if trim, ok := dict.Get(raw.NameLiteral("TrimBox")); ok {
+			if arr, ok := trim.(*raw.ArrayObj); ok && arr.Len() == 4 {
+				foundTrim = true
+			}
+		}
+	}
+	if !foundTrim {
+		t.Fatalf("TrimBox missing from page")
+	}
+}
+
 func TestWriter_InfoFields(t *testing.T) {
 	info := &semantic.DocumentInfo{
 		Title:    "Sample",
