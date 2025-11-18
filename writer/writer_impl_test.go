@@ -532,7 +532,7 @@ func TestWriter_FontWidths(t *testing.T) {
 				MediaBox: semantic.Rectangle{URX: 10, URY: 10},
 				Resources: &semantic.Resources{
 					Fonts: map[string]*semantic.Font{
-						"F1": {BaseFont: "Helvetica", Widths: map[int]int{65: 500, 66: 505}},
+						"F1": {BaseFont: "Helvetica", Widths: map[int]int{65: 500, 66: 505}, Encoding: "WinAnsiEncoding"},
 					},
 				},
 				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
@@ -559,6 +559,11 @@ func TestWriter_FontWidths(t *testing.T) {
 			continue
 		} else if n, ok := tval.(raw.NameObj); !ok || n.Value() != "Font" {
 			continue
+		}
+		if enc, ok := d.Get(raw.NameLiteral("Encoding")); !ok {
+			t.Fatalf("encoding missing")
+		} else if n, ok := enc.(raw.NameObj); !ok || n.Value() != "WinAnsiEncoding" {
+			t.Fatalf("encoding mismatch: %#v", enc)
 		}
 		if fc, ok := d.Get(raw.NameLiteral("FirstChar")); ok {
 			if fi, ok := fc.(raw.NumberObj); ok && fi.Int() == 65 {
