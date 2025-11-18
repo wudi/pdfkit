@@ -424,6 +424,87 @@ func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
 			}
 		}
 	}
+	if csObj, ok := dict.Get(raw.NameLiteral("ColorSpace")); ok {
+		if csDict, ok := csObj.(*raw.DictObj); ok {
+			res.ColorSpaces = make(map[string]semantic.ColorSpace)
+			for name, entry := range csDict.KV {
+				if n, ok := entry.(raw.NameObj); ok {
+					res.ColorSpaces[name] = semantic.ColorSpace{Name: n.Value()}
+				}
+			}
+		}
+	}
+	if xoObj, ok := dict.Get(raw.NameLiteral("XObject")); ok {
+		if xoDict, ok := xoObj.(*raw.DictObj); ok {
+			res.XObjects = make(map[string]semantic.XObject)
+			for name, entry := range xoDict.KV {
+				ref, xoDict := resolveDict(doc, entry)
+				if xoDict == nil {
+					continue
+				}
+				if subtype, ok := xoDict.Get(raw.NameLiteral("Subtype")); ok {
+					if sn, ok := subtype.(raw.NameObj); ok && sn.Value() == "Image" {
+						if stream, ok := doc.Objects[ref].(*raw.StreamObj); ok {
+							xo := semantic.XObject{Subtype: "Image"}
+							if w, ok := xoDict.Get(raw.NameLiteral("Width")); ok {
+								if n, ok := w.(raw.NumberObj); ok {
+									xo.Width = int(n.Int())
+								}
+							}
+							if h, ok := xoDict.Get(raw.NameLiteral("Height")); ok {
+								if n, ok := h.(raw.NumberObj); ok {
+									xo.Height = int(n.Int())
+								}
+							}
+							if bpc, ok := xoDict.Get(raw.NameLiteral("BitsPerComponent")); ok {
+								if n, ok := bpc.(raw.NumberObj); ok {
+									xo.BitsPerComponent = int(n.Int())
+								}
+							}
+							if cs, ok := xoDict.Get(raw.NameLiteral("ColorSpace")); ok {
+								if n, ok := cs.(raw.NameObj); ok {
+									xo.ColorSpace = semantic.ColorSpace{Name: n.Value()}
+								}
+							}
+							xo.Data = decodeStream(stream)
+							res.XObjects[name] = xo
+						}
+					}
+				}
+			}
+		}
+	}
+	if gsObj, ok := dict.Get(raw.NameLiteral("ExtGState")); ok {
+		if gsDict, ok := gsObj.(*raw.DictObj); ok {
+			res.ExtGStates = make(map[string]semantic.ExtGState)
+			for name, entry := range gsDict.KV {
+				_, gs := resolveDict(doc, entry)
+				if gs == nil {
+					continue
+				}
+				state := semantic.ExtGState{}
+				if lw, ok := gs.Get(raw.NameLiteral("LW")); ok {
+					if n, ok := lw.(raw.NumberObj); ok {
+						val := n.Float()
+						state.LineWidth = &val
+					}
+				}
+				if ca, ok := gs.Get(raw.NameLiteral("CA")); ok {
+					if n, ok := ca.(raw.NumberObj); ok {
+						val := n.Float()
+						state.StrokeAlpha = &val
+					}
+				}
+				if ca, ok := gs.Get(raw.NameLiteral("ca")); ok {
+					if n, ok := ca.(raw.NumberObj); ok {
+						val := n.Float()
+						state.FillAlpha = &val
+					}
+				}
+				res.ExtGStates[name] = state
+			}
+		}
+	}
 	return res
 }
 

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"pdflib/builder"
+	"pdflib/ir/semantic"
 	"pdflib/writer"
 )
 
@@ -15,7 +16,17 @@ func (staticCtx) Done() <-chan struct{} { return nil }
 func TestStreamingDocumentStartEnd(t *testing.T) {
 	// Build a small PDF.
 	b := builder.NewBuilder()
-	b.NewPage(50, 50).DrawText("hi", 5, 5, builder.TextOptions{FontSize: 10}).Finish()
+	img := &semantic.Image{
+		Width:            1,
+		Height:           1,
+		ColorSpace:       semantic.ColorSpace{Name: "DeviceRGB"},
+		BitsPerComponent: 8,
+		Data:             []byte{0xFF},
+	}
+	b.NewPage(50, 50).
+		DrawText("hi there", 5, 5, builder.TextOptions{FontSize: 10}).
+		DrawImage(img, 10, 10, 1, 1, builder.ImageOptions{}).
+		Finish()
 	b.NewPage(30, 30).DrawText("p2", 2, 2, builder.TextOptions{FontSize: 8}).Finish()
 	doc, err := b.Build()
 	if err != nil {
