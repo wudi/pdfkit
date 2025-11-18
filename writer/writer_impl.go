@@ -145,6 +145,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	}
 	// Pages
 	unionFonts := raw.Dict()
+	procSet := raw.NewArray(raw.NameLiteral("PDF"), raw.NameLiteral("Text"))
 	for i, p := range doc.Pages {
 		ref := nextRef()
 		pageRefs = append(pageRefs, ref)
@@ -182,6 +183,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 			}
 		}
 		resDict.Set(raw.NameLiteral("Font"), fontResDict)
+		if procSet.Len() > 0 {
+			resDict.Set(raw.NameLiteral("ProcSet"), procSet)
+		}
 		pageDict.Set(raw.NameLiteral("Resources"), resDict)
 		// Contents
 		contentRef := contentRefs[i]
@@ -200,6 +204,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	if unionFonts.Len() > 0 {
 		pagesRes := raw.Dict()
 		pagesRes.Set(raw.NameLiteral("Font"), unionFonts)
+		if procSet.Len() > 0 {
+			pagesRes.Set(raw.NameLiteral("ProcSet"), procSet)
+		}
 		pagesDict.Set(raw.NameLiteral("Resources"), pagesRes)
 	}
 	objects[pagesRef] = pagesDict

@@ -460,6 +460,59 @@ func runLengthDecode(data []byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+func TestWriter_ProcSetIncluded(t *testing.T) {
+	b := builder.NewBuilder()
+	b.NewPage(50, 50).DrawText("procset", 1, 1, builder.TextOptions{}).Finish()
+	doc, err := b.Build()
+	if err != nil {
+		t.Fatalf("build doc: %v", err)
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	foundPageProcSet := false
+	foundPagesProcSet := false
+	for _, obj := range rawDoc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		typ, _ := dict.Get(raw.NameLiteral("Type"))
+		if name, ok := typ.(raw.NameObj); ok && name.Value() == "Page" {
+			if res, ok := dict.Get(raw.NameLiteral("Resources")); ok {
+				if resDict, ok := res.(*raw.DictObj); ok {
+					if ps, ok := resDict.Get(raw.NameLiteral("ProcSet")); ok {
+						if arr, ok := ps.(*raw.ArrayObj); ok && arr.Len() >= 2 {
+							foundPageProcSet = true
+						}
+					}
+				}
+			}
+		}
+		if name, ok := typ.(raw.NameObj); ok && name.Value() == "Pages" {
+			if res, ok := dict.Get(raw.NameLiteral("Resources")); ok {
+				if resDict, ok := res.(*raw.DictObj); ok {
+					if ps, ok := resDict.Get(raw.NameLiteral("ProcSet")); ok {
+						if arr, ok := ps.(*raw.ArrayObj); ok && arr.Len() >= 2 {
+							foundPagesProcSet = true
+						}
+					}
+				}
+			}
+		}
+	}
+	if !foundPageProcSet || !foundPagesProcSet {
+		t.Fatalf("procset missing (page=%v, pages=%v)", foundPageProcSet, foundPagesProcSet)
+	}
+}
+
 func maxObjNum(data []byte) int {
 	re := regexp.MustCompile(`\s(\d+)\s+0\s+obj`)
 	matches := re.FindAllSubmatch(data, -1)
