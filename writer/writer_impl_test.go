@@ -736,6 +736,56 @@ func TestWriter_ColorSpaceResources(t *testing.T) {
 	}
 }
 
+func TestWriter_XObjectResources(t *testing.T) {
+	data := []byte{0x01, 0x02, 0x03, 0x04}
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 20, URY: 20},
+				Resources: &semantic.Resources{
+					XObjects: map[string]semantic.XObject{
+						"Im1": {Subtype: "Image", Width: 2, Height: 2, BitsPerComponent: 8, ColorSpace: semantic.ColorSpace{Name: "DeviceGray"}, Data: data},
+					},
+				},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	pageHas := false
+	pagesHas := false
+	for ref, obj := range rawDoc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		typ, _ := dict.Get(raw.NameLiteral("Type"))
+		if name, ok := typ.(raw.NameObj); ok && name.Value() == "Page" {
+			if hasXObjectResource(rawDoc, dict, "Im1") {
+				pageHas = true
+			}
+		}
+		if name, ok := typ.(raw.NameObj); ok && name.Value() == "Pages" {
+			if hasXObjectResource(rawDoc, dict, "Im1") {
+				pagesHas = true
+			}
+		}
+		_ = ref
+	}
+	if !pageHas || !pagesHas {
+		t.Fatalf("xobject missing (page=%v pages=%v)", pageHas, pagesHas)
+	}
+}
+
 func TestWriter_SerializeOperations(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{
@@ -1299,4 +1349,50 @@ func parseXRefTableOffsets(data []byte) map[int]int64 {
 		offsets[current] = off
 	}
 	return offsets
+}
+
+func hasXObjectResource(doc *raw.Document, dict *raw.DictObj, name string) bool {
+	res, ok := dict.Get(raw.NameLiteral("Resources"))
+	if !ok {
+		return false
+	}
+	resDict, ok := res.(*raw.DictObj)
+	if !ok {
+		return false
+	}
+	xo, ok := resDict.Get(raw.NameLiteral("XObject"))
+	if !ok {
+		return false
+	}
+	xoDict, ok := xo.(*raw.DictObj)
+	if !ok {
+		return false
+	}
+	entry, ok := xoDict.Get(raw.NameLiteral(name))
+	if !ok {
+		return false
+	}
+	ref, ok := entry.(raw.RefObj)
+	if !ok {
+		return false
+	}
+	stream, ok := doc.Objects[ref.Ref()]
+	if !ok {
+		return false
+	}
+	s, ok := stream.(*raw.StreamObj)
+	if !ok {
+		return false
+	}
+	if typ, ok := s.Dict.Get(raw.NameLiteral("Type")); !ok {
+		return false
+	} else if n, ok := typ.(raw.NameObj); !ok || n.Value() != "XObject" {
+		return false
+	}
+	if sub, ok := s.Dict.Get(raw.NameLiteral("Subtype")); ok {
+		if n, ok := sub.(raw.NameObj); !ok || n.Value() != "Image" {
+			return false
+		}
+	}
+	return true
 }

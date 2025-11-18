@@ -65,6 +65,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 
 	// Fonts (shared across pages by BaseFont)
 	fontRefs := map[string]raw.ObjectRef{}
+	xobjectRefs := map[string]raw.ObjectRef{}
 	ensureFont := func(base string) raw.ObjectRef {
 		if base == "" {
 			base = "Helvetica"
@@ -79,6 +80,38 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		fontDict.Set(raw.NameLiteral("BaseFont"), raw.NameLiteral(base))
 		objects[ref] = fontDict
 		fontRefs[base] = ref
+		return ref
+	}
+	ensureXObject := func(name string, xo semantic.XObject) raw.ObjectRef {
+		key := xoKey(name, xo)
+		if ref, ok := xobjectRefs[key]; ok {
+			return ref
+		}
+		ref := nextRef()
+		dict := raw.Dict()
+		dict.Set(raw.NameLiteral("Type"), raw.NameLiteral("XObject"))
+		sub := xo.Subtype
+		if sub == "" {
+			sub = "Image"
+		}
+		dict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral(sub))
+		if xo.Width > 0 {
+			dict.Set(raw.NameLiteral("Width"), raw.NumberInt(int64(xo.Width)))
+		}
+		if xo.Height > 0 {
+			dict.Set(raw.NameLiteral("Height"), raw.NumberInt(int64(xo.Height)))
+		}
+		color := xo.ColorSpace.Name
+		if color == "" {
+			color = "DeviceRGB"
+		}
+		dict.Set(raw.NameLiteral("ColorSpace"), raw.NameLiteral(color))
+		if xo.BitsPerComponent > 0 {
+			dict.Set(raw.NameLiteral("BitsPerComponent"), raw.NumberInt(int64(xo.BitsPerComponent)))
+		}
+		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(xo.Data))))
+		objects[ref] = raw.NewStream(dict, xo.Data)
+		xobjectRefs[key] = ref
 		return ref
 	}
 
@@ -167,6 +200,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	unionFonts := raw.Dict()
 	unionExtGStates := raw.Dict()
 	unionColorSpaces := raw.Dict()
+	unionXObjects := raw.Dict()
 	procSet := raw.NewArray(raw.NameLiteral("PDF"), raw.NameLiteral("Text"))
 	for i, p := range doc.Pages {
 		ref := nextRef()
@@ -252,6 +286,19 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 				resDict.Set(raw.NameLiteral("ColorSpace"), csDict)
 			}
 		}
+		if p.Resources != nil && len(p.Resources.XObjects) > 0 {
+			xDict := raw.Dict()
+			for name, xo := range p.Resources.XObjects {
+				xref := ensureXObject(name, xo)
+				xDict.Set(raw.NameLiteral(name), raw.Ref(xref.Num, xref.Gen))
+				if _, ok := unionXObjects.KV[name]; !ok {
+					unionXObjects.Set(raw.NameLiteral(name), raw.Ref(xref.Num, xref.Gen))
+				}
+			}
+			if xDict.Len() > 0 {
+				resDict.Set(raw.NameLiteral("XObject"), xDict)
+			}
+		}
 		if procSet.Len() > 0 {
 			resDict.Set(raw.NameLiteral("ProcSet"), procSet)
 		}
@@ -316,6 +363,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		}
 		if unionColorSpaces.Len() > 0 {
 			pagesRes.Set(raw.NameLiteral("ColorSpace"), unionColorSpaces)
+		}
+		if unionXObjects.Len() > 0 {
+			pagesRes.Set(raw.NameLiteral("XObject"), unionXObjects)
 		}
 		if procSet.Len() > 0 {
 			pagesRes.Set(raw.NameLiteral("ProcSet"), procSet)
@@ -800,6 +850,16 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func xoKey(name string, xo semantic.XObject) string {
+	h := sha256.New()
+	h.Write([]byte(name))
+	h.Write([]byte(xo.Subtype))
+	h.Write([]byte(fmt.Sprintf("%d-%d-%d", xo.Width, xo.Height, xo.BitsPerComponent)))
+	h.Write([]byte(xo.ColorSpace.Name))
+	h.Write(xo.Data)
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func scanObjectOffsets(data []byte) map[int]int64 {

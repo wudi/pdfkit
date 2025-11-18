@@ -90,6 +90,7 @@ type Resources struct {
 	Fonts       map[string]*Font
 	ExtGStates  map[string]ExtGState
 	ColorSpaces map[string]ColorSpace
+	XObjects    map[string]XObject
 }
 
 // Font represents a font resource.
@@ -108,6 +109,16 @@ type ExtGState struct {
 // ColorSpace references a named colorspace.
 type ColorSpace struct {
 	Name string // e.g., DeviceRGB, DeviceGray
+}
+
+// XObject describes a referenced object (limited to simple images).
+type XObject struct {
+	Subtype string // e.g., Image, Form
+	Width   int
+	Height  int
+	ColorSpace
+	BitsPerComponent int
+	Data             []byte
 }
 
 // Rectangle represents a PDF rectangle.
