@@ -606,7 +606,24 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 					ap.Set(raw.NameLiteral("N"), raw.Ref(apRef.Num, apRef.Gen))
 					aDict.Set(raw.NameLiteral("AP"), ap)
 				}
-				aDict.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberInt(0), raw.NumberInt(0), raw.NumberInt(0)))
+				if a.Flags != 0 {
+					aDict.Set(raw.NameLiteral("F"), raw.NumberInt(int64(a.Flags)))
+				}
+				if len(a.Border) == 3 {
+					aDict.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberFloat(a.Border[0]), raw.NumberFloat(a.Border[1]), raw.NumberFloat(a.Border[2])))
+				} else {
+					aDict.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberInt(0), raw.NumberInt(0), raw.NumberInt(0)))
+				}
+				if len(a.Color) > 0 {
+					colArr := raw.NewArray()
+					for _, c := range a.Color {
+						colArr.Append(raw.NumberFloat(c))
+					}
+					aDict.Set(raw.NameLiteral("C"), colArr)
+				}
+				if a.AppearanceState != "" {
+					aDict.Set(raw.NameLiteral("AS"), raw.NameLiteral(a.AppearanceState))
+				}
 				objects[aRef] = aDict
 				annotArr.Append(raw.Ref(aRef.Num, aRef.Gen))
 				annotationRefs[i] = append(annotationRefs[i], aRef)
@@ -752,6 +769,26 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		formRef := nextRef()
 		formDict := raw.Dict()
 		fieldsArr := raw.NewArray()
+		appendWidgetToPage := func(pageIdx int, ref raw.ObjectRef) {
+			if pageIdx < 0 || pageIdx >= len(pageRefs) {
+				return
+			}
+			pref := pageRefs[pageIdx]
+			pageObj := objects[pref]
+			pd, ok := pageObj.(*raw.DictObj)
+			if !ok {
+				return
+			}
+			if annotsVal, ok := pd.Get(raw.NameLiteral("Annots")); ok {
+				if arr, ok := annotsVal.(*raw.ArrayObj); ok {
+					arr.Append(raw.Ref(ref.Num, ref.Gen))
+					return
+				}
+			}
+			arr := raw.NewArray()
+			arr.Append(raw.Ref(ref.Num, ref.Gen))
+			pd.Set(raw.NameLiteral("Annots"), arr)
+		}
 		for _, f := range doc.AcroForm.Fields {
 			fieldRef := nextRef()
 			fd := raw.Dict()
@@ -760,11 +797,49 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 			} else {
 				fd.Set(raw.NameLiteral("FT"), raw.NameLiteral("Tx"))
 			}
+			fd.Set(raw.NameLiteral("Type"), raw.NameLiteral("Annot"))
+			fd.Set(raw.NameLiteral("Subtype"), raw.NameLiteral("Widget"))
 			if f.Name != "" {
 				fd.Set(raw.NameLiteral("T"), raw.Str([]byte(f.Name)))
 			}
 			if f.Value != "" {
 				fd.Set(raw.NameLiteral("V"), raw.Str([]byte(f.Value)))
+			}
+			if f.Flags != 0 {
+				fd.Set(raw.NameLiteral("Ff"), raw.NumberInt(int64(f.Flags)))
+				fd.Set(raw.NameLiteral("F"), raw.NumberInt(int64(f.Flags)))
+			}
+			if cropSet(f.Rect) {
+				fd.Set(raw.NameLiteral("Rect"), rectArray(f.Rect))
+			}
+			if f.PageIndex >= 0 && f.PageIndex < len(pageRefs) {
+				pref := pageRefs[f.PageIndex]
+				fd.Set(raw.NameLiteral("P"), raw.Ref(pref.Num, pref.Gen))
+				appendWidgetToPage(f.PageIndex, fieldRef)
+			}
+			if len(f.Border) == 3 {
+				fd.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberFloat(f.Border[0]), raw.NumberFloat(f.Border[1]), raw.NumberFloat(f.Border[2])))
+			} else {
+				fd.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberInt(0), raw.NumberInt(0), raw.NumberInt(0)))
+			}
+			if len(f.Color) > 0 {
+				colArr := raw.NewArray()
+				for _, c := range f.Color {
+					colArr.Append(raw.NumberFloat(c))
+				}
+				fd.Set(raw.NameLiteral("C"), colArr)
+			}
+			if len(f.Appearance) > 0 {
+				apRef := nextRef()
+				apDict := raw.Dict()
+				apDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(f.Appearance))))
+				objects[apRef] = raw.NewStream(apDict, f.Appearance)
+				ap := raw.Dict()
+				ap.Set(raw.NameLiteral("N"), raw.Ref(apRef.Num, apRef.Gen))
+				fd.Set(raw.NameLiteral("AP"), ap)
+			}
+			if f.AppearanceState != "" {
+				fd.Set(raw.NameLiteral("AS"), raw.NameLiteral(f.AppearanceState))
 			}
 			objects[fieldRef] = fd
 			fieldsArr.Append(raw.Ref(fieldRef.Num, fieldRef.Gen))

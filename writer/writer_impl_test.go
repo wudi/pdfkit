@@ -1955,6 +1955,121 @@ func TestWriter_AcroFormFields(t *testing.T) {
 	}
 }
 
+func TestWriter_AcroFormWidgetAppearance(t *testing.T) {
+	ap := []byte("0 0 m 1 1 l S")
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 20, URY: 20}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+		AcroForm: &semantic.AcroForm{
+			Fields: []semantic.FormField{
+				{
+					Name:            "Check",
+					Type:            "Btn",
+					Value:           "Yes",
+					PageIndex:       0,
+					Rect:            semantic.Rectangle{LLX: 0, LLY: 0, URX: 10, URY: 10},
+					Flags:           1,
+					Appearance:      ap,
+					AppearanceState: "Yes",
+					Border:          []float64{0, 0, 2},
+					Color:           []float64{1, 0, 0},
+				},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	var acro *raw.DictObj
+	for _, obj := range rawDoc.Objects {
+		if d, ok := obj.(*raw.DictObj); ok {
+			if fields, ok := d.Get(raw.NameLiteral("Fields")); ok {
+				if _, ok := fields.(*raw.ArrayObj); ok {
+					acro = d
+					break
+				}
+			}
+		}
+	}
+	if acro == nil {
+		t.Fatalf("AcroForm not found")
+	}
+	fieldsVal, _ := acro.Get(raw.NameLiteral("Fields"))
+	arr, _ := fieldsVal.(*raw.ArrayObj)
+	if arr.Len() != 1 {
+		t.Fatalf("expected one field")
+	}
+	ref, _ := arr.Items[0].(raw.RefObj)
+	fieldObj, _ := rawDoc.Objects[ref.Ref()]
+	fd := fieldObj.(*raw.DictObj)
+	if sub, ok := fd.Get(raw.NameLiteral("Subtype")); !ok {
+		t.Fatalf("widget subtype missing")
+	} else if n, ok := sub.(raw.NameObj); !ok || n.Value() != "Widget" {
+		t.Fatalf("unexpected widget subtype: %#v", sub)
+	}
+	if as, ok := fd.Get(raw.NameLiteral("AS")); !ok {
+		t.Fatalf("appearance state missing")
+	} else if n, ok := as.(raw.NameObj); !ok || n.Value() != "Yes" {
+		t.Fatalf("appearance state mismatch: %#v", as)
+	}
+	if f, ok := fd.Get(raw.NameLiteral("F")); !ok {
+		t.Fatalf("widget flags missing")
+	} else if num, ok := f.(raw.NumberObj); !ok || num.Int() != 1 {
+		t.Fatalf("widget flag mismatch: %#v", f)
+	}
+	if c, ok := fd.Get(raw.NameLiteral("C")); !ok {
+		t.Fatalf("color missing")
+	} else if arr, ok := c.(*raw.ArrayObj); !ok || arr.Len() == 0 {
+		t.Fatalf("color array missing entries")
+	}
+	if apDict, ok := fd.Get(raw.NameLiteral("AP")); ok {
+		if apD, ok := apDict.(*raw.DictObj); ok {
+			if nRef, ok := apD.Get(raw.NameLiteral("N")); ok {
+				if refObj, ok := nRef.(raw.RefObj); ok {
+					if stream, ok := rawDoc.Objects[refObj.Ref()].(*raw.StreamObj); ok {
+						if !bytes.Equal(stream.Data, ap) {
+							t.Fatalf("appearance stream mismatch")
+						}
+					} else {
+						t.Fatalf("AP N not stream")
+					}
+				}
+			}
+		}
+	} else {
+		t.Fatalf("appearance dictionary missing")
+	}
+	pageAnnotFound := false
+	for _, obj := range rawDoc.Objects {
+		if d, ok := obj.(*raw.DictObj); ok {
+			if typ, ok := d.Get(raw.NameLiteral("Type")); ok {
+				if n, ok := typ.(raw.NameObj); ok && n.Value() == "Page" {
+					if annots, ok := d.Get(raw.NameLiteral("Annots")); ok {
+						if arr, ok := annots.(*raw.ArrayObj); ok {
+							for _, item := range arr.Items {
+								if r, ok := item.(raw.RefObj); ok && r.Ref() == ref.Ref() {
+									pageAnnotFound = true
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if !pageAnnotFound {
+		t.Fatalf("widget annotation not attached to page")
+	}
+}
+
 func TestWriter_XRefStreamStartOffset(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{

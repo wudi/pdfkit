@@ -203,11 +203,15 @@ type RoleMap map[string]string
 
 // Annotation represents a simple page annotation.
 type Annotation struct {
-	Subtype    string
-	Rect       Rectangle
-	URI        string // used for Link annotations
-	Contents   string
-	Appearance []byte // normal appearance stream
+	Subtype         string
+	Rect            Rectangle
+	URI             string // used for Link annotations
+	Contents        string
+	Appearance      []byte // normal appearance stream
+	Flags           int
+	Border          []float64
+	Color           []float64
+	AppearanceState string
 }
 
 // OutlineItem describes a bookmark entry.
@@ -237,9 +241,16 @@ type AcroForm struct {
 
 // FormField is a simplified representation of a form field.
 type FormField struct {
-	Name  string
-	Value string
-	Type  string // e.g., "Tx" for text
+	Name            string
+	Value           string
+	Type            string // e.g., "Tx" for text
+	PageIndex       int
+	Rect            Rectangle
+	Flags           int
+	Appearance      []byte
+	AppearanceState string
+	Border          []float64
+	Color           []float64
 }
 
 // Builder produces a Semantic document from Decoded IR.
