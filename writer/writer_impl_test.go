@@ -525,6 +525,31 @@ func TestWriter_ContentStreamJPXJBIG2(t *testing.T) {
 	}
 }
 
+func TestWriter_EncryptDictionary(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 5, URY: 5}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+		Encrypted: true,
+		Permissions: raw.Permissions{
+			Print:  true,
+			Modify: true,
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write encrypted: %v", err)
+	}
+	data := buf.Bytes()
+	if !bytes.Contains(data, []byte("/Encrypt")) {
+		t.Fatalf("Encrypt missing from output")
+	}
+	if !bytes.Contains(data, []byte("/Filter /Standard")) || !bytes.Contains(data, []byte("/O ")) || !bytes.Contains(data, []byte("/U ")) {
+		t.Fatalf("Encrypt dictionary fields missing")
+	}
+}
+
 func TestSerializePrimitive_HexString(t *testing.T) {
 	out := serializePrimitive(raw.HexStr([]byte{0x00, 0xAB, 0x10, 0xFF}))
 	if string(out) != "<00AB10FF>" {
