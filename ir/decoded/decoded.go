@@ -22,8 +22,11 @@ type Stream interface {
 
 // DecodedDocument contains decoded objects plus a back-reference to the raw doc.
 type DecodedDocument struct {
-	Raw     *raw.Document
-	Streams map[raw.ObjectRef]Stream
+	Raw               *raw.Document
+	Streams           map[raw.ObjectRef]Stream
+	Perms             raw.Permissions
+	Encrypted         bool
+	MetadataEncrypted bool
 }
 
 // Decoder transforms Raw IR into Decoded IR (applies filters/security).

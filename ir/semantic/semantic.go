@@ -9,12 +9,15 @@ import (
 
 // Document is the semantic representation of a PDF.
 type Document struct {
-	Pages      []*Page
-	Catalog    *Catalog
-	Info       *DocumentInfo
-	Metadata   *XMPMetadata
-	StructTree *StructureTree
-	decoded    *decoded.DecodedDocument
+	Pages             []*Page
+	Catalog           *Catalog
+	Info              *DocumentInfo
+	Metadata          *XMPMetadata
+	StructTree        *StructureTree
+	decoded           *decoded.DecodedDocument
+	Permissions       raw.Permissions
+	Encrypted         bool
+	MetadataEncrypted bool
 }
 
 // Decoded returns the underlying decoded document (if set).

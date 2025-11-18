@@ -45,8 +45,11 @@ func (d *decoderImpl) Decode(ctx context.Context, rawDoc *raw.Document) (*Decode
 	}
 
 	return &DecodedDocument{
-		Raw:     rawDoc,
-		Streams: streams,
+		Raw:               rawDoc,
+		Streams:           streams,
+		Perms:             rawDoc.Permissions,
+		Encrypted:         rawDoc.Encrypted,
+		MetadataEncrypted: rawDoc.MetadataEncrypted,
 	}, nil
 }
 

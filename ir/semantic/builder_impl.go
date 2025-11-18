@@ -14,5 +14,10 @@ func NewBuilder() Builder {
 type builderImpl struct{}
 
 func (b *builderImpl) Build(ctx context.Context, dec *decoded.DecodedDocument) (*Document, error) {
-	return &Document{decoded: dec}, nil
+	return &Document{
+		decoded:           dec,
+		Permissions:       dec.Perms,
+		Encrypted:         dec.Encrypted,
+		MetadataEncrypted: dec.MetadataEncrypted,
+	}, nil
 }

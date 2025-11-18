@@ -37,6 +37,9 @@ func (w *impl) SerializeObject(ref raw.ObjectRef, obj raw.Object) ([]byte, error
 }
 
 func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Config) error {
+	if doc.Encrypted && !(doc.Permissions.Modify || doc.Permissions.Assemble) {
+		return fmt.Errorf("document permissions forbid modification")
+	}
 	// Build raw objects from semantic (minimal subset: catalog, pages, page, fonts, content streams)
 	objects := make(map[raw.ObjectRef]raw.Object)
 	objNum := 1
