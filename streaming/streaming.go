@@ -2,10 +2,13 @@ package streaming
 
 import (
 	"context"
+	"strconv"
+	"strings"
 	"sync"
 
 	"pdflib/filters"
 	"pdflib/ir/raw"
+	"pdflib/ir/semantic"
 	"pdflib/parser"
 )
 
@@ -40,10 +43,11 @@ type PageStartEvent struct {
 
 func (PageStartEvent) Type() EventType { return EventPageStart }
 
-// ContentStreamEvent carries raw page content stream bytes (decoded if available).
+// ContentStreamEvent carries decoded content operations and resources for a page.
 type ContentStreamEvent struct {
-	PageIndex int
-	Data      []byte
+	PageIndex  int
+	Operations []semantic.Operation
+	Resources  *semantic.Resources
 }
 
 func (ContentStreamEvent) Type() EventType { return EventContentStream }
@@ -181,21 +185,24 @@ func emitPages(ctx Context, doc *raw.Document, events chan<- Event) {
 		default:
 		}
 		events <- PageStartEvent{Index: i, MediaBox: page.mediaBox}
-		for _, data := range page.contents {
+		for _, content := range page.contents {
 			select {
 			case <-ctx.Done():
 				return
 			default:
 			}
-			events <- ContentStreamEvent{PageIndex: i, Data: data}
+			ops := parseOperations(content.data)
+			res := resourcesFromDict(doc, page.resources)
+			events <- ContentStreamEvent{PageIndex: i, Operations: ops, Resources: res}
 		}
 		events <- PageEndEvent{Index: i}
 	}
 }
 
 type pageInfo struct {
-	mediaBox [4]float64
-	contents [][]byte
+	mediaBox  [4]float64
+	resources raw.Object
+	contents  []decodedStream
 }
 
 func walkPages(doc *raw.Document, ref raw.ObjectRef, dict raw.Dictionary, inheritedBox [4]float64, pages *[]pageInfo) {
@@ -207,8 +214,12 @@ func walkPages(doc *raw.Document, ref raw.ObjectRef, dict raw.Dictionary, inheri
 				mbox = rect
 			}
 		}
+		var resources raw.Object = dict // keep resources reference for later resolution
+		if res, ok := dict.Get(raw.NameLiteral("Resources")); ok {
+			resources = res
+		}
 		contents := collectContents(doc, dict)
-		*pages = append(*pages, pageInfo{mediaBox: mbox, contents: contents})
+		*pages = append(*pages, pageInfo{mediaBox: mbox, contents: contents, resources: resources})
 		return
 	}
 	if name, ok := typ.(raw.NameObj); !ok || name.Value() != "Pages" {
@@ -232,21 +243,25 @@ func walkPages(doc *raw.Document, ref raw.ObjectRef, dict raw.Dictionary, inheri
 	}
 }
 
-func collectContents(doc *raw.Document, pageDict raw.Dictionary) [][]byte {
+type decodedStream struct {
+	data []byte
+}
+
+func collectContents(doc *raw.Document, pageDict raw.Dictionary) []decodedStream {
 	contentsObj, ok := pageDict.Get(raw.NameLiteral("Contents"))
 	if !ok {
 		return nil
 	}
-	var data [][]byte
+	var data []decodedStream
 	appendStream := func(obj raw.Object) {
 		if ref, ok := obj.(raw.RefObj); ok {
 			if s, ok := doc.Objects[ref.Ref()].(*raw.StreamObj); ok {
-				data = append(data, s.RawData())
+				data = append(data, decodedStream{data: decodeStream(s)})
 			}
 			return
 		}
 		if s, ok := obj.(*raw.StreamObj); ok {
-			data = append(data, s.RawData())
+			data = append(data, decodedStream{data: decodeStream(s)})
 		}
 	}
 	switch v := contentsObj.(type) {
@@ -257,13 +272,14 @@ func collectContents(doc *raw.Document, pageDict raw.Dictionary) [][]byte {
 	default:
 		appendStream(v)
 	}
-	return decodeStreams(data)
+	return data
 }
 
-func decodeStreams(streams [][]byte) [][]byte {
-	if len(streams) == 0 {
+func decodeStream(stream *raw.StreamObj) []byte {
+	if stream == nil {
 		return nil
 	}
+	names, params := parseFilters(stream.Dict)
 	fp := filters.NewPipeline(
 		[]filters.Decoder{
 			filters.NewFlateDecoder(),
@@ -274,16 +290,52 @@ func decodeStreams(streams [][]byte) [][]byte {
 		},
 		filters.Limits{},
 	)
-	out := make([][]byte, 0, len(streams))
-	for _, s := range streams {
-		decoded, err := fp.Decode(context.Background(), s, nil, nil)
-		if err != nil {
-			out = append(out, s) // fall back to raw
-			continue
-		}
-		out = append(out, decoded)
+	if len(names) == 0 {
+		return stream.RawData()
 	}
-	return out
+	decoded, err := fp.Decode(context.Background(), stream.RawData(), names, params)
+	if err != nil {
+		return stream.RawData()
+	}
+	return decoded
+}
+
+func parseFilters(dict *raw.DictObj) ([]string, []raw.Dictionary) {
+	if dict == nil {
+		return nil, nil
+	}
+	filterObj, ok := dict.Get(raw.NameLiteral("Filter"))
+	if !ok {
+		return nil, nil
+	}
+	var names []string
+	var params []raw.Dictionary
+	add := func(obj raw.Object) {
+		if n, ok := obj.(raw.NameObj); ok {
+			names = append(names, n.Value())
+		}
+	}
+	switch v := filterObj.(type) {
+	case raw.NameObj:
+		add(v)
+	case *raw.ArrayObj:
+		for _, it := range v.Items {
+			add(it)
+		}
+	}
+	if parmsObj, ok := dict.Get(raw.NameLiteral("DecodeParms")); ok {
+		switch v := parmsObj.(type) {
+		case *raw.DictObj:
+			params = append(params, v)
+		case *raw.ArrayObj:
+			for _, it := range v.Items {
+				if d, ok := it.(*raw.DictObj); ok {
+					params = append(params, d)
+				}
+			}
+		}
+	}
+	return names, params
 }
 
 func resolveDict(doc *raw.Document, obj raw.Object) (raw.ObjectRef, raw.Dictionary) {
@@ -312,6 +364,77 @@ func rectFromArray(obj raw.Object) ([4]float64, bool) {
 		}
 	}
 	return rect, true
+}
+
+func parseOperations(data []byte) []semantic.Operation {
+	tokens := splitTokens(string(data))
+	ops := []semantic.Operation{}
+	stack := []semantic.Operand{}
+	for _, tok := range tokens {
+		if num, err := strconv.ParseFloat(tok, 64); err == nil {
+			stack = append(stack, semantic.NumberOperand{Value: num})
+			continue
+		}
+		if len(tok) > 0 && tok[0] == '/' {
+			stack = append(stack, semantic.NameOperand{Value: tok[1:]})
+			continue
+		}
+		if len(tok) >= 2 && tok[0] == '(' && tok[len(tok)-1] == ')' {
+			stack = append(stack, semantic.StringOperand{Value: []byte(tok[1 : len(tok)-1])})
+			continue
+		}
+		// treat as operator
+		ops = append(ops, semantic.Operation{Operator: tok, Operands: stack})
+		stack = stack[:0]
+	}
+	return ops
+}
+
+func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
+	_, dict := resolveDict(doc, obj)
+	if dict == nil {
+		return nil
+	}
+	res := &semantic.Resources{}
+	if fontsObj, ok := dict.Get(raw.NameLiteral("Font")); ok {
+		if fdict, ok := fontsObj.(*raw.DictObj); ok {
+			res.Fonts = make(map[string]*semantic.Font)
+			for name, entry := range fdict.KV {
+				_, fontDict := resolveDict(doc, entry)
+				if fontDict == nil {
+					continue
+				}
+				font := &semantic.Font{}
+				if subtype, ok := fontDict.Get(raw.NameLiteral("Subtype")); ok {
+					if n, ok := subtype.(raw.NameObj); ok {
+						font.Subtype = n.Value()
+					}
+				}
+				if base, ok := fontDict.Get(raw.NameLiteral("BaseFont")); ok {
+					if n, ok := base.(raw.NameObj); ok {
+						font.BaseFont = n.Value()
+					}
+				}
+				if enc, ok := fontDict.Get(raw.NameLiteral("Encoding")); ok {
+					if n, ok := enc.(raw.NameObj); ok {
+						font.Encoding = n.Value()
+					}
+				}
+				res.Fonts[name] = font
+			}
+		}
+	}
+	return res
+}
+
+// splitTokens is a small, naive tokenizer for content streams.
+func splitTokens(src string) []string {
+	fields := strings.Fields(src)
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, f)
+	}
+	return out
 }
 
 type readerAtAdapter struct{ ReaderAt }

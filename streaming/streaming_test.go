@@ -69,8 +69,11 @@ func TestStreamingDocumentStartEnd(t *testing.T) {
 			}
 		case ContentStreamEvent:
 			contentEvents++
-			if len(e.Data) == 0 {
-				t.Fatalf("empty content stream data")
+			if len(e.Operations) == 0 {
+				t.Fatalf("empty operations in content event")
+			}
+			if e.Resources == nil || len(e.Resources.Fonts) == 0 {
+				t.Fatalf("resources missing fonts")
 			}
 		case PageEndEvent:
 			pageEnds++
