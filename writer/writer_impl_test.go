@@ -294,6 +294,48 @@ func TestWriter_IncrementalAppend(t *testing.T) {
 	}
 }
 
+func TestWriter_IncrementalPreservesOffsets(t *testing.T) {
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+
+	base := builder.NewBuilder()
+	base.NewPage(40, 40).DrawText("base", 1, 1, builder.TextOptions{}).Finish()
+	doc1, _ := base.Build()
+	if err := w.Write(staticCtx{}, doc1, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write base: %v", err)
+	}
+	baseData := buf.Bytes()
+	baseOffsets := parseXRefTableOffsets(baseData)
+	if len(baseOffsets) == 0 {
+		t.Fatalf("failed to parse base xref offsets")
+	}
+	firstObj := baseOffsets[1]
+	if firstObj == 0 {
+		t.Fatalf("expected catalog offset to be tracked")
+	}
+	firstLen := len(baseData)
+
+	rev := builder.NewBuilder()
+	rev.NewPage(40, 40).DrawText("base", 1, 1, builder.TextOptions{}).Finish()
+	rev.NewPage(50, 50).DrawText("rev", 2, 2, builder.TextOptions{}).Finish()
+	doc2, _ := rev.Build()
+	cfg := Config{Incremental: true, Deterministic: true}
+	if err := w.Write(staticCtx{}, doc2, &buf, cfg); err != nil {
+		t.Fatalf("write incremental: %v", err)
+	}
+	data := buf.Bytes()
+	if len(data) <= firstLen {
+		t.Fatalf("incremental write did not append data")
+	}
+	offsets := parseXRefTableOffsets(data)
+	if offsets[1] != firstObj {
+		t.Fatalf("expected prior object offset preserved, got %d want %d", offsets[1], firstObj)
+	}
+	if !bytes.Contains(data[firstLen:], []byte("/Prev")) {
+		t.Fatalf("incremental trailer missing Prev")
+	}
+}
+
 func TestWriter_StringEscaping(t *testing.T) {
 	b := builder.NewBuilder()
 	text := "Hello (world) \\ \n\t\r"
@@ -1066,4 +1108,51 @@ func startXRef(data []byte) int64 {
 	}
 	v, _ := strconv.ParseInt(string(m[1]), 10, 64)
 	return v
+}
+
+func parseXRefTableOffsets(data []byte) map[int]int64 {
+	off := startXRef(data)
+	if off <= 0 || int(off) >= len(data) {
+		return nil
+	}
+	start := data[off:]
+	if !bytes.HasPrefix(start, []byte("xref")) {
+		return nil
+	}
+	start = start[len("xref"):]
+	start = bytes.TrimLeft(start, "\r\n")
+	lines := strings.Split(string(start), "\n")
+	if len(lines) < 2 {
+		return nil
+	}
+	offsets := map[int]int64{}
+	current := -1
+	for i := 1; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "trailer") {
+			break
+		}
+		parts := strings.Fields(line)
+		if len(parts) == 2 {
+			start, err := strconv.Atoi(parts[0])
+			if err != nil {
+				continue
+			}
+			current = start - 1
+			continue
+		}
+		if len(parts) < 3 {
+			continue
+		}
+		current++
+		off, err := strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			continue
+		}
+		offsets[current] = off
+	}
+	return offsets
 }

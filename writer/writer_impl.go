@@ -357,6 +357,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		buf.WriteString("%PDF-" + version + "\n%\xE2\xE3\xCF\xD3\n")
 	}
 	offsets := make(map[int]int64)
+	for k, v := range incr.prevOffsets {
+		offsets[k] = v
+	}
 
 	ordered := make([]raw.ObjectRef, 0, len(objects))
 	for ref := range objects {
@@ -682,6 +685,7 @@ type incrementalInfo struct {
 	prevOffset  int64
 	startObjNum int
 	prevMaxObj  int
+	prevOffsets map[int]int64
 }
 
 func incrementalContext(doc *semantic.Document, out WriterAt, cfg Config) incrementalInfo {
@@ -694,6 +698,7 @@ func incrementalContext(doc *semantic.Document, out WriterAt, cfg Config) increm
 		return info
 	}
 	info.base = append([]byte(nil), reader.Bytes()...)
+	info.prevOffsets = scanObjectOffsets(info.base)
 	info.prevOffset = lastStartXRef(info.base)
 	info.prevMaxObj = maxObjNumFromBytes(info.base)
 	info.startObjNum = info.prevMaxObj + 1
@@ -749,6 +754,26 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func scanObjectOffsets(data []byte) map[int]int64 {
+	re := regexp.MustCompile(`(?m)^(\d+)\s+0\s+obj`)
+	matches := re.FindAllStringSubmatchIndex(string(data), -1)
+	offsets := make(map[int]int64, len(matches))
+	for _, m := range matches {
+		if len(m) < 4 {
+			continue
+		}
+		num, err := strconv.Atoi(string(data[m[2]:m[3]]))
+		if err != nil {
+			continue
+		}
+		if _, exists := offsets[num]; exists {
+			continue
+		}
+		offsets[num] = int64(m[0])
+	}
+	return offsets
 }
 
 func serializeContentStream(cs semantic.ContentStream) []byte {
