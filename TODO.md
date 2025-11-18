@@ -42,3 +42,10 @@ Status key: Not started / In progress / Done.
 
 - [x] Document start/end streaming: implement streaming.Parser that emits DocumentStart and DocumentEnd events using the existing parse pipeline. Status: Done (streaming parser now parses once and publishes start/end events with version/encryption info).
 - [x] Page/content streaming: emit PageStart/PageEnd and ContentOperation events with basic resources so consumers can iterate without loading whole documents. Status: Done (streaming parser walks the page tree via raw parser, decodes content streams, and emits PageStart/PageEnd plus per-stream ContentStream events).
+
+# Design alignment plan
+
+Status key: Not started / In progress / Done.
+
+- [x] Remove observability references from design docs: scrub observability/logging mention from design.md cross-cutting concerns so the docs match the current codebase with observability removed. Status: Done (cross-cutting concerns updated to focus on context, security limits, and error recovery).
+- [x] Honor write cancellation: make the writer respond to context cancellation signals during document serialization, returning an error when the provided context is done to align with the design’s context/cancellation guidance. Status: Done (writer checks ctx.Done() at build, per-page, encryption, and serialization phases and aborts early with error).

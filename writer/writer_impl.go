@@ -49,6 +49,15 @@ func (w *impl) SerializeObject(ref raw.ObjectRef, obj raw.Object) ([]byte, error
 }
 
 func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Config) (err error) {
+	checkCancelled := func() error {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("write cancelled")
+		default:
+			return nil
+		}
+	}
+	if err := checkCancelled(); err != nil { return err }
 	version := pdfVersion(cfg)
 	incr := incrementalContext(doc, out, cfg)
 	idPair := fileID(doc, cfg)
@@ -957,6 +966,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 
 	if encryptionHandler != nil {
 		for ref, obj := range objects {
+			if err := checkCancelled(); err != nil { return err }
 			if encryptRef != nil && ref == *encryptRef {
 				continue
 			}
@@ -989,6 +999,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	}
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Num < ordered[j].Num })
 	for _, ref := range ordered {
+		if err := checkCancelled(); err != nil { return err }
 		offset := initialOffset + int64(buf.Len())
 		serialized, _ := w.SerializeObject(ref, objects[ref])
 		buf.Write(serialized)
