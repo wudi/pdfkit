@@ -1,6 +1,7 @@
 package streaming
 
 import (
+	"bytes"
 	"context"
 	"strconv"
 	"strings"
@@ -45,9 +46,20 @@ func (PageStartEvent) Type() EventType { return EventPageStart }
 
 // ContentStreamEvent carries decoded content operations and resources for a page.
 type ContentStreamEvent struct {
-	PageIndex  int
-	Operations []semantic.Operation
-	Resources  *semantic.Resources
+	PageIndex    int
+	Operations   []semantic.Operation
+	Resources    *semantic.Resources
+	UsedFonts    []string
+	UsedXObjects []string
+	UsedPatterns []string
+	UsedShadings []string
+	InlineImages []InlineImage
+}
+
+// InlineImage captures inline image dictionary and data from a content stream.
+type InlineImage struct {
+	Dict semantic.DictOperand
+	Data []byte
 }
 
 func (ContentStreamEvent) Type() EventType { return EventContentStream }
@@ -193,7 +205,18 @@ func emitPages(ctx Context, doc *raw.Document, events chan<- Event) {
 			}
 			ops := parseOperations(content.data)
 			res := resourcesFromDict(doc, page.resources)
-			events <- ContentStreamEvent{PageIndex: i, Operations: ops, Resources: res}
+			inline := extractInlineImages(content.data)
+			usage := collectUsage(ops)
+			events <- ContentStreamEvent{
+				PageIndex:    i,
+				Operations:   ops,
+				Resources:    res,
+				InlineImages: inline,
+				UsedFonts:    usage.fonts,
+				UsedXObjects: usage.xobjects,
+				UsedPatterns: usage.patterns,
+				UsedShadings: usage.shadings,
+			}
 		}
 		events <- PageEndEvent{Index: i}
 	}
@@ -625,6 +648,7 @@ type token struct {
 	text  string
 	bytes []byte
 	num   float64
+	pos   int
 }
 
 // lexTokens parses PDF content tokens including strings, hex strings, arrays, and dictionaries.
@@ -679,12 +703,12 @@ func lexTokens(data []byte) []token {
 			for j < len(data) && !isDelimiter(data[j]) {
 				j++
 			}
-			tokens = append(tokens, token{kind: "name", text: string(data[i+1 : j])})
+			tokens = append(tokens, token{kind: "name", text: string(data[i+1 : j]), pos: i})
 			i = j
 			continue
 		case '(':
 			str, next := readLiteralString(data, i+1)
-			tokens = append(tokens, token{kind: "string", bytes: []byte(str)})
+			tokens = append(tokens, token{kind: "string", bytes: []byte(str), pos: i})
 			i = next
 			continue
 		}
@@ -700,9 +724,9 @@ func lexTokens(data []byte) []token {
 		}
 		text := string(data[i:j])
 		if num, err := strconv.ParseFloat(text, 64); err == nil {
-			tokens = append(tokens, token{kind: "number", num: num})
+			tokens = append(tokens, token{kind: "number", num: num, pos: i})
 		} else {
-			tokens = append(tokens, token{kind: "op", text: text})
+			tokens = append(tokens, token{kind: "op", text: text, pos: i})
 		}
 		i = j
 	}
@@ -836,6 +860,131 @@ func parseHexString(data []byte) []byte {
 
 func isHexWhite(b byte) bool {
 	return b == ' ' || b == '\n' || b == '\r' || b == '\t' || b == '\f'
+}
+
+// extractInlineImages scans for inline images (BI ... ID ... EI) and returns them.
+func extractInlineImages(data []byte) []InlineImage {
+	var imgs []InlineImage
+	i := 0
+	for i < len(data)-2 {
+		if !isWhite(data[i]) && data[i] != 'B' {
+			i++
+			continue
+		}
+		// Align to token boundary
+		for i < len(data) && isWhite(data[i]) {
+			i++
+		}
+		if i+2 > len(data) || data[i] != 'B' || data[i+1] != 'I' || !isDelimiter(data[i+2]) {
+			i++
+			continue
+		}
+		i += 2
+		for i < len(data) && isWhite(data[i]) {
+			i++
+		}
+		dictStart := i
+		idPos := findToken(data, i, "ID")
+		if idPos == -1 {
+			break
+		}
+		dictBytes := data[dictStart:idPos]
+		dictTok := lexTokens(dictBytes)
+		var dictOp semantic.DictOperand
+		for idx := 0; idx < len(dictTok); idx++ {
+			if dictTok[idx].kind == "dictStart" {
+				op, next := parseDictOperand(dictTok, idx+1)
+				dictOp = op
+				idx = next
+				break
+			}
+		}
+		dataStart := idPos + 2
+		for dataStart < len(data) && isWhite(data[dataStart]) {
+			dataStart++
+		}
+		eiPos := findToken(data, dataStart, "EI")
+		if eiPos == -1 {
+			break
+		}
+		imgData := bytes.TrimRight(data[dataStart:eiPos], "\r\n\t ")
+		imgs = append(imgs, InlineImage{Dict: dictOp, Data: imgData})
+		i = eiPos + 2
+	}
+	return imgs
+}
+
+func findToken(data []byte, start int, token string) int {
+	tlen := len(token)
+	for i := start; i <= len(data)-tlen; i++ {
+		if !isDelimiterBefore(data, i) {
+			continue
+		}
+		if string(data[i:i+tlen]) == token {
+			if i+tlen == len(data) || isDelimiter(data[i+tlen]) {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func isDelimiterBefore(data []byte, idx int) bool {
+	if idx == 0 {
+		return true
+	}
+	return isDelimiter(data[idx-1])
+}
+
+type usage struct {
+	fonts    []string
+	xobjects []string
+	patterns []string
+	shadings []string
+}
+
+func collectUsage(ops []semantic.Operation) usage {
+	fset := map[string]struct{}{}
+	xset := map[string]struct{}{}
+	pat := map[string]struct{}{}
+	sh := map[string]struct{}{}
+	for _, op := range ops {
+		switch op.Operator {
+		case "Tf":
+			if len(op.Operands) >= 1 {
+				if n, ok := op.Operands[0].(semantic.NameOperand); ok {
+					fset[n.Value] = struct{}{}
+				}
+			}
+		case "Do":
+			if len(op.Operands) >= 1 {
+				if n, ok := op.Operands[0].(semantic.NameOperand); ok {
+					xset[n.Value] = struct{}{}
+				}
+			}
+		case "sh":
+			if len(op.Operands) >= 1 {
+				if n, ok := op.Operands[0].(semantic.NameOperand); ok {
+					sh[n.Value] = struct{}{}
+				}
+			}
+		case "scn", "SCN", "cs", "CS":
+			for _, operand := range op.Operands {
+				if n, ok := operand.(semantic.NameOperand); ok && strings.HasPrefix(n.Value, "Pattern") {
+					pat[n.Value] = struct{}{}
+				}
+			}
+		}
+	}
+	return usage{fonts: keys(fset), xobjects: keys(xset), patterns: keys(pat), shadings: keys(sh)}
+}
+
+func keys(m map[string]struct{}) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 type readerAtAdapter struct{ ReaderAt }
