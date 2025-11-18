@@ -20,3 +20,10 @@ Status key: Not started / In progress / Done.
 - [x] Builder metadata helpers: expose document-level language (Lang), tagged flag (Marked), and page labels to align builder with semantic.Document fields from design.md. Status: Done (SetLanguage/SetMarked/AddPageLabel added and covered by builder test).
 - [x] Builder outlines: fluent helpers to add outline/bookmark entries that target builder-created pages with XYZ destinations. Status: Done (builder Outline type resolves page pointers to indexes and populates XYZ destinations; writer serializes XYZ Dest arrays).
 - [x] Builder encryption: convenience setter for owner/user passwords, permissions, and metadata encryption flag to populate semantic.Document encryption fields. Status: Done (SetEncryption records passwords/permissions, marks metadata encryption, and is exercised by builder tests).
+
+# Observability and tracing plan (from design.md §17/metrics)
+
+Status key: Not started / In progress / Done.
+
+- [ ] Tracer interface: expose observability.Tracer/Span per design to allow spans around parse/build/write operations, plus metric name constants.
+- [ ] Writer tracing: accept a tracer in writer Config or builder and emit spans for document write phases (xref build, content emit, encryption) with errors tagged.
