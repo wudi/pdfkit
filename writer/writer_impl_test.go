@@ -562,6 +562,39 @@ func TestWriter_SerializeOperations(t *testing.T) {
 	}
 }
 
+func TestWriter_InfoFields(t *testing.T) {
+	info := &semantic.DocumentInfo{
+		Title:    "Sample",
+		Author:   "Author Name",
+		Subject:  "Subject Line",
+		Creator:  "creator app",
+		Producer: "prod",
+		Keywords: []string{"k1", "k2"},
+	}
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+		Info: info,
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	if rawDoc.Metadata.Title != info.Title || rawDoc.Metadata.Author != info.Author || rawDoc.Metadata.Subject != info.Subject || rawDoc.Metadata.Creator != info.Creator || rawDoc.Metadata.Producer != info.Producer {
+		t.Fatalf("info fields mismatch: %+v", rawDoc.Metadata)
+	}
+	if len(rawDoc.Metadata.Keywords) != len(info.Keywords) || rawDoc.Metadata.Keywords[0] != "k1" || rawDoc.Metadata.Keywords[1] != "k2" {
+		t.Fatalf("keywords mismatch: %+v", rawDoc.Metadata.Keywords)
+	}
+}
+
 func maxObjNum(data []byte) int {
 	re := regexp.MustCompile(`\s(\d+)\s+0\s+obj`)
 	matches := re.FindAllSubmatch(data, -1)

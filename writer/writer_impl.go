@@ -82,14 +82,33 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		return ref
 	}
 
-	// Document info dictionary (Title only for now)
+	// Document info dictionary
 	var infoRef *raw.ObjectRef
-	if doc.Info != nil && doc.Info.Title != "" {
-		ref := nextRef()
-		infoRef = &ref
+	if doc.Info != nil {
 		infoDict := raw.Dict()
-		infoDict.Set(raw.NameLiteral("Title"), raw.Str([]byte(doc.Info.Title)))
-		objects[ref] = infoDict
+		if doc.Info.Title != "" {
+			infoDict.Set(raw.NameLiteral("Title"), raw.Str([]byte(doc.Info.Title)))
+		}
+		if doc.Info.Author != "" {
+			infoDict.Set(raw.NameLiteral("Author"), raw.Str([]byte(doc.Info.Author)))
+		}
+		if doc.Info.Subject != "" {
+			infoDict.Set(raw.NameLiteral("Subject"), raw.Str([]byte(doc.Info.Subject)))
+		}
+		if doc.Info.Creator != "" {
+			infoDict.Set(raw.NameLiteral("Creator"), raw.Str([]byte(doc.Info.Creator)))
+		}
+		if doc.Info.Producer != "" {
+			infoDict.Set(raw.NameLiteral("Producer"), raw.Str([]byte(doc.Info.Producer)))
+		}
+		if len(doc.Info.Keywords) > 0 {
+			infoDict.Set(raw.NameLiteral("Keywords"), raw.Str([]byte(strings.Join(doc.Info.Keywords, ","))))
+		}
+		if infoDict.Len() > 0 {
+			ref := nextRef()
+			infoRef = &ref
+			objects[ref] = infoDict
+		}
 	}
 
 	// XMP metadata stream reference

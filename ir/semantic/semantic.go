@@ -98,7 +98,12 @@ type Catalog struct{}
 
 // DocumentInfo models /Info dictionary values.
 type DocumentInfo struct {
-	Title string
+	Title    string
+	Author   string
+	Subject  string
+	Creator  string
+	Producer string
+	Keywords []string
 }
 
 type XMPMetadata struct{ Raw []byte }
