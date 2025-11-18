@@ -2,6 +2,9 @@ package writer
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
@@ -40,23 +43,48 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	if doc.Encrypted && !(doc.Permissions.Modify || doc.Permissions.Assemble) {
 		return fmt.Errorf("document permissions forbid modification")
 	}
+	version := pdfVersion(cfg)
 	// Build raw objects from semantic (minimal subset: catalog, pages, page, fonts, content streams)
 	objects := make(map[raw.ObjectRef]raw.Object)
 	objNum := 1
-	catalogRef := raw.ObjectRef{Num: objNum, Gen: 0}
-	objNum++
-	pagesRef := raw.ObjectRef{Num: objNum, Gen: 0}
-	objNum++
+	nextRef := func() raw.ObjectRef {
+		ref := raw.ObjectRef{Num: objNum, Gen: 0}
+		objNum++
+		return ref
+	}
+	catalogRef := nextRef()
+	pagesRef := nextRef()
 	pageRefs := make([]raw.ObjectRef, 0, len(doc.Pages))
 
 	// Fonts (single shared Helvetica core font)
-	fontRef := raw.ObjectRef{Num: objNum, Gen: 0}
-	objNum++
+	fontRef := nextRef()
 	fontDict := raw.Dict()
 	fontDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Font"))
 	fontDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral("Type1"))
 	fontDict.Set(raw.NameLiteral("BaseFont"), raw.NameLiteral("Helvetica"))
 	objects[fontRef] = fontDict
+
+	// Document info dictionary (Title only for now)
+	var infoRef *raw.ObjectRef
+	if doc.Info != nil && doc.Info.Title != "" {
+		ref := nextRef()
+		infoRef = &ref
+		infoDict := raw.Dict()
+		infoDict.Set(raw.NameLiteral("Title"), raw.Str([]byte(doc.Info.Title)))
+		objects[ref] = infoDict
+	}
+
+	// XMP metadata stream reference
+	var metadataRef *raw.ObjectRef
+	if doc.Metadata != nil && len(doc.Metadata.Raw) > 0 {
+		ref := nextRef()
+		metadataRef = &ref
+		dict := raw.Dict()
+		dict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Metadata"))
+		dict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral("XML"))
+		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(doc.Metadata.Raw))))
+		objects[ref] = raw.NewStream(dict, doc.Metadata.Raw)
+	}
 
 	// Page content streams
 	contentRefs := []raw.ObjectRef{}
@@ -65,8 +93,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		for _, cs := range p.Contents {
 			contentData = append(contentData, cs.RawBytes...)
 		}
-		contentRef := raw.ObjectRef{Num: objNum, Gen: 0}
-		objNum++
+		contentRef := nextRef()
 		dict := raw.Dict()
 		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(contentData))))
 		objects[contentRef] = raw.NewStream(dict, contentData)
@@ -74,8 +101,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	}
 	// Pages
 	for i, p := range doc.Pages {
-		ref := raw.ObjectRef{Num: objNum, Gen: 0}
-		objNum++
+		ref := nextRef()
 		pageRefs = append(pageRefs, ref)
 		p.MediaBox = semantic.Rectangle{0, 0, p.MediaBox.URX, p.MediaBox.URY}
 		pageDict := raw.Dict()
@@ -109,11 +135,14 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	catalogDict := raw.Dict()
 	catalogDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Catalog"))
 	catalogDict.Set(raw.NameLiteral("Pages"), raw.Ref(pagesRef.Num, pagesRef.Gen))
+	if metadataRef != nil {
+		catalogDict.Set(raw.NameLiteral("Metadata"), raw.Ref(metadataRef.Num, metadataRef.Gen))
+	}
 	objects[catalogRef] = catalogDict
 
 	// Serialize
 	var buf bytes.Buffer
-	buf.WriteString("%PDF-1.7\n%\xE2\xE3\xCF\xD3\n")
+	buf.WriteString("%PDF-" + version + "\n%\xE2\xE3\xCF\xD3\n")
 	offsets := make(map[int]int64)
 
 	ordered := make([]raw.ObjectRef, 0, len(objects))
@@ -141,12 +170,21 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		}
 	}
 	// Trailer
-	buf.WriteString("trailer\n<<")
-	buf.WriteString("/Size ")
-	buf.WriteString(fmt.Sprintf("%d ", maxObjNum+1))
-	buf.WriteString("/Root ")
-	buf.WriteString(fmt.Sprintf("%d 0 R", catalogRef.Num))
-	buf.WriteString(">>\nstartxref\n")
+	trailer := raw.Dict()
+	trailer.Set(raw.NameLiteral("Size"), raw.NumberInt(int64(maxObjNum+1)))
+	trailer.Set(raw.NameLiteral("Root"), raw.Ref(catalogRef.Num, catalogRef.Gen))
+	if infoRef != nil {
+		trailer.Set(raw.NameLiteral("Info"), raw.Ref(infoRef.Num, infoRef.Gen))
+	}
+	fileIDs := fileID(doc, cfg)
+	idArr := raw.NewArray(
+		raw.Str([]byte(hex.EncodeToString(fileIDs[0]))),
+		raw.Str([]byte(hex.EncodeToString(fileIDs[1]))),
+	)
+	trailer.Set(raw.NameLiteral("ID"), idArr)
+	buf.WriteString("trailer\n")
+	buf.Write(serializePrimitive(trailer))
+	buf.WriteString("\nstartxref\n")
 	buf.WriteString(fmt.Sprintf("%d\n%%EOF\n", xrefOffset))
 
 	_, err := out.Write(buf.Bytes())
@@ -209,4 +247,47 @@ func serializePrimitive(o raw.Object) []byte {
 	default:
 		return []byte("null")
 	}
+}
+
+func pdfVersion(cfg Config) string {
+	if cfg.Version == "" {
+		return string(PDF17)
+	}
+	return string(cfg.Version)
+}
+
+func fileID(doc *semantic.Document, cfg Config) [2][]byte {
+	seed := deterministicIDSeed(doc, cfg)
+	if cfg.Deterministic {
+		return [2][]byte{seed, seed}
+	}
+	id := make([]byte, 16)
+	if _, err := rand.Read(id); err != nil {
+		id = seed
+	}
+	idB := make([]byte, len(id))
+	copy(idB, id)
+	return [2][]byte{id, idB}
+}
+
+func deterministicIDSeed(doc *semantic.Document, cfg Config) []byte {
+	h := sha256.New()
+	h.Write([]byte(pdfVersion(cfg)))
+	if doc.Info != nil {
+		h.Write([]byte(doc.Info.Title))
+	}
+	if doc.Metadata != nil {
+		h.Write(doc.Metadata.Raw)
+	}
+	h.Write([]byte(fmt.Sprintf("%d", len(doc.Pages))))
+	for _, p := range doc.Pages {
+		h.Write([]byte(fmt.Sprintf("%f-%f-%f-%f-%d", p.MediaBox.LLX, p.MediaBox.LLY, p.MediaBox.URX, p.MediaBox.URY, p.Rotate)))
+	}
+	sum := h.Sum(nil)
+	if len(sum) >= 16 {
+		return sum[:16]
+	}
+	buf := make([]byte, 16)
+	copy(buf, sum)
+	return buf
 }
