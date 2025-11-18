@@ -127,6 +127,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		case FilterASCII85:
 			streamData = ascii85Encode(streamData)
 			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("ASCII85Decode"))
+		case FilterRunLength:
+			streamData = runLengthEncode(streamData)
+			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("RunLengthDecode"))
 		}
 		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(streamData))))
 		objects[contentRef] = raw.NewStream(dict, streamData)
@@ -610,6 +613,39 @@ func ascii85Encode(data []byte) []byte {
 	buf.Write(enc[:n])
 	buf.WriteString("~>")
 	return buf.Bytes()
+}
+
+// runLengthEncode implements PDF RunLength filter encoding.
+func runLengthEncode(data []byte) []byte {
+	if len(data) == 0 {
+		return []byte{128} // EOD marker
+	}
+	var out bytes.Buffer
+	for i := 0; i < len(data); {
+		// Detect run
+		runLen := 1
+		for i+runLen < len(data) && data[i+runLen] == data[i] && runLen < 128 {
+			runLen++
+		}
+		if runLen > 1 {
+			out.WriteByte(byte(257 - runLen))
+			out.WriteByte(data[i])
+			i += runLen
+			continue
+		}
+		// Literal sequence
+		litStart := i
+		for i < len(data) && (i+1 >= len(data) || data[i] != data[i+1]) && i-litStart < 127 {
+			i++
+			if i < len(data) && i+1 < len(data) && data[i] == data[i+1] {
+				break
+			}
+		}
+		out.WriteByte(byte(i - litStart - 1))
+		out.Write(data[litStart:i])
+	}
+	out.WriteByte(128) // EOD
+	return out.Bytes()
 }
 
 func rectArray(r semantic.Rectangle) *raw.ArrayObj {

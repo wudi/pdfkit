@@ -12,6 +12,7 @@ import (
 
 	"encoding/ascii85"
 	"encoding/hex"
+	"fmt"
 
 	"pdflib/builder"
 	"pdflib/ir"
@@ -410,6 +411,9 @@ func TestWriter_ContentStream_ASCIIHexAndASCII85(t *testing.T) {
 		}
 		return decoded[:n], nil
 	})
+	check(FilterRunLength, "RunLengthDecode", func(data []byte) ([]byte, error) {
+		return runLengthDecode(data)
+	})
 }
 
 func TestSerializePrimitive_HexString(t *testing.T) {
@@ -417,6 +421,37 @@ func TestSerializePrimitive_HexString(t *testing.T) {
 	if string(out) != "<00AB10FF>" {
 		t.Fatalf("unexpected hex string serialization: %s", out)
 	}
+}
+
+func runLengthDecode(data []byte) ([]byte, error) {
+	var out bytes.Buffer
+	for i := 0; i < len(data); {
+		b := data[i]
+		i++
+		if b == 128 {
+			break
+		}
+		if b <= 127 {
+			count := int(b) + 1
+			if i+count > len(data) {
+				return nil, fmt.Errorf("literal run out of bounds")
+			}
+			out.Write(data[i : i+count])
+			i += count
+			continue
+		}
+		// repeat next byte 257 - b times
+		if i >= len(data) {
+			return nil, fmt.Errorf("repeat without byte")
+		}
+		val := data[i]
+		i++
+		count := 257 - int(b)
+		for j := 0; j < count; j++ {
+			out.WriteByte(val)
+		}
+	}
+	return out.Bytes(), nil
 }
 
 func maxObjNum(data []byte) int {
