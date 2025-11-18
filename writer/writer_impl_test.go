@@ -257,6 +257,19 @@ func TestWriter_XRefTableOffsets(t *testing.T) {
 	if off >= int64(len(data)) || !bytes.HasPrefix(data[off:], []byte("1 0 obj")) {
 		t.Fatalf("offset does not point to catalog object")
 	}
+	offsetMap := scanObjectOffsets(data)
+	for _, objNum := range table.Objects() {
+		if objNum == 0 {
+			continue
+		}
+		entryOffset, _, ok := table.Lookup(objNum)
+		if !ok {
+			continue
+		}
+		if actual, ok := offsetMap[objNum]; ok && actual != entryOffset {
+			t.Fatalf("xref offset mismatch for obj %d: table=%d actual=%d", objNum, entryOffset, actual)
+		}
+	}
 }
 
 func TestWriter_IncrementalAppend(t *testing.T) {
