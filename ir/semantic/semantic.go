@@ -181,10 +181,11 @@ type RoleMap map[string]string
 
 // Annotation represents a simple page annotation.
 type Annotation struct {
-	Subtype  string
-	Rect     Rectangle
-	URI      string // used for Link annotations
-	Contents string
+	Subtype    string
+	Rect       Rectangle
+	URI        string // used for Link annotations
+	Contents   string
+	Appearance []byte // normal appearance stream
 }
 
 // OutlineItem describes a bookmark entry.

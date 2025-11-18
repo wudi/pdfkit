@@ -486,6 +486,16 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 				} else if a.Contents != "" {
 					aDict.Set(raw.NameLiteral("Contents"), raw.Str([]byte(a.Contents)))
 				}
+				if len(a.Appearance) > 0 {
+					apRef := nextRef()
+					apDict := raw.Dict()
+					apDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(a.Appearance))))
+					apStream := raw.NewStream(apDict, a.Appearance)
+					objects[apRef] = apStream
+					ap := raw.Dict()
+					ap.Set(raw.NameLiteral("N"), raw.Ref(apRef.Num, apRef.Gen))
+					aDict.Set(raw.NameLiteral("AP"), ap)
+				}
 				aDict.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberInt(0), raw.NumberInt(0), raw.NumberInt(0)))
 				objects[aRef] = aDict
 				annotArr.Append(raw.Ref(aRef.Num, aRef.Gen))

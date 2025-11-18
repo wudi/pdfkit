@@ -1478,6 +1478,65 @@ func TestWriter_TextAnnotationContents(t *testing.T) {
 	}
 }
 
+func TestWriter_AnnotationAppearance(t *testing.T) {
+	ap := []byte("q 1 0 0 1 0 0 cm BT (hello) Tj ET Q")
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 20, URY: 20},
+				Annotations: []semantic.Annotation{
+					{
+						Subtype:    "Text",
+						Rect:       semantic.Rectangle{LLX: 1, LLY: 1, URX: 5, URY: 5},
+						Contents:   "note",
+						Appearance: ap,
+					},
+				},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	foundAppearance := false
+	for _, obj := range rawDoc.Objects {
+		d, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		typ, _ := d.Get(raw.NameLiteral("Type"))
+		if n, ok := typ.(raw.NameObj); !ok || n.Value() != "Annot" {
+			continue
+		}
+		apDict, ok := d.Get(raw.NameLiteral("AP"))
+		if !ok {
+			continue
+		}
+		if apDictObj, ok := apDict.(*raw.DictObj); ok {
+			if nRef, ok := apDictObj.Get(raw.NameLiteral("N")); ok {
+				if ref, ok := nRef.(raw.RefObj); ok {
+					if stream, ok := rawDoc.Objects[ref.Ref()].(*raw.StreamObj); ok {
+						if bytes.Equal(stream.Data, ap) {
+							foundAppearance = true
+						}
+					}
+				}
+			}
+		}
+	}
+	if !foundAppearance {
+		t.Fatalf("appearance stream not found for annotation")
+	}
+}
+
 func TestWriter_AcroFormNeedAppearances(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{
