@@ -201,3 +201,12 @@ func TestScanner_InlineImageTooLong(t *testing.T) {
 		t.Fatalf("expected inline image too long error, got %v", err)
 	}
 }
+
+func TestScanner_StreamMissingEOL(t *testing.T) {
+	// stream without required EOL before data
+	data := "stream abc\nendstream"
+	s := newScanner(t, data, Config{})
+	if _, err := s.Next(); err == nil || !strings.Contains(err.Error(), "missing EOL") {
+		t.Fatalf("expected missing EOL error, got %v", err)
+	}
+}

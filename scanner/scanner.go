@@ -351,13 +351,17 @@ func fromHex(c byte) byte {
 func (s *pdfScanner) scanStream(start int64) (Token, error) {
 	// Optional EOL after 'stream'
 	if err := s.ensure(s.pos); err != nil && !errors.Is(err, io.EOF) { return Token{}, err }
-	if s.pos < int64(len(s.data)) {
-		if s.data[s.pos] == '\r' {
-			s.pos++
-			if err := s.ensure(s.pos); err == nil && s.pos < int64(len(s.data)) && s.data[s.pos] == '\n' { s.pos++ }
-		} else if s.data[s.pos] == '\n' {
-			s.pos++
-		}
+	// PDF 7.3.8: stream keyword must be followed by EOL before data
+	if s.pos >= int64(len(s.data)) {
+		return Token{}, s.recover(errors.New("stream missing EOL before data"), "stream")
+	}
+	if s.data[s.pos] == '\r' {
+		s.pos++
+		if err := s.ensure(s.pos); err == nil && s.pos < int64(len(s.data)) && s.data[s.pos] == '\n' { s.pos++ }
+	} else if s.data[s.pos] == '\n' {
+		s.pos++
+	} else {
+		return Token{}, s.recover(errors.New("stream missing EOL before data"), "stream")
 	}
 	dataStart := s.pos
 	// If caller provided expected length, use it
