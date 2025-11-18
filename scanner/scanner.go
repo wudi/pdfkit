@@ -298,7 +298,7 @@ func (s *pdfScanner) scanLiteralString() (Token, error) { /* PDF 7.3.4.2 */
 		buf.WriteByte(c)
 		s.pos++
 		if s.cfg.MaxStringLength > 0 && int64(buf.Len()) > s.cfg.MaxStringLength {
-			return Token{}, errors.New("literal string too long")
+			return Token{}, s.recover(errors.New("literal string too long"), "literal")
 		}
 	}
 	return Token{Type: TokenString, Value: buf.Bytes(), Pos: start}, nil
@@ -322,7 +322,9 @@ func (s *pdfScanner) scanHexString() (Token, error) {
 	}
 	// If odd number of nibbles, pad with 0
 	if len(hexbuf)%2 == 1 { hexbuf = append(hexbuf, '0') }
-	if s.cfg.MaxStringLength > 0 && int64(len(hexbuf)/2) > s.cfg.MaxStringLength { return Token{}, errors.New("hex string too long") }
+	if s.cfg.MaxStringLength > 0 && int64(len(hexbuf)/2) > s.cfg.MaxStringLength {
+		return Token{}, s.recover(errors.New("hex string too long"), "hex")
+	}
 	out := make([]byte, 0, len(hexbuf)/2)
 	for i := 0; i < len(hexbuf); i += 2 {
 		a := fromHex(hexbuf[i])
@@ -416,7 +418,7 @@ func (s *pdfScanner) scanStream(start int64) (Token, error) {
 	}
 	if idx == -1 {
 		payload := append([]byte(nil), s.data[dataStart:]...)
-		if s.cfg.MaxStreamLength > 0 && int64(len(payload)) > s.cfg.MaxStreamLength { return Token{}, errors.New("stream too long") }
+		if s.cfg.MaxStreamLength > 0 && int64(len(payload)) > s.cfg.MaxStreamLength { return Token{}, s.recover(errors.New("stream too long"), "stream") }
 		s.pos = int64(len(s.data))
 		return Token{Type: TokenStream, Value: payload, Pos: start}, nil
 	}
@@ -429,11 +431,11 @@ func (s *pdfScanner) scanStream(start int64) (Token, error) {
 		}
 		if s.data[end-1] == '\r' { end-- }
 	}
-	payload := append([]byte(nil), s.data[dataStart:end]...)
-	if s.cfg.MaxStreamLength > 0 && int64(len(payload)) > s.cfg.MaxStreamLength { return Token{}, errors.New("stream too long") }
-	// Advance position past 'endstream'
-	s.pos = int64(idx + len(needle))
-	return Token{Type: TokenStream, Value: payload, Pos: start}, nil
+		payload := append([]byte(nil), s.data[dataStart:end]...)
+		if s.cfg.MaxStreamLength > 0 && int64(len(payload)) > s.cfg.MaxStreamLength { return Token{}, s.recover(errors.New("stream too long"), "stream") }
+		// Advance position past 'endstream'
+		s.pos = int64(idx + len(needle))
+		return Token{Type: TokenStream, Value: payload, Pos: start}, nil
 }
 
 // scanInlineImage consumes bytes after the ID keyword until the first EOL-terminated EI delimiter.
@@ -467,7 +469,7 @@ func (s *pdfScanner) scanInlineImage(start int64) (Token, error) {
 			if prevOK && nextOK {
 				payload := append([]byte(nil), s.data[dataStart:s.pos]...)
 				if s.cfg.MaxInlineImage > 0 && int64(len(payload)) > s.cfg.MaxInlineImage {
-					return Token{}, errors.New("inline image too long")
+					return Token{}, s.recover(errors.New("inline image too long"), "inline_image")
 				}
 				s.pos += 2
 				return Token{Type: TokenInlineImage, Value: payload, Pos: start}, nil
@@ -475,10 +477,10 @@ func (s *pdfScanner) scanInlineImage(start int64) (Token, error) {
 		}
 		s.pos++
 		if s.cfg.MaxInlineImage > 0 && s.pos-dataStart > s.cfg.MaxInlineImage {
-			return Token{}, errors.New("inline image too long")
+			return Token{}, s.recover(errors.New("inline image too long"), "inline_image")
 		}
 		if s.pos >= int64(len(s.data)) && s.eof {
-			return Token{}, errors.New("unterminated inline image")
+			return Token{}, s.recover(errors.New("unterminated inline image"), "inline_image")
 		}
 	}
 }
@@ -597,4 +599,18 @@ func (s *pdfScanner) scanNumberString() string {
 	}
 	if !seenDigit { s.pos = start; return "" }
 	return buf.String()
+}
+func (s *pdfScanner) recover(err error, loc string) error {
+	if s.cfg.Recovery == nil {
+		return err
+	}
+	action := s.cfg.Recovery.OnError(nil, err, recovery.Location{ByteOffset: s.pos, Component: "scanner"})
+	switch action {
+	case recovery.ActionSkip:
+		return nil
+	case recovery.ActionWarn, recovery.ActionFix:
+		return err
+	default:
+		return err
+	}
 }
