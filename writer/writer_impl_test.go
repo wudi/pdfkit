@@ -956,6 +956,88 @@ func TestWriter_ShadingResources(t *testing.T) {
 	}
 }
 
+func TestWriter_OutputIntents(t *testing.T) {
+	profile := []byte{1, 2, 3, 4, 5}
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+		OutputIntents: []semantic.OutputIntent{{
+			S:                         "GTS_PDFA1",
+			OutputConditionIdentifier: "sRGB",
+			Info:                      "Test profile",
+			DestOutputProfile:         profile,
+		}},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	var catalog *raw.DictObj
+	for _, obj := range rawDoc.Objects {
+		if d, ok := obj.(*raw.DictObj); ok {
+			if tval, ok := d.Get(raw.NameLiteral("Type")); ok {
+				if n, ok := tval.(raw.NameObj); ok && n.Value() == "Catalog" {
+					catalog = d
+				}
+			}
+		}
+	}
+	if catalog == nil {
+		t.Fatalf("catalog not found")
+	}
+	oiVal, ok := catalog.Get(raw.NameLiteral("OutputIntents"))
+	if !ok {
+		t.Fatalf("OutputIntents missing")
+	}
+	arr, ok := oiVal.(*raw.ArrayObj)
+	if !ok || arr.Len() != 1 {
+		t.Fatalf("unexpected output intents array: %#v", oiVal)
+	}
+	refObj, ok := arr.Items[0].(raw.RefObj)
+	if !ok {
+		t.Fatalf("output intent not ref: %#v", arr.Items[0])
+	}
+	intentObj, ok := rawDoc.Objects[refObj.Ref()]
+	if !ok {
+		t.Fatalf("intent ref missing")
+	}
+	io, ok := intentObj.(*raw.DictObj)
+	if !ok {
+		t.Fatalf("intent not dict")
+	}
+	if oc, ok := io.Get(raw.NameLiteral("OutputConditionIdentifier")); !ok {
+		t.Fatalf("OCI missing")
+	} else if s, ok := oc.(raw.StringObj); !ok || string(s.Value()) != "sRGB" {
+		t.Fatalf("OCI mismatch: %#v", oc)
+	}
+	profVal, ok := io.Get(raw.NameLiteral("DestOutputProfile"))
+	if !ok {
+		t.Fatalf("DestOutputProfile missing")
+	}
+	pRef, ok := profVal.(raw.RefObj)
+	if !ok {
+		t.Fatalf("profile not ref")
+	}
+	profObj, ok := rawDoc.Objects[pRef.Ref()]
+	if !ok {
+		t.Fatalf("profile object missing")
+	}
+	stream, ok := profObj.(*raw.StreamObj)
+	if !ok {
+		t.Fatalf("profile not stream")
+	}
+	if !bytes.Equal(stream.Data, profile) {
+		t.Fatalf("profile data mismatch")
+	}
+}
+
 func TestWriter_SerializeOperations(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{

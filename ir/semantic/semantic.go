@@ -17,6 +17,7 @@ type Document struct {
 	Outlines          []OutlineItem
 	AcroForm          *AcroForm
 	StructTree        *StructureTree
+	OutputIntents     []OutputIntent
 	decoded           *decoded.DecodedDocument
 	Permissions       raw.Permissions
 	Encrypted         bool
@@ -165,6 +166,14 @@ type XMPMetadata struct{ Raw []byte }
 
 type StructureTree struct {
 	RoleMap RoleMap
+}
+
+// OutputIntent models color output intent metadata.
+type OutputIntent struct {
+	S                         string
+	OutputConditionIdentifier string
+	Info                      string
+	DestOutputProfile         []byte
 }
 
 // RoleMap maps structure element names to role-mapped names.

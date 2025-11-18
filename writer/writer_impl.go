@@ -242,6 +242,41 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		objects[ref] = raw.NewStream(dict, doc.Metadata.Raw)
 	}
 
+	// OutputIntents
+	var outputIntentRefs []raw.ObjectRef
+	for _, oi := range doc.OutputIntents {
+		dict := raw.Dict()
+		dict.Set(raw.NameLiteral("Type"), raw.NameLiteral("OutputIntent"))
+		if oi.S != "" {
+			dict.Set(raw.NameLiteral("S"), raw.NameLiteral(oi.S))
+		} else {
+			dict.Set(raw.NameLiteral("S"), raw.NameLiteral("GTS_PDFA1"))
+		}
+		if oi.OutputConditionIdentifier != "" {
+			dict.Set(raw.NameLiteral("OutputConditionIdentifier"), raw.Str([]byte(oi.OutputConditionIdentifier)))
+		} else {
+			dict.Set(raw.NameLiteral("OutputConditionIdentifier"), raw.Str([]byte("Custom")))
+		}
+		if oi.Info != "" {
+			dict.Set(raw.NameLiteral("Info"), raw.Str([]byte(oi.Info)))
+		}
+		var profileRef *raw.ObjectRef
+		if len(oi.DestOutputProfile) > 0 {
+			pr := nextRef()
+			profileRef = &pr
+			pd := raw.Dict()
+			pd.Set(raw.NameLiteral("N"), raw.NumberInt(3))
+			pd.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(oi.DestOutputProfile))))
+			objects[pr] = raw.NewStream(pd, oi.DestOutputProfile)
+		}
+		if profileRef != nil {
+			dict.Set(raw.NameLiteral("DestOutputProfile"), raw.Ref(profileRef.Num, profileRef.Gen))
+		}
+		ref := nextRef()
+		objects[ref] = dict
+		outputIntentRefs = append(outputIntentRefs, ref)
+	}
+
 	// Page content streams
 	contentRefs := []raw.ObjectRef{}
 	annotationRefs := make([][]raw.ObjectRef, len(doc.Pages))
@@ -558,6 +593,13 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		}
 		objects[formRef] = formDict
 		catalogDict.Set(raw.NameLiteral("AcroForm"), raw.Ref(formRef.Num, formRef.Gen))
+	}
+	if len(outputIntentRefs) > 0 {
+		arr := raw.NewArray()
+		for _, ref := range outputIntentRefs {
+			arr.Append(raw.Ref(ref.Num, ref.Gen))
+		}
+		catalogDict.Set(raw.NameLiteral("OutputIntents"), arr)
 	}
 	objects[catalogRef] = catalogDict
 
