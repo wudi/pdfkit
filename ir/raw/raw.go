@@ -91,12 +91,20 @@ type DocumentMetadata struct {
 	Keywords []string
 }
 
+// Permissions describes allowed actions expressed in the parsed document.
+type Permissions struct {
+	Print, Modify, Copy, ModifyAnnotations, FillForms, ExtractAccessible, Assemble, PrintHighQuality bool
+}
+
 // Document is the root container for raw PDF objects.
 type Document struct {
-	Objects  map[ObjectRef]Object
-	Trailer  Dictionary
-	Version  string // e.g., "1.7"
-	Metadata DocumentMetadata
+	Objects           map[ObjectRef]Object
+	Trailer           Dictionary
+	Version           string // e.g., "1.7"
+	Metadata          DocumentMetadata
+	Permissions       Permissions
+	MetadataEncrypted bool
+	Encrypted         bool
 }
 
 // Parser converts bytes into a raw.Document.

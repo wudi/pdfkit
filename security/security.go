@@ -33,6 +33,7 @@ type Handler interface {
 	Decrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error)
 	Encrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error)
 	Permissions() Permissions
+	EncryptMetadata() bool
 }
 
 type HandlerBuilder struct {
@@ -328,6 +329,7 @@ func (noEncryptionHandler) Encrypt(objNum, gen int, data []byte, class DataClass
 func (noEncryptionHandler) Permissions() Permissions {
 	return Permissions{Print: true, Modify: true, Copy: true}
 }
+func (noEncryptionHandler) EncryptMetadata() bool { return false }
 
 // NoopHandler returns a reusable pass-through encryption handler.
 func NoopHandler() Handler { return noEncryptionHandler{} }

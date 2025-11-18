@@ -66,9 +66,12 @@ func (p *DocumentParser) Parse(ctx context.Context, r io.ReaderAt) (*raw.Documen
 	}
 
 	doc := &raw.Document{
-		Objects: make(map[raw.ObjectRef]raw.Object),
-		Trailer: resolver.Trailer(),
-		Version: detectHeaderVersion(r),
+		Objects:           make(map[raw.ObjectRef]raw.Object),
+		Trailer:           resolver.Trailer(),
+		Version:           detectHeaderVersion(r),
+		Permissions:       toRawPermissions(sec.Permissions()),
+		MetadataEncrypted: encryptsMetadata(sec),
+		Encrypted:         sec.IsEncrypted(),
 	}
 
 	for _, objNum := range table.Objects() {
@@ -203,6 +206,26 @@ func stringValue(dict *raw.DictObj, key string) (string, bool) {
 		return "", false
 	}
 	return string(str.Value()), true
+}
+
+func encryptsMetadata(h security.Handler) bool {
+	if h == nil {
+		return false
+	}
+	return h.EncryptMetadata()
+}
+
+func toRawPermissions(p security.Permissions) raw.Permissions {
+	return raw.Permissions{
+		Print:             p.Print,
+		Modify:            p.Modify,
+		Copy:              p.Copy,
+		ModifyAnnotations: p.ModifyAnnotations,
+		FillForms:         p.FillForms,
+		ExtractAccessible: p.ExtractAccessible,
+		Assemble:          p.Assemble,
+		PrintHighQuality:  p.PrintHighQuality,
+	}
 }
 
 func detectHeaderVersion(r io.ReaderAt) string {
