@@ -52,6 +52,14 @@ func (s StringObj) IsIndirect() bool { return false }
 func (s StringObj) Value() []byte    { return s.Bytes }
 func (s StringObj) IsHex() bool      { return false }
 
+// HexStringObj encodes bytes as a hexadecimal string literal.
+type HexStringObj struct{ Bytes []byte }
+
+func (s HexStringObj) Type() string     { return "string" }
+func (s HexStringObj) IsIndirect() bool { return false }
+func (s HexStringObj) Value() []byte    { return s.Bytes }
+func (s HexStringObj) IsHex() bool      { return true }
+
 // Array object
 type ArrayObj struct{ Items []Object }
 
@@ -107,12 +115,13 @@ func (r RefObj) IsIndirect() bool { return true }
 func (r RefObj) Ref() ObjectRef   { return r.R }
 
 // Helpers
-func NameLiteral(v string) NameObj                 { return NameObj{Val: v} }
-func NumberInt(i int64) NumberObj                  { return NumberObj{I: i, IsInt: true} }
-func NumberFloat(f float64) NumberObj              { return NumberObj{F: f, IsInt: false} }
-func Bool(v bool) BoolObj                          { return BoolObj{V: v} }
-func Str(bytes []byte) StringObj                   { return StringObj{Bytes: bytes} }
-func NewArray(items ...Object) *ArrayObj           { return &ArrayObj{Items: items} }
-func Dict() *DictObj                               { return &DictObj{KV: make(map[string]Object)} }
+func NameLiteral(v string) NameObj                    { return NameObj{Val: v} }
+func NumberInt(i int64) NumberObj                     { return NumberObj{I: i, IsInt: true} }
+func NumberFloat(f float64) NumberObj                 { return NumberObj{F: f, IsInt: false} }
+func Bool(v bool) BoolObj                             { return BoolObj{V: v} }
+func Str(bytes []byte) StringObj                      { return StringObj{Bytes: bytes} }
+func HexStr(bytes []byte) HexStringObj                { return HexStringObj{Bytes: bytes} }
+func NewArray(items ...Object) *ArrayObj              { return &ArrayObj{Items: items} }
+func Dict() *DictObj                                  { return &DictObj{KV: make(map[string]Object)} }
 func NewStream(dict *DictObj, data []byte) *StreamObj { return &StreamObj{Dict: dict, Data: data} }
-func Ref(num, gen int) RefObj                      { return RefObj{R: ObjectRef{Num: num, Gen: gen}} }
+func Ref(num, gen int) RefObj                         { return RefObj{R: ObjectRef{Num: num, Gen: gen}} }

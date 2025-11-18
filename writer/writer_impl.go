@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 type impl struct{ interceptors []Interceptor }
@@ -31,7 +32,7 @@ func (w *impl) SerializeObject(ref raw.ObjectRef, obj raw.Object) ([]byte, error
 			buf.Write(serializePrimitive(o.KV[k]))
 		}
 		buf.WriteString(">>\n")
-	case *raw.ArrayObj, raw.NameObj, raw.NumberObj, raw.BoolObj, raw.NullObj, raw.StringObj, *raw.StreamObj, raw.RefObj:
+	case *raw.ArrayObj, raw.NameObj, raw.NumberObj, raw.BoolObj, raw.NullObj, raw.StringObj, raw.HexStringObj, *raw.StreamObj, raw.RefObj:
 		buf.Write(serializePrimitive(o))
 		buf.WriteString("\n")
 	default:
@@ -275,7 +276,12 @@ func serializePrimitive(o raw.Object) []byte {
 		return []byte("false")
 	case raw.NullObj:
 		return []byte("null")
-	case raw.StringObj:
+	case raw.String:
+		if v.IsHex() {
+			dst := make([]byte, hex.EncodedLen(len(v.Value())))
+			hex.Encode(dst, v.Value())
+			return []byte("<" + strings.ToUpper(string(dst)) + ">")
+		}
 		return escapeLiteralString(v.Value())
 	case *raw.ArrayObj:
 		var b bytes.Buffer

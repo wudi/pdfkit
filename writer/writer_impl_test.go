@@ -10,6 +10,7 @@ import (
 
 	"pdflib/builder"
 	"pdflib/ir"
+	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
 	"pdflib/parser"
 	"pdflib/xref"
@@ -276,6 +277,13 @@ func TestWriter_StringEscaping(t *testing.T) {
 	}
 	if !strings.Contains(out, `\(world\)`) {
 		t.Fatalf("escaped parentheses missing")
+	}
+}
+
+func TestSerializePrimitive_HexString(t *testing.T) {
+	out := serializePrimitive(raw.HexStr([]byte{0x00, 0xAB, 0x10, 0xFF}))
+	if string(out) != "<00AB10FF>" {
+		t.Fatalf("unexpected hex string serialization: %s", out)
 	}
 }
 
