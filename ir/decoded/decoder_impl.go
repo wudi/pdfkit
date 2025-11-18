@@ -6,17 +6,15 @@ import (
 
 	"pdflib/filters"
 	"pdflib/ir/raw"
-	"pdflib/security"
 )
 
-// NewDecoder constructs a basic Decoder that applies filters and security handler.
-func NewDecoder(p *filters.Pipeline, sec security.Handler) Decoder {
-	return &decoderImpl{pipeline: p, security: sec}
+// NewDecoder constructs a basic Decoder that applies filter decoding to streams.
+func NewDecoder(p *filters.Pipeline) Decoder {
+	return &decoderImpl{pipeline: p}
 }
 
 type decoderImpl struct {
 	pipeline *filters.Pipeline
-	security security.Handler
 }
 
 func (d *decoderImpl) Decode(ctx context.Context, rawDoc *raw.Document) (*DecodedDocument, error) {
@@ -29,13 +27,6 @@ func (d *decoderImpl) Decode(ctx context.Context, rawDoc *raw.Document) (*Decode
 		}
 
 		data := rawStream.RawData()
-		if d.security != nil && d.security.IsEncrypted() {
-			var err error
-			data, err = d.security.Decrypt(ref.Num, ref.Gen, data)
-			if err != nil {
-				return nil, fmt.Errorf("decrypt %s: %w", ref, err)
-			}
-		}
 
 		names, params := extractFilters(rawStream.Dictionary())
 		if d.pipeline != nil && len(names) > 0 {

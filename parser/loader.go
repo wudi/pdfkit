@@ -53,7 +53,11 @@ func (b *ObjectLoaderBuilder) Build() (ObjectLoader, error) {
 	if b.reader == nil || b.xrefTable == nil {
 		return nil, errors.New("reader and xrefTable required")
 	}
-	return &objectLoader{reader: b.reader, xrefTable: b.xrefTable, scanner: b.scanner, security: b.security, maxDepth: b.maxDepth, cache: b.cache, recovery: b.recovery}, nil
+	sec := b.security
+	if sec == nil {
+		sec = security.NoopHandler()
+	}
+	return &objectLoader{reader: b.reader, xrefTable: b.xrefTable, scanner: b.scanner, security: sec, maxDepth: b.maxDepth, cache: b.cache, recovery: b.recovery}, nil
 }
 
 type objectLoader struct {
@@ -153,7 +157,7 @@ func (o *objectLoader) loadAtOffset(objNum int, offset int64, gen int) (raw.Obje
 			obj = raw.NewStream(dict, copyBytes(streamTok.Value))
 		}
 	}
-	return obj, nil
+	return o.decryptObject(raw.ObjectRef{Num: objNum, Gen: gen}, obj)
 }
 
 func (o *objectLoader) loadFromObjectStream(ctx context.Context, ref raw.ObjectRef, objStreamNum int, idx int) (raw.Object, error) {
@@ -278,6 +282,88 @@ func filtersForStream(d *raw.DictObj) ([]string, []raw.Dictionary) {
 		}
 	}
 	return names, params
+}
+
+func (o *objectLoader) decryptObject(ref raw.ObjectRef, obj raw.Object) (raw.Object, error) {
+	if o.security == nil || !o.security.IsEncrypted() {
+		return obj, nil
+	}
+	switch v := obj.(type) {
+	case raw.StringObj:
+		dec, err := o.security.Decrypt(ref.Num, ref.Gen, v.Value(), security.DataClassString)
+		if err != nil {
+			return nil, err
+		}
+		return raw.StringObj{Bytes: dec}, nil
+	case *raw.ArrayObj:
+		for i, item := range v.Items {
+			dec, err := o.decryptObject(ref, item)
+			if err != nil {
+				return nil, err
+			}
+			v.Items[i] = dec
+		}
+		return v, nil
+	case *raw.DictObj:
+		for key, item := range v.KV {
+			dec, err := o.decryptObject(ref, item)
+			if err != nil {
+				return nil, err
+			}
+			v.KV[key] = dec
+		}
+		return v, nil
+	case *raw.StreamObj:
+		if v.Dict != nil {
+			if _, err := o.decryptObject(ref, v.Dict); err != nil {
+				return nil, err
+			}
+		}
+		if o.shouldDecryptStream(v.Dict) {
+			class := security.DataClassStream
+			if isMetadataStream(v.Dict) {
+				class = security.DataClassMetadataStream
+			}
+			dec, err := o.security.Decrypt(ref.Num, ref.Gen, v.Data, class)
+			if err != nil {
+				return nil, err
+			}
+			v.Data = dec
+			if v.Dict != nil {
+				v.Dict.Set(raw.NameLiteral("Length"), raw.NumberObj{I: int64(len(dec)), IsInt: true})
+			}
+		}
+		return v, nil
+	default:
+		return obj, nil
+	}
+}
+
+func (o *objectLoader) shouldDecryptStream(dict *raw.DictObj) bool {
+	if o.security == nil || !o.security.IsEncrypted() {
+		return false
+	}
+	if dict == nil {
+		return true
+	}
+	if isMetadataStream(dict) {
+		if encMeta, ok := o.security.(interface{ EncryptMetadata() bool }); ok {
+			return encMeta.EncryptMetadata()
+		}
+	}
+	return true
+}
+
+func isMetadataStream(d *raw.DictObj) bool {
+	if d == nil {
+		return false
+	}
+	if v, ok := d.Get(raw.NameObj{Val: "Type"}); ok {
+		if n, ok := v.(raw.NameObj); ok && n.Val == "Metadata" {
+			return true
+		}
+	}
+	return false
 }
 
 // Parsing helpers (duplicated from raw parser for loader-focused parsing).

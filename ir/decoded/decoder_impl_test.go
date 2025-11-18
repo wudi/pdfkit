@@ -35,7 +35,7 @@ func TestDecoderAppliesFilters(t *testing.T) {
 	}
 
 	pipeline := filters.NewPipeline([]filters.Decoder{uppercaseDecoder{}}, filters.Limits{})
-	dec := NewDecoder(pipeline, nil)
+	dec := NewDecoder(pipeline)
 
 	doc, err := dec.Decode(context.Background(), rawDoc)
 	if err != nil {

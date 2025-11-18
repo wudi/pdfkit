@@ -41,10 +41,15 @@ func (p *DocumentParser) Parse(ctx context.Context, r io.ReaderAt) (*raw.Documen
 		return nil, fmt.Errorf("resolve xref: %w", err)
 	}
 
+	sec, err := p.selectSecurity(ctx, r, table, resolver.Trailer())
+	if err != nil {
+		return nil, fmt.Errorf("security setup: %w", err)
+	}
+
 	builder := &ObjectLoaderBuilder{
 		reader:    r,
 		xrefTable: table,
-		security:  p.cfg.Security,
+		security:  sec,
 		maxDepth:  p.cfg.MaxIndirect,
 		cache:     p.cfg.Cache,
 		recovery:  p.cfg.Recovery,
@@ -80,6 +85,67 @@ func (p *DocumentParser) Parse(ctx context.Context, r io.ReaderAt) (*raw.Documen
 		p.populateMetadata(ctx, loader, doc)
 	}
 	return doc, nil
+}
+
+func (p *DocumentParser) selectSecurity(ctx context.Context, r io.ReaderAt, table xref.Table, trailer raw.Dictionary) (security.Handler, error) {
+	if p.cfg.Security != nil {
+		return p.cfg.Security, nil
+	}
+	trailerDict, _ := trailer.(*raw.DictObj)
+	if trailerDict == nil {
+		return security.NoopHandler(), nil
+	}
+	encObj, ok := trailerDict.Get(raw.NameObj{Val: "Encrypt"})
+	if !ok {
+		return security.NoopHandler(), nil
+	}
+	var encDict *raw.DictObj
+	switch v := encObj.(type) {
+	case *raw.DictObj:
+		encDict = v
+	case raw.RefObj:
+		loader, err := (&ObjectLoaderBuilder{
+			reader:    r,
+			xrefTable: table,
+			security:  security.NoopHandler(),
+			maxDepth:  p.cfg.MaxIndirect,
+			cache:     p.cfg.Cache,
+			recovery:  p.cfg.Recovery,
+		}).Build()
+		if err != nil {
+			return nil, err
+		}
+		obj, err := loader.Load(ctx, v.R)
+		if err == nil {
+			encDict, _ = obj.(*raw.DictObj)
+		}
+	}
+	if encDict == nil {
+		return security.NoopHandler(), nil
+	}
+	fileID := fileIDFromTrailer(trailerDict)
+	handler, err := (&security.HandlerBuilder{}).WithEncryptDict(encDict).WithTrailer(trailerDict).WithFileID(fileID).Build()
+	if err != nil {
+		return nil, err
+	}
+	if err := handler.Authenticate(""); err != nil {
+		return nil, err
+	}
+	return handler, nil
+}
+
+func fileIDFromTrailer(trailer *raw.DictObj) []byte {
+	if trailer == nil {
+		return nil
+	}
+	if idObj, ok := trailer.Get(raw.NameObj{Val: "ID"}); ok {
+		if arr, ok := idObj.(*raw.ArrayObj); ok && arr.Len() > 0 {
+			if s, ok := arr.Items[0].(raw.StringObj); ok {
+				return s.Value()
+			}
+		}
+	}
+	return nil
 }
 
 func (p *DocumentParser) populateMetadata(ctx context.Context, loader ObjectLoader, doc *raw.Document) {

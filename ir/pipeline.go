@@ -50,8 +50,7 @@ func (p *Pipeline) Parse(ctx context.Context, r io.ReaderAt) (*semantic.Document
 		return nil, fmt.Errorf("raw parsing failed: %w", err)
 	}
 
-	sec := p.buildSecurity(rawDoc)
-	decoder := decoded.NewDecoder(p.filterPipeline, sec)
+	decoder := decoded.NewDecoder(p.filterPipeline)
 
 	decodedDoc, err := decoder.Decode(ctx, rawDoc)
 	if err != nil {
@@ -64,47 +63,4 @@ func (p *Pipeline) Parse(ctx context.Context, r io.ReaderAt) (*semantic.Document
 	}
 
 	return semDoc, nil
-}
-
-func (p *Pipeline) buildSecurity(rawDoc *raw.Document) security.Handler {
-	if p.securityOverride != nil {
-		return p.securityOverride
-	}
-	trailerDict, _ := rawDoc.Trailer.(*raw.DictObj)
-	if trailerDict == nil {
-		return security.NoopHandler()
-	}
-	encObj, ok := trailerDict.Get(raw.NameObj{Val: "Encrypt"})
-	if !ok {
-		return security.NoopHandler()
-	}
-	var encDict *raw.DictObj
-	switch v := encObj.(type) {
-	case *raw.DictObj:
-		encDict = v
-	case raw.RefObj:
-		if obj, ok := rawDoc.Objects[v.R]; ok {
-			if d, ok := obj.(*raw.DictObj); ok {
-				encDict = d
-			}
-		}
-	}
-	if encDict == nil {
-		return security.NoopHandler()
-	}
-	var fileID []byte
-	if idObj, ok := trailerDict.Get(raw.NameObj{Val: "ID"}); ok {
-		if arr, ok := idObj.(*raw.ArrayObj); ok && arr.Len() > 0 {
-			if s, ok := arr.Items[0].(raw.StringObj); ok {
-				fileID = s.Value()
-			}
-		}
-	}
-	builder := &security.HandlerBuilder{}
-	handler, err := builder.WithEncryptDict(encDict).WithTrailer(trailerDict).WithFileID(fileID).Build()
-	if err != nil {
-		return security.NoopHandler()
-	}
-	_ = handler.Authenticate("") // default empty password
-	return handler
 }

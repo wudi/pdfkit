@@ -5,20 +5,31 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/md5"
+	"crypto/rand"
 	"crypto/rc4"
 	"encoding/binary"
 	"errors"
+	"fmt"
 
 	"pdflib/ir/raw"
 )
 
 type Permissions struct{ Print, Modify, Copy, ModifyAnnotations, FillForms, ExtractAccessible, Assemble, PrintHighQuality bool }
 
+// DataClass identifies the kind of payload being encrypted or decrypted.
+type DataClass int
+
+const (
+	DataClassStream DataClass = iota
+	DataClassString
+	DataClassMetadataStream
+)
+
 type Handler interface {
 	IsEncrypted() bool
 	Authenticate(password string) error
-	Decrypt(objNum, gen int, data []byte) ([]byte, error)
-	Encrypt(objNum, gen int, data []byte) ([]byte, error)
+	Decrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error)
+	Encrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error)
 	Permissions() Permissions
 }
 
@@ -64,6 +75,9 @@ func (b *HandlerBuilder) Build() (Handler, error) {
 	if n, ok := numberVal(b.encryptDict, "Length"); ok && n > 0 {
 		keyLen = int(n)
 	}
+	if v >= 4 && keyLen < 128 {
+		keyLen = 128
+	}
 	if keyLen%8 != 0 {
 		return nil, errors.New("encryption length must be multiple of 8")
 	}
@@ -80,7 +94,28 @@ func (b *HandlerBuilder) Build() (Handler, error) {
 			}
 		}
 	}
-	useAES := v >= 4
+	encryptMeta := true
+	if v, ok := boolVal(b.encryptDict, "EncryptMetadata"); ok {
+		encryptMeta = v
+	}
+
+	baseAlgo := algoRC4
+	if v >= 4 {
+		baseAlgo = algoAES
+	}
+	cryptFilters, err := parseCryptFilters(b.encryptDict, baseAlgo)
+	if err != nil {
+		return nil, err
+	}
+	streamAlgo, err := resolveCryptFilter(b.encryptDict, "StmF", baseAlgo, cryptFilters)
+	if err != nil {
+		return nil, err
+	}
+	stringAlgo, err := resolveCryptFilter(b.encryptDict, "StrF", baseAlgo, cryptFilters)
+	if err != nil {
+		return nil, err
+	}
+	useAES := streamAlgo == algoAES || stringAlgo == algoAES || baseAlgo == algoAES
 	h := &standardHandler{
 		v:           int(v),
 		r:           int(r),
@@ -89,11 +124,22 @@ func (b *HandlerBuilder) Build() (Handler, error) {
 		user:        user,
 		p:           int32(pVal),
 		fileID:      id,
-		encryptMeta: true,
+		encryptMeta: encryptMeta,
 		useAES:      useAES,
+		streamAlgo:  streamAlgo,
+		stringAlgo:  stringAlgo,
 	}
 	return h, nil
 }
+
+type cryptAlgo int
+
+const (
+	algoUnset cryptAlgo = iota
+	algoNone
+	algoRC4
+	algoAES
+)
 
 type standardHandler struct {
 	key         []byte
@@ -107,9 +153,14 @@ type standardHandler struct {
 	encryptMeta bool
 	authed      bool
 	useAES      bool
+	streamAlgo  cryptAlgo
+	stringAlgo  cryptAlgo
 }
 
 func (h *standardHandler) IsEncrypted() bool { return true }
+func (h *standardHandler) EncryptMetadata() bool {
+	return h.encryptMeta
+}
 
 func (h *standardHandler) Authenticate(password string) error {
 	key, err := deriveKey([]byte(password), h.owner, h.p, h.fileID, h.lengthBits/8, h.r)
@@ -126,30 +177,55 @@ func (h *standardHandler) Authenticate(password string) error {
 	return nil
 }
 
-func (h *standardHandler) Decrypt(objNum, gen int, data []byte) ([]byte, error) {
+func (h *standardHandler) Decrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error) {
 	if !h.authed {
 		if err := h.Authenticate(""); err != nil {
 			return nil, err
 		}
 	}
-	key := objectKey(h.key, objNum, gen, h.r, h.useAES)
-	if h.useAES {
+	algo := h.pickAlgo(class)
+	if algo == algoNone || len(data) == 0 {
+		return data, nil
+	}
+	key := objectKey(h.key, objNum, gen, h.r, algo == algoAES)
+	if algo == algoAES {
 		return aesCrypt(key, data, false)
 	}
 	return rc4Crypt(key, data)
 }
 
-func (h *standardHandler) Encrypt(objNum, gen int, data []byte) ([]byte, error) {
+func (h *standardHandler) Encrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error) {
 	if !h.authed {
 		if err := h.Authenticate(""); err != nil {
 			return nil, err
 		}
 	}
-	key := objectKey(h.key, objNum, gen, h.r, h.useAES)
-	if h.useAES {
+	algo := h.pickAlgo(class)
+	if algo == algoNone || len(data) == 0 {
+		return data, nil
+	}
+	key := objectKey(h.key, objNum, gen, h.r, algo == algoAES)
+	if algo == algoAES {
 		return aesCrypt(key, data, true)
 	}
 	return rc4Crypt(key, data)
+}
+
+func (h *standardHandler) pickAlgo(class DataClass) cryptAlgo {
+	switch class {
+	case DataClassString:
+		if h.stringAlgo != algoUnset {
+			return h.stringAlgo
+		}
+	case DataClassStream, DataClassMetadataStream:
+		if h.streamAlgo != algoUnset {
+			return h.streamAlgo
+		}
+	}
+	if h.useAES {
+		return algoAES
+	}
+	return algoRC4
 }
 
 func (h *standardHandler) Permissions() Permissions {
@@ -167,10 +243,14 @@ func (h *standardHandler) Permissions() Permissions {
 
 type noEncryptionHandler struct{}
 
-func (noEncryptionHandler) IsEncrypted() bool                                    { return false }
-func (noEncryptionHandler) Authenticate(password string) error                   { return nil }
-func (noEncryptionHandler) Decrypt(objNum, gen int, data []byte) ([]byte, error) { return data, nil }
-func (noEncryptionHandler) Encrypt(objNum, gen int, data []byte) ([]byte, error) { return data, nil }
+func (noEncryptionHandler) IsEncrypted() bool                  { return false }
+func (noEncryptionHandler) Authenticate(password string) error { return nil }
+func (noEncryptionHandler) Decrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error) {
+	return data, nil
+}
+func (noEncryptionHandler) Encrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error) {
+	return data, nil
+}
 func (noEncryptionHandler) Permissions() Permissions {
 	return Permissions{Print: true, Modify: true, Copy: true}
 }
@@ -246,6 +326,61 @@ func checkUserPassword(key []byte, userEntry []byte, fileID []byte, r int) bool 
 	return len(userEntry) >= 16 && comparePrefix(val[:16], userEntry[:16])
 }
 
+func parseCryptFilters(dict raw.Dictionary, base cryptAlgo) (map[string]cryptAlgo, error) {
+	out := make(map[string]cryptAlgo)
+	if dict == nil {
+		return out, nil
+	}
+	cfObj, ok := dict.Get(raw.NameObj{Val: "CF"})
+	if !ok {
+		return out, nil
+	}
+	cfDict, ok := cfObj.(*raw.DictObj)
+	if !ok {
+		return nil, errors.New("CF must be a dictionary")
+	}
+	for name, obj := range cfDict.KV {
+		entry, ok := obj.(*raw.DictObj)
+		if !ok {
+			return nil, errors.New("crypt filter entry must be a dictionary")
+		}
+		algo := base
+		if cfmObj, ok := entry.Get(raw.NameObj{Val: "CFM"}); ok {
+			if cfmName, ok := cfmObj.(raw.NameObj); ok {
+				switch cfmName.Val {
+				case "V2":
+					algo = algoRC4
+				case "AESV2":
+					algo = algoAES
+				case "None":
+					algo = algoNone
+				default:
+					return nil, fmt.Errorf("unsupported crypt filter method %s", cfmName.Val)
+				}
+			}
+		}
+		out[name] = algo
+	}
+	return out, nil
+}
+
+func resolveCryptFilter(dict raw.Dictionary, key string, base cryptAlgo, filters map[string]cryptAlgo) (cryptAlgo, error) {
+	name := nameVal(dict, key)
+	if name == "" || name == "Standard" {
+		if algo, ok := filters["Standard"]; ok {
+			return algo, nil
+		}
+		return base, nil
+	}
+	if name == "Identity" {
+		return algoNone, nil
+	}
+	if algo, ok := filters[name]; ok {
+		return algo, nil
+	}
+	return algoUnset, fmt.Errorf("crypt filter %s not defined", name)
+}
+
 func objectKey(fileKey []byte, objNum, gen int, r int, useAES bool) []byte {
 	key := append([]byte{}, fileKey...)
 	var objBuf [3]byte
@@ -298,8 +433,10 @@ func aesCrypt(key []byte, data []byte, encrypt bool) ([]byte, error) {
 		return nil, err
 	}
 	if encrypt {
-		// prepend random IV is omitted for determinism; use zero IV for now.
 		iv := make([]byte, aes.BlockSize)
+		if _, err := rand.Read(iv); err != nil {
+			return nil, err
+		}
 		padLen := aes.BlockSize - (len(data) % aes.BlockSize)
 		if padLen == 0 {
 			padLen = aes.BlockSize
@@ -367,4 +504,28 @@ func stringBytes(dict raw.Dictionary, key string) ([]byte, bool) {
 		}
 	}
 	return nil, false
+}
+
+func boolVal(dict raw.Dictionary, key string) (bool, bool) {
+	if dict == nil {
+		return false, false
+	}
+	if v, ok := dict.Get(raw.NameObj{Val: key}); ok {
+		if b, ok := v.(raw.BoolObj); ok {
+			return b.V, true
+		}
+	}
+	return false, false
+}
+
+func nameVal(dict raw.Dictionary, key string) string {
+	if dict == nil {
+		return ""
+	}
+	if v, ok := dict.Get(raw.NameObj{Val: key}); ok {
+		if n, ok := v.(raw.NameObj); ok {
+			return n.Val
+		}
+	}
+	return ""
 }
