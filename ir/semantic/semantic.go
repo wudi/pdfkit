@@ -99,6 +99,8 @@ type Resources struct {
 // Font represents a font resource.
 type Font struct {
 	BaseFont string
+	Encoding string
+	Widths   map[int]int // character code -> width
 	ref      raw.ObjectRef
 }
 

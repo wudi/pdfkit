@@ -525,6 +525,62 @@ func TestWriter_ContentStreamJPXJBIG2(t *testing.T) {
 	}
 }
 
+func TestWriter_FontWidths(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 10, URY: 10},
+				Resources: &semantic.Resources{
+					Fonts: map[string]*semantic.Font{
+						"F1": {BaseFont: "Helvetica", Widths: map[int]int{65: 500, 66: 505}},
+					},
+				},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	foundWidths := false
+	for _, obj := range rawDoc.Objects {
+		d, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		if tval, ok := d.Get(raw.NameLiteral("Type")); !ok {
+			continue
+		} else if n, ok := tval.(raw.NameObj); !ok || n.Value() != "Font" {
+			continue
+		}
+		if fc, ok := d.Get(raw.NameLiteral("FirstChar")); ok {
+			if fi, ok := fc.(raw.NumberObj); ok && fi.Int() == 65 {
+				lc, _ := d.Get(raw.NameLiteral("LastChar"))
+				if li, ok := lc.(raw.NumberObj); ok && li.Int() == 66 {
+					widthsVal, _ := d.Get(raw.NameLiteral("Widths"))
+					if arr, ok := widthsVal.(*raw.ArrayObj); ok && arr.Len() == 2 {
+						if w1, ok := arr.Items[0].(raw.NumberObj); ok && w1.Int() == 500 {
+							if w2, ok := arr.Items[1].(raw.NumberObj); ok && w2.Int() == 505 {
+								foundWidths = true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if !foundWidths {
+		t.Fatalf("font widths not found")
+	}
+}
+
 func TestWriter_EncryptDictionary(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{

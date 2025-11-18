@@ -9,6 +9,7 @@ import (
 	"encoding/ascii85"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
 	"regexp"
@@ -65,11 +66,17 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	xobjectRefs := map[string]raw.ObjectRef{}
 	patternRefs := map[string]raw.ObjectRef{}
 	shadingRefs := map[string]raw.ObjectRef{}
-	ensureFont := func(base string) raw.ObjectRef {
-		if base == "" {
-			base = "Helvetica"
+	ensureFont := func(font *semantic.Font) raw.ObjectRef {
+		base := "Helvetica"
+		encoding := ""
+		if font != nil {
+			if font.BaseFont != "" {
+				base = font.BaseFont
+			}
+			encoding = font.Encoding
 		}
-		if ref, ok := fontRefs[base]; ok {
+		key := fontKey(base, encoding, font)
+		if ref, ok := fontRefs[key]; ok {
 			return ref
 		}
 		ref := nextRef()
@@ -77,8 +84,17 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		fontDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Font"))
 		fontDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral("Type1"))
 		fontDict.Set(raw.NameLiteral("BaseFont"), raw.NameLiteral(base))
+		if encoding != "" {
+			fontDict.Set(raw.NameLiteral("Encoding"), raw.NameLiteral(encoding))
+		}
+		if font != nil && len(font.Widths) > 0 {
+			first, last, widthsArr := encodeWidths(font.Widths)
+			fontDict.Set(raw.NameLiteral("FirstChar"), raw.NumberInt(int64(first)))
+			fontDict.Set(raw.NameLiteral("LastChar"), raw.NumberInt(int64(last)))
+			fontDict.Set(raw.NameLiteral("Widths"), widthsArr)
+		}
 		objects[ref] = fontDict
-		fontRefs[base] = ref
+		fontRefs[key] = ref
 		return ref
 	}
 	ensureXObject := func(name string, xo semantic.XObject) raw.ObjectRef {
@@ -381,14 +397,12 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		fontResDict := raw.Dict()
 		if p.Resources != nil && len(p.Resources.Fonts) > 0 {
 			for name, font := range p.Resources.Fonts {
-				fRef := ensureFont(font.BaseFont)
+				fRef := ensureFont(font)
 				fontResDict.Set(raw.NameLiteral(name), raw.Ref(fRef.Num, fRef.Gen))
-				if _, ok := unionFonts.KV[name]; !ok {
-					unionFonts.Set(raw.NameLiteral(name), raw.Ref(fRef.Num, fRef.Gen))
-				}
+				unionFonts.Set(raw.NameLiteral(name), raw.Ref(fRef.Num, fRef.Gen))
 			}
 		} else {
-			fRef := ensureFont("Helvetica")
+			fRef := ensureFont(nil)
 			fontResDict.Set(raw.NameLiteral("F1"), raw.Ref(fRef.Num, fRef.Gen))
 			if _, ok := unionFonts.KV["F1"]; !ok {
 				unionFonts.Set(raw.NameLiteral("F1"), raw.Ref(fRef.Num, fRef.Gen))
@@ -1094,6 +1108,48 @@ func patternKey(name string, p semantic.Pattern) string {
 	h.Write([]byte(fmt.Sprintf("%f-%f-%f-%f-%f-%f", p.BBox.LLX, p.BBox.LLY, p.BBox.URX, p.BBox.URY, p.XStep, p.YStep)))
 	h.Write(p.Content)
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func fontKey(base, encoding string, font *semantic.Font) string {
+	h := sha256.New()
+	h.Write([]byte(base))
+	h.Write([]byte(encoding))
+	if font != nil {
+		keys := make([]int, 0, len(font.Widths))
+		for k := range font.Widths {
+			keys = append(keys, k)
+		}
+		sort.Ints(keys)
+		for _, k := range keys {
+			h.Write([]byte(fmt.Sprintf("%d:%d", k, font.Widths[k])))
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func encodeWidths(widths map[int]int) (first, last int, arr *raw.ArrayObj) {
+	if len(widths) == 0 {
+		return 0, 0, raw.NewArray()
+	}
+	first = math.MaxInt32
+	last = -1
+	for k := range widths {
+		if k < first {
+			first = k
+		}
+		if k > last {
+			last = k
+		}
+	}
+	arr = raw.NewArray()
+	for i := first; i <= last; i++ {
+		if w, ok := widths[i]; ok {
+			arr.Append(raw.NumberInt(int64(w)))
+		} else {
+			arr.Append(raw.NumberInt(0))
+		}
+	}
+	return first, last, arr
 }
 
 func shadingKey(name string, s semantic.Shading) string {
