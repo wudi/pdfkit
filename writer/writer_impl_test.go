@@ -1622,6 +1622,56 @@ func TestWriter_OutlinesDest(t *testing.T) {
 	}
 }
 
+func TestWriter_ComplianceFlags(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+		Lang:   "en-US",
+		Marked: true,
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	foundLang := false
+	foundMark := false
+	for _, obj := range rawDoc.Objects {
+		if d, ok := obj.(*raw.DictObj); ok {
+			if typ, ok := d.Get(raw.NameLiteral("Type")); ok {
+				if n, ok := typ.(raw.NameObj); ok && n.Value() == "Catalog" {
+					if lang, ok := d.Get(raw.NameLiteral("Lang")); ok {
+						if s, ok := lang.(raw.StringObj); ok && string(s.Value()) == "en-US" {
+							foundLang = true
+						}
+					}
+					if mk, ok := d.Get(raw.NameLiteral("MarkInfo")); ok {
+						if md, ok := mk.(*raw.DictObj); ok {
+							if marked, ok := md.Get(raw.NameLiteral("Marked")); ok {
+								if b, ok := marked.(raw.BoolObj); ok && b.Value() {
+									foundMark = true
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if !foundLang {
+		t.Fatalf("catalog Lang missing or mismatched")
+	}
+	if !foundMark {
+		t.Fatalf("MarkInfo not set")
+	}
+}
+
 func TestWriter_ArticleThreads(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{

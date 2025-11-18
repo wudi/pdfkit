@@ -13,6 +13,8 @@ type Document struct {
 	Catalog           *Catalog
 	Info              *DocumentInfo
 	Metadata          *XMPMetadata
+	Lang              string
+	Marked            bool
 	PageLabels        map[int]string // page index -> prefix
 	Outlines          []OutlineItem
 	Articles          []ArticleThread

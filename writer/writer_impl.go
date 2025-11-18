@@ -690,6 +690,14 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		objects[structRef] = structDict
 		catalogDict.Set(raw.NameLiteral("StructTreeRoot"), raw.Ref(structRef.Num, structRef.Gen))
 	}
+	if doc.Lang != "" {
+		catalogDict.Set(raw.NameLiteral("Lang"), raw.Str([]byte(doc.Lang)))
+	}
+	if doc.Marked || doc.StructTree != nil {
+		mark := raw.Dict()
+		mark.Set(raw.NameLiteral("Marked"), raw.Bool(true))
+		catalogDict.Set(raw.NameLiteral("MarkInfo"), mark)
+	}
 	if metadataRef != nil {
 		catalogDict.Set(raw.NameLiteral("Metadata"), raw.Ref(metadataRef.Num, metadataRef.Gen))
 	}
