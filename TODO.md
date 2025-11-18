@@ -11,4 +11,4 @@ Status key: Not started / In progress / Done.
 - [ ] Annotations & forms: annotations (links/text/widgets) with appearance streams; AcroForm fields/apparences/NeedAppearances. Status: Not started.
 - [ ] Encryption/security: Encrypt dictionary with Standard handler (keys/permissions); embedded file specs if needed. Status: Not started.
 - [ ] Compliance: PDF/A tagging (StructTreeRoot), role maps, font consistency, OutputIntents, downgrade/clip to target level. Status: Not started.
-- [ ] Validation/robustness: length bounds, offset consistency, deterministic ordering, malformed stream avoidance, readback tests. Status: Not started.
+- [ ] Validation/robustness: length bounds, offset consistency, deterministic ordering, malformed stream avoidance, readback tests. Status: In progress (xref table startxref offsets validated; deterministic ordering for dict keys and IDs in place).

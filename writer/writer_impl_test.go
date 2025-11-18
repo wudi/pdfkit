@@ -205,6 +205,43 @@ func TestWriter_XRefStream(t *testing.T) {
 	}
 }
 
+func TestWriter_XRefTableOffsets(t *testing.T) {
+	b := builder.NewBuilder()
+	b.NewPage(80, 80).DrawText("table", 2, 2, builder.TextOptions{}).Finish()
+	doc, err := b.Build()
+	if err != nil {
+		t.Fatalf("build doc: %v", err)
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true, XRefStreams: false}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	data := buf.Bytes()
+	start := startXRef(data)
+	if start <= 0 || start >= int64(len(data)) {
+		t.Fatalf("invalid startxref: %d", start)
+	}
+	if !bytes.HasPrefix(data[start:], []byte("xref")) {
+		t.Fatalf("startxref does not point to xref table")
+	}
+	res := xref.NewResolver(xref.ResolverConfig{})
+	table, err := res.Resolve(context.Background(), bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("resolve xref table: %v", err)
+	}
+	if table.Type() != "table" && table.Type() != "xref-table" {
+		t.Fatalf("expected xref table, got %s", table.Type())
+	}
+	off, gen, ok := table.Lookup(1)
+	if !ok || off == 0 || gen != 0 {
+		t.Fatalf("catalog offset missing: off=%d gen=%d ok=%v", off, gen, ok)
+	}
+	if off >= int64(len(data)) || !bytes.HasPrefix(data[off:], []byte("1 0 obj")) {
+		t.Fatalf("offset does not point to catalog object")
+	}
+}
+
 func TestWriter_IncrementalAppend(t *testing.T) {
 	var buf bytes.Buffer
 	w := (&WriterBuilder{}).Build()
