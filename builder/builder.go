@@ -13,6 +13,9 @@ type PDFBuilder interface {
 	AddPage(page *semantic.Page) PDFBuilder
 	SetInfo(info *semantic.DocumentInfo) PDFBuilder
 	SetMetadata(xmp []byte) PDFBuilder
+	SetLanguage(lang string) PDFBuilder
+	SetMarked(marked bool) PDFBuilder
+	AddPageLabel(pageIndex int, prefix string) PDFBuilder
 	RegisterFont(name string, font *semantic.Font) PDFBuilder
 	Build() (*semantic.Document, error)
 }
@@ -84,6 +87,9 @@ type builderImpl struct {
 	pages        []*semantic.Page
 	info         *semantic.DocumentInfo
 	metadata     []byte
+	lang         string
+	marked       bool
+	pageLabels   map[int]string
 	fonts        map[string]*semantic.Font
 	defaultFont  string
 	xobjectCount int
@@ -124,6 +130,24 @@ func (b *builderImpl) SetMetadata(xmp []byte) PDFBuilder {
 	return b
 }
 
+func (b *builderImpl) SetLanguage(lang string) PDFBuilder {
+	b.lang = lang
+	return b
+}
+
+func (b *builderImpl) SetMarked(marked bool) PDFBuilder {
+	b.marked = marked
+	return b
+}
+
+func (b *builderImpl) AddPageLabel(pageIndex int, prefix string) PDFBuilder {
+	if b.pageLabels == nil {
+		b.pageLabels = make(map[int]string)
+	}
+	b.pageLabels[pageIndex] = prefix
+	return b
+}
+
 func (b *builderImpl) RegisterFont(name string, font *semantic.Font) PDFBuilder {
 	if b.fonts == nil {
 		b.fonts = make(map[string]*semantic.Font)
@@ -140,8 +164,13 @@ func (b *builderImpl) Build() (*semantic.Document, error) {
 		p.Index = i
 	}
 	doc := &semantic.Document{
-		Pages: b.pages,
-		Info:  b.info,
+		Pages:  b.pages,
+		Info:   b.info,
+		Lang:   b.lang,
+		Marked: b.marked,
+	}
+	if len(b.pageLabels) > 0 {
+		doc.PageLabels = b.pageLabels
 	}
 	if len(b.metadata) > 0 {
 		doc.Metadata = &semantic.XMPMetadata{Raw: b.metadata}

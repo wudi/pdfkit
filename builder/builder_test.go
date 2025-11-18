@@ -151,3 +151,27 @@ func TestBuilder_PageBoxesAnnotations(t *testing.T) {
 		t.Fatalf("annotation not added correctly: %+v", page.Annotations)
 	}
 }
+
+func TestBuilder_MetadataHelpers(t *testing.T) {
+	b := NewBuilder().
+		SetLanguage("en-US").
+		SetMarked(true).
+		AddPageLabel(0, "i.").
+		AddPageLabel(1, "A.")
+	b.NewPage(10, 10).Finish()
+	b.NewPage(10, 10).Finish()
+
+	doc, err := b.Build()
+	if err != nil {
+		t.Fatalf("build doc: %v", err)
+	}
+	if doc.Lang != "en-US" {
+		t.Fatalf("lang not propagated: %s", doc.Lang)
+	}
+	if !doc.Marked {
+		t.Fatalf("marked flag not set")
+	}
+	if doc.PageLabels == nil || doc.PageLabels[0] != "i." || doc.PageLabels[1] != "A." {
+		t.Fatalf("page labels not set correctly: %+v", doc.PageLabels)
+	}
+}

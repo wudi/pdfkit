@@ -17,6 +17,6 @@ Status key: Not started / In progress / Done.
 
 Status key: Not started / In progress / Done.
 
-- [ ] Builder metadata helpers: expose document-level language (Lang), tagged flag (Marked), and page labels to align builder with semantic.Document fields from design.md.
+- [x] Builder metadata helpers: expose document-level language (Lang), tagged flag (Marked), and page labels to align builder with semantic.Document fields from design.md. Status: Done (SetLanguage/SetMarked/AddPageLabel added and covered by builder test).
 - [ ] Builder outlines: fluent helpers to add outline/bookmark entries that target builder-created pages with XYZ destinations.
 - [ ] Builder encryption: convenience setter for owner/user passwords, permissions, and metadata encryption flag to populate semantic.Document encryption fields.
