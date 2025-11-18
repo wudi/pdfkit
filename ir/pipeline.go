@@ -29,6 +29,7 @@ func NewDefault() *Pipeline {
 		[]filters.Decoder{
 			filters.NewFlateDecoder(),
 			filters.NewLZWDecoder(),
+			filters.NewRunLengthDecoder(),
 			filters.NewASCII85Decoder(),
 			filters.NewASCIIHexDecoder(),
 		},

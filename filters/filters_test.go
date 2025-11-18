@@ -92,6 +92,19 @@ func TestLZWDecodeWithPredictor(t *testing.T) {
 	}
 }
 
+func TestRunLengthDecode(t *testing.T) {
+	// literal run of 3 bytes (len=2), then repeat 'A' 2 times (len=255 => count=2), then EOD 128
+	data := []byte{2, 'h', 'i', '!', 255, 'A', 128}
+	dec := NewRunLengthDecoder()
+	out, err := dec.Decode(context.Background(), data, nil)
+	if err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if string(out) != "hi!AA" {
+		t.Fatalf("unexpected output: %q", out)
+	}
+}
+
 func TestASCII85Decode(t *testing.T) {
 	dec := NewASCII85Decoder()
 	out, err := dec.Decode(context.Background(), []byte("<~87cURD_*#4DfTZ)+T~>"), nil)

@@ -103,6 +103,45 @@ func (lzwDecoder) Decode(ctx context.Context, in []byte, params raw.Dictionary) 
 }
 func NewLZWDecoder() Decoder { return lzwDecoder{} }
 
+type runLengthDecoder struct{}
+
+func (runLengthDecoder) Name() string { return "RunLengthDecode" }
+func (runLengthDecoder) Decode(ctx context.Context, in []byte, params raw.Dictionary) ([]byte, error) {
+	var out bytes.Buffer
+	for i := 0; i < len(in); {
+		b := in[i]
+		if b == 128 { // EOD marker
+			break
+		}
+		if i+1 >= len(in) {
+			return nil, errors.New("runlength truncated")
+		}
+		i++
+		if b <= 127 {
+			// length is (n) => copy n+1 literal bytes
+			lit := int(b) + 1
+			if i+lit > len(in) {
+				return nil, errors.New("runlength literal overrun")
+			}
+			out.Write(in[i : i+lit])
+			i += lit
+		} else {
+			// replicate next byte (257 - length) times
+			val := in[i]
+			i++
+			count := 257 - int(b)
+			if count < 0 {
+				return nil, errors.New("runlength invalid count")
+			}
+			for j := 0; j < count; j++ {
+				out.WriteByte(val)
+			}
+		}
+	}
+	return applyPredictor(out.Bytes(), params)
+}
+func NewRunLengthDecoder() Decoder { return runLengthDecoder{} }
+
 type ascii85Decoder struct{}
 
 func (ascii85Decoder) Name() string { return "ASCII85Decode" }

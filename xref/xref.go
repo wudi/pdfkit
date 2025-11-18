@@ -373,6 +373,7 @@ func parseXRefStream(ctx context.Context, data []byte, offset int64, cfg Resolve
 		p := filters.NewPipeline([]filters.Decoder{
 			filters.NewFlateDecoder(),
 			filters.NewLZWDecoder(),
+			filters.NewRunLengthDecoder(),
 			filters.NewASCII85Decoder(),
 			filters.NewASCIIHexDecoder(),
 		}, filters.Limits{})

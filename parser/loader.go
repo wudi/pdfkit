@@ -188,6 +188,7 @@ func (o *objectLoader) loadFromObjectStream(ctx context.Context, ref raw.ObjectR
 		p := filters.NewPipeline([]filters.Decoder{
 			filters.NewFlateDecoder(),
 			filters.NewLZWDecoder(),
+			filters.NewRunLengthDecoder(),
 			filters.NewASCII85Decoder(),
 			filters.NewASCIIHexDecoder(),
 		}, filters.Limits{})
