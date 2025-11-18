@@ -7,6 +7,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/rc4"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -37,6 +38,10 @@ type HandlerBuilder struct {
 	encryptDict raw.Dictionary
 	trailer     raw.Dictionary
 	fileID      []byte
+	ue          []byte
+	oe          []byte
+	uEntry      []byte
+	oEntry      []byte
 }
 
 func (b *HandlerBuilder) WithEncryptDict(d raw.Dictionary) *HandlerBuilder {
@@ -61,17 +66,20 @@ func (b *HandlerBuilder) Build() (Handler, error) {
 	if v == 0 {
 		v = 1
 	}
-	if v > 4 {
-		return nil, errors.New("encryption V>4 not supported")
+	if v > 6 {
+		return nil, errors.New("encryption V>6 not supported")
 	}
 	r := int64(2)
 	if n, ok := numberVal(b.encryptDict, "R"); ok {
 		r = n
 	}
-	if r > 5 {
-		return nil, errors.New("encryption R>5 not supported")
+	if r > 6 {
+		return nil, errors.New("encryption R>6 not supported")
 	}
 	keyLen := 40
+	if v >= 5 {
+		keyLen = 256
+	}
 	if n, ok := numberVal(b.encryptDict, "Length"); ok && n > 0 {
 		keyLen = int(n)
 	}
@@ -83,6 +91,10 @@ func (b *HandlerBuilder) Build() (Handler, error) {
 	}
 	owner, _ := stringBytes(b.encryptDict, "O")
 	user, _ := stringBytes(b.encryptDict, "U")
+	oe, _ := stringBytes(b.encryptDict, "OE")
+	ue, _ := stringBytes(b.encryptDict, "UE")
+	oEntry := owner
+	uEntry := user
 	pVal, _ := numberVal(b.encryptDict, "P")
 	id := b.fileID
 	if len(id) == 0 && b.trailer != nil {
@@ -122,12 +134,17 @@ func (b *HandlerBuilder) Build() (Handler, error) {
 		lengthBits:  keyLen,
 		owner:       owner,
 		user:        user,
+		oEntry:      oEntry,
+		uEntry:      uEntry,
+		oe:          oe,
+		ue:          ue,
 		p:           int32(pVal),
 		fileID:      id,
 		encryptMeta: encryptMeta,
 		useAES:      useAES,
 		streamAlgo:  streamAlgo,
 		stringAlgo:  stringAlgo,
+		trailer:     b.trailer,
 	}
 	return h, nil
 }
@@ -148,6 +165,10 @@ type standardHandler struct {
 	lengthBits  int
 	owner       []byte
 	user        []byte
+	oEntry      []byte
+	uEntry      []byte
+	oe          []byte
+	ue          []byte
 	p           int32
 	fileID      []byte
 	encryptMeta bool
@@ -155,6 +176,7 @@ type standardHandler struct {
 	useAES      bool
 	streamAlgo  cryptAlgo
 	stringAlgo  cryptAlgo
+	trailer     raw.Dictionary
 }
 
 func (h *standardHandler) IsEncrypted() bool { return true }
@@ -163,6 +185,13 @@ func (h *standardHandler) EncryptMetadata() bool {
 }
 
 func (h *standardHandler) Authenticate(password string) error {
+	if h.v >= 5 || h.r >= 5 {
+		if err := h.authenticateAES256([]byte(password)); err != nil {
+			return err
+		}
+		h.authed = true
+		return nil
+	}
 	key, err := deriveKey([]byte(password), h.owner, h.p, h.fileID, h.lengthBits/8, h.r)
 	if err != nil {
 		return err
@@ -241,6 +270,50 @@ func (h *standardHandler) Permissions() Permissions {
 	}
 }
 
+func (h *standardHandler) authenticateAES256(pwd []byte) error {
+	if len(h.uEntry) >= 48 && len(h.ue) >= 32 {
+		if key, ok, err := deriveAES256User(pwd, h.uEntry, h.ue, h.fileID); err == nil && ok {
+			h.key = key
+			h.setPermsFromEncrypted()
+			return nil
+		}
+	}
+	if len(h.oEntry) >= 48 && len(h.oe) >= 32 && len(h.uEntry) >= 48 {
+		if key, ok, err := deriveAES256Owner(pwd, h.oEntry, h.oe, h.uEntry); err == nil && ok {
+			h.key = key
+			h.setPermsFromEncrypted()
+			return nil
+		}
+	}
+	return errors.New("invalid password")
+}
+
+func (h *standardHandler) setPermsFromEncrypted() {
+	if h.key == nil {
+		return
+	}
+	if h.p != 0 {
+		return
+	}
+	if permsObj, ok := h.trailerPerms(); ok {
+		if pval, err := decryptPermsAES256(h.key, permsObj); err == nil {
+			h.p = pval
+		}
+	}
+}
+
+func (h *standardHandler) trailerPerms() ([]byte, bool) {
+	if h.trailer == nil {
+		return nil, false
+	}
+	if v, ok := h.trailer.Get(raw.NameObj{Val: "Perms"}); ok {
+		if s, ok := v.(raw.StringObj); ok {
+			return s.Value(), true
+		}
+	}
+	return nil, false
+}
+
 type noEncryptionHandler struct{}
 
 func (noEncryptionHandler) IsEncrypted() bool                  { return false }
@@ -273,6 +346,15 @@ func padPassword(pwd []byte) []byte {
 		copy(padded[len(pwd):], passwordPadding[:32-len(pwd)])
 	}
 	return padded
+}
+
+func padPasswordRev6(pwd []byte) []byte {
+	if len(pwd) > 127 {
+		return pwd[:127]
+	}
+	out := make([]byte, len(pwd))
+	copy(out, pwd)
+	return out
 }
 
 func deriveKey(pwd, owner []byte, pVal int32, fileID []byte, keyLenBytes int, r int) ([]byte, error) {
@@ -324,6 +406,44 @@ func checkUserPassword(key []byte, userEntry []byte, fileID []byte, r int) bool 
 		val = rc4Simple(tmpKey, val)
 	}
 	return len(userEntry) >= 16 && comparePrefix(val[:16], userEntry[:16])
+}
+
+// AES-256 (R>=5) derivation for user password per ISO 32000-2 (simplified to SHA-256 hash).
+func deriveAES256User(pwd []byte, uEntry []byte, ue []byte, fileID []byte) ([]byte, bool, error) {
+	if len(uEntry) < 48 || len(ue) < 16 {
+		return nil, false, errors.New("user entry too short")
+	}
+	validationSalt := uEntry[32:40]
+	keySalt := uEntry[40:48]
+	hashVal := sha256.Sum256(append(append(padPasswordRev6(pwd), validationSalt...), fileID...))
+	if !comparePrefix(hashVal[:], uEntry[:32]) {
+		return nil, false, nil
+	}
+	keyHash := sha256.Sum256(append(append(padPasswordRev6(pwd), keySalt...), fileID...))
+	fileKey, err := aesCBCNoIV(keyHash[:32], ue, false)
+	if err != nil {
+		return nil, false, err
+	}
+	return fileKey, true, nil
+}
+
+// AES-256 owner derivation uses U entry as additional data.
+func deriveAES256Owner(pwd []byte, oEntry []byte, oe []byte, uEntry []byte) ([]byte, bool, error) {
+	if len(oEntry) < 48 || len(oe) < 16 || len(uEntry) < 48 {
+		return nil, false, errors.New("owner entry too short")
+	}
+	validationSalt := oEntry[32:40]
+	keySalt := oEntry[40:48]
+	hashVal := sha256.Sum256(append(append(padPasswordRev6(pwd), validationSalt...), uEntry[:48]...))
+	if !comparePrefix(hashVal[:], oEntry[:32]) {
+		return nil, false, nil
+	}
+	keyHash := sha256.Sum256(append(append(padPasswordRev6(pwd), keySalt...), uEntry[:48]...))
+	fileKey, err := aesCBCNoIV(keyHash[:32], oe, false)
+	if err != nil {
+		return nil, false, err
+	}
+	return fileKey, true, nil
 }
 
 func parseCryptFilters(dict raw.Dictionary, base cryptAlgo) (map[string]cryptAlgo, error) {
@@ -382,6 +502,9 @@ func resolveCryptFilter(dict raw.Dictionary, key string, base cryptAlgo, filters
 }
 
 func objectKey(fileKey []byte, objNum, gen int, r int, useAES bool) []byte {
+	if r >= 5 {
+		return fileKey
+	}
 	key := append([]byte{}, fileKey...)
 	var objBuf [3]byte
 	objBuf[0] = byte(objNum & 0xFF)
@@ -468,6 +591,60 @@ func aesCrypt(key []byte, data []byte, encrypt bool) ([]byte, error) {
 		return nil, errors.New("invalid aes padding")
 	}
 	return out[:len(out)-pad], nil
+}
+
+func aesCBCNoIV(key []byte, data []byte, encrypt bool) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	iv := make([]byte, aes.BlockSize)
+	if encrypt {
+		padLen := aes.BlockSize - (len(data) % aes.BlockSize)
+		if padLen == 0 {
+			padLen = aes.BlockSize
+		}
+		pad := bytes.Repeat([]byte{byte(padLen)}, padLen)
+		plain := append(data, pad...)
+		out := make([]byte, len(plain))
+		mode := cipher.NewCBCEncrypter(block, iv)
+		mode.CryptBlocks(out, plain)
+		return out, nil
+	}
+	if len(data)%aes.BlockSize != 0 {
+		return nil, errors.New("aes data not multiple of blocksize")
+	}
+	out := make([]byte, len(data))
+	mode := cipher.NewCBCDecrypter(block, iv)
+	mode.CryptBlocks(out, data)
+	if len(out) == 0 {
+		return out, nil
+	}
+	pad := int(out[len(out)-1])
+	if pad <= 0 || pad > aes.BlockSize || pad > len(out) {
+		return nil, errors.New("invalid aes padding")
+	}
+	return out[:len(out)-pad], nil
+}
+
+func decryptPermsAES256(key []byte, perms []byte) (int32, error) {
+	if len(key) == 0 {
+		return 0, errors.New("missing key")
+	}
+	if len(perms) != 16 {
+		return 0, errors.New("perms length must be 16")
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return 0, err
+	}
+	out := make([]byte, 16)
+	block.Decrypt(out, perms)
+	if !comparePrefix([]byte("perm"), out[12:16]) {
+		return 0, errors.New("invalid perms signature")
+	}
+	p := int32(binary.LittleEndian.Uint32(out[0:4]))
+	return p, nil
 }
 
 func comparePrefix(a, b []byte) bool {

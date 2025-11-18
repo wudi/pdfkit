@@ -1,6 +1,9 @@
 package security
 
 import (
+	"crypto/aes"
+	"crypto/sha256"
+	"encoding/binary"
 	"testing"
 
 	"pdflib/ir/raw"
@@ -116,4 +119,83 @@ func TestIdentityCryptFilterSkipsEncryption(t *testing.T) {
 	if string(out) != string(data) {
 		t.Fatalf("identity crypt filter should leave data unchanged")
 	}
+}
+
+func TestAES256Authentication(t *testing.T) {
+	fileKey := []byte("0123456789abcdef0123456789abcdef")
+	fileID := []byte("fileid-aes256")
+	password := []byte("pass123")
+
+	uEntry, ue := buildUserEntries(password, fileID, fileKey)
+	oEntry, oe := buildOwnerEntries(password, uEntry, fileKey)
+
+	enc := raw.Dict()
+	enc.Set(raw.NameObj{Val: "Filter"}, raw.NameObj{Val: "Standard"})
+	enc.Set(raw.NameObj{Val: "V"}, raw.NumberInt(5))
+	enc.Set(raw.NameObj{Val: "R"}, raw.NumberInt(6))
+	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberInt(256))
+	enc.Set(raw.NameObj{Val: "U"}, raw.StringObj{Bytes: uEntry})
+	enc.Set(raw.NameObj{Val: "UE"}, raw.StringObj{Bytes: ue})
+	enc.Set(raw.NameObj{Val: "O"}, raw.StringObj{Bytes: oEntry})
+	enc.Set(raw.NameObj{Val: "OE"}, raw.StringObj{Bytes: oe})
+	enc.Set(raw.NameObj{Val: "P"}, raw.NumberInt(-4))
+
+	perms := make([]byte, 16)
+	binary.LittleEndian.PutUint32(perms[:4], uint32(0xFFFFFFFC))
+	copy(perms[12:], []byte("perm"))
+	block, _ := aes.NewCipher(fileKey)
+	var encPerms [16]byte
+	block.Encrypt(encPerms[:], perms)
+	enc.Set(raw.NameObj{Val: "Perms"}, raw.StringObj{Bytes: encPerms[:]})
+
+	trailer := raw.Dict()
+	idArr := raw.NewArray(raw.StringObj{Bytes: fileID}, raw.StringObj{Bytes: fileID})
+	trailer.Set(raw.NameObj{Val: "ID"}, idArr)
+	trailer.Set(raw.NameObj{Val: "Encrypt"}, raw.RefObj{})
+
+	h, err := (&HandlerBuilder{}).WithEncryptDict(enc).WithTrailer(trailer).WithFileID(fileID).Build()
+	if err != nil {
+		t.Fatalf("build handler: %v", err)
+	}
+	if err := h.Authenticate(string(password)); err != nil {
+		t.Fatalf("authenticate: %v", err)
+	}
+	stream := []byte("secret data")
+	encData, err := h.Encrypt(10, 0, stream, DataClassStream)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	dec, err := h.Decrypt(10, 0, encData, DataClassStream)
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	if string(dec) != string(stream) {
+		t.Fatalf("aes256 roundtrip mismatch: got %q want %q", dec, stream)
+	}
+}
+
+func buildUserEntries(pwd []byte, fileID []byte, fileKey []byte) ([]byte, []byte) {
+	uSalt := []byte("usersalt")
+	ukSalt := []byte("ukeysalt")
+	hashVal := sha256.Sum256(append(append(padPasswordRev6(pwd), uSalt...), fileID...))
+	keyHash := sha256.Sum256(append(append(padPasswordRev6(pwd), ukSalt...), fileID...))
+	ue, _ := aesCBCNoIV(keyHash[:32], fileKey, true)
+	entry := make([]byte, 0, 48)
+	entry = append(entry, hashVal[:]...)
+	entry = append(entry, uSalt...)
+	entry = append(entry, ukSalt...)
+	return entry, ue
+}
+
+func buildOwnerEntries(pwd []byte, uEntry []byte, fileKey []byte) ([]byte, []byte) {
+	oSalt := []byte("ownerslt")
+	okSalt := []byte("okeysalt")
+	hashVal := sha256.Sum256(append(append(padPasswordRev6(pwd), oSalt...), uEntry[:48]...))
+	keyHash := sha256.Sum256(append(append(padPasswordRev6(pwd), okSalt...), uEntry[:48]...))
+	oe, _ := aesCBCNoIV(keyHash[:32], fileKey, true)
+	entry := make([]byte, 0, 48)
+	entry = append(entry, hashVal[:]...)
+	entry = append(entry, oSalt...)
+	entry = append(entry, okSalt...)
+	return entry, oe
 }
