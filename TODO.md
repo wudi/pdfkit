@@ -25,5 +25,5 @@ Status key: Not started / In progress / Done.
 
 Status key: Not started / In progress / Done.
 
-- [ ] Tracer interface: expose observability.Tracer/Span per design to allow spans around parse/build/write operations, plus metric name constants.
+- [x] Tracer interface: expose observability.Tracer/Span per design to allow spans around parse/build/write operations, plus metric name constants. Status: Done (Tracer/Span interfaces and nop implementations added with metric name constants).
 - [ ] Writer tracing: accept a tracer in writer Config or builder and emit spans for document write phases (xref build, content emit, encryption) with errors tagged.
