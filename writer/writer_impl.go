@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
+	"regexp"
 	"sort"
+	"strconv"
 )
 
 type impl struct{ interceptors []Interceptor }
@@ -44,9 +46,10 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		return fmt.Errorf("document permissions forbid modification")
 	}
 	version := pdfVersion(cfg)
+	incr := incrementalContext(doc, out, cfg)
 	// Build raw objects from semantic (minimal subset: catalog, pages, page, fonts, content streams)
 	objects := make(map[raw.ObjectRef]raw.Object)
-	objNum := 1
+	objNum := incr.startObjNum
 	nextRef := func() raw.ObjectRef {
 		ref := raw.ObjectRef{Num: objNum, Gen: 0}
 		objNum++
@@ -111,6 +114,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		contentRefs = append(contentRefs, contentRef)
 	}
 	// Pages
+	unionFonts := raw.Dict()
 	for i, p := range doc.Pages {
 		ref := nextRef()
 		pageRefs = append(pageRefs, ref)
@@ -136,10 +140,16 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 			for name, font := range p.Resources.Fonts {
 				fRef := ensureFont(font.BaseFont)
 				fontResDict.Set(raw.NameLiteral(name), raw.Ref(fRef.Num, fRef.Gen))
+				if _, ok := unionFonts.KV[name]; !ok {
+					unionFonts.Set(raw.NameLiteral(name), raw.Ref(fRef.Num, fRef.Gen))
+				}
 			}
 		} else {
 			fRef := ensureFont("Helvetica")
 			fontResDict.Set(raw.NameLiteral("F1"), raw.Ref(fRef.Num, fRef.Gen))
+			if _, ok := unionFonts.KV["F1"]; !ok {
+				unionFonts.Set(raw.NameLiteral("F1"), raw.Ref(fRef.Num, fRef.Gen))
+			}
 		}
 		resDict.Set(raw.NameLiteral("Font"), fontResDict)
 		pageDict.Set(raw.NameLiteral("Resources"), resDict)
@@ -157,6 +167,11 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	pagesDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Pages"))
 	pagesDict.Set(raw.NameLiteral("Count"), raw.NumberInt(int64(len(pageRefs))))
 	pagesDict.Set(raw.NameLiteral("Kids"), kidsArr)
+	if unionFonts.Len() > 0 {
+		pagesRes := raw.Dict()
+		pagesRes.Set(raw.NameLiteral("Font"), unionFonts)
+		pagesDict.Set(raw.NameLiteral("Resources"), pagesRes)
+	}
 	objects[pagesRef] = pagesDict
 	// Catalog
 	catalogDict := raw.Dict()
@@ -169,7 +184,15 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 
 	// Serialize
 	var buf bytes.Buffer
-	buf.WriteString("%PDF-" + version + "\n%\xE2\xE3\xCF\xD3\n")
+	initialOffset := int64(0)
+	if len(incr.base) > 0 {
+		initialOffset = int64(len(incr.base))
+		if !bytes.HasSuffix(incr.base, []byte("\n")) {
+			buf.WriteByte('\n')
+		}
+	} else {
+		buf.WriteString("%PDF-" + version + "\n%\xE2\xE3\xCF\xD3\n")
+	}
 	offsets := make(map[int]int64)
 
 	ordered := make([]raw.ObjectRef, 0, len(objects))
@@ -178,7 +201,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	}
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Num < ordered[j].Num })
 	for _, ref := range ordered {
-		offset := int64(buf.Len())
+		offset := initialOffset + int64(buf.Len())
 		serialized, _ := w.SerializeObject(ref, objects[ref])
 		buf.Write(serialized)
 		offsets[ref.Num] = offset
@@ -187,15 +210,22 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	if cfg.XRefStreams {
 		xrefRef := nextRef()
 		maxObjNum := xrefRef.Num
-		xrefOffset := int64(buf.Len())
+		if len(offsets) > 0 {
+			for n := range offsets {
+				if n > maxObjNum {
+					maxObjNum = n
+				}
+			}
+		}
+		xrefOffset := initialOffset + int64(buf.Len())
 		offsets[xrefRef.Num] = xrefOffset
-		size := maxObjNum + 1
+		size := maxInt(maxObjNum, incr.prevMaxObj) + 1
 
-		trailer := buildTrailer(size, catalogRef, infoRef, doc, cfg)
+		trailer := buildTrailer(size, catalogRef, infoRef, doc, cfg, incr.prevOffset)
 		trailer.Set(raw.NameLiteral("Type"), raw.NameLiteral("XRef"))
 		trailer.Set(raw.NameLiteral("W"), raw.NewArray(raw.NumberInt(1), raw.NumberInt(4), raw.NumberInt(1)))
-		trailer.Set(raw.NameLiteral("Index"), raw.NewArray(raw.NumberInt(0), raw.NumberInt(int64(size))))
-		entries := xrefStreamEntries(size, offsets)
+		indexArr, entries := xrefStreamIndexAndEntries(offsets)
+		trailer.Set(raw.NameLiteral("Index"), indexArr)
 		trailer.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(entries))))
 
 		xrefStream := raw.NewStream(trailer, entries)
@@ -205,9 +235,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		buf.WriteString("startxref\n")
 		buf.WriteString(fmt.Sprintf("%d\n%%EOF\n", xrefOffset))
 	} else {
-		xrefOffset := buf.Len()
+		xrefOffset := initialOffset + int64(buf.Len())
 		maxObjNum := ordered[len(ordered)-1].Num
-		size := maxObjNum + 1
+		size := maxInt(maxObjNum, incr.prevMaxObj) + 1
 		buf.WriteString("xref\n0 ")
 		buf.WriteString(fmt.Sprintf("%d\n", size))
 		buf.WriteString("0000000000 65535 f \n")
@@ -218,7 +248,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 				buf.WriteString("0000000000 65535 f \n")
 			}
 		}
-		trailer := buildTrailer(size, catalogRef, infoRef, doc, cfg)
+		trailer := buildTrailer(size, catalogRef, infoRef, doc, cfg, incr.prevOffset)
 		buf.WriteString("trailer\n")
 		buf.Write(serializePrimitive(trailer))
 		buf.WriteString("\nstartxref\n")
@@ -330,7 +360,7 @@ func deterministicIDSeed(doc *semantic.Document, cfg Config) []byte {
 	return buf
 }
 
-func buildTrailer(size int, catalogRef raw.ObjectRef, infoRef *raw.ObjectRef, doc *semantic.Document, cfg Config) *raw.DictObj {
+func buildTrailer(size int, catalogRef raw.ObjectRef, infoRef *raw.ObjectRef, doc *semantic.Document, cfg Config, prev int64) *raw.DictObj {
 	trailer := raw.Dict()
 	trailer.Set(raw.NameLiteral("Size"), raw.NumberInt(int64(size)))
 	trailer.Set(raw.NameLiteral("Root"), raw.Ref(catalogRef.Num, catalogRef.Gen))
@@ -343,23 +373,56 @@ func buildTrailer(size int, catalogRef raw.ObjectRef, infoRef *raw.ObjectRef, do
 		raw.Str([]byte(hex.EncodeToString(fileIDs[1]))),
 	)
 	trailer.Set(raw.NameLiteral("ID"), idArr)
+	if prev > 0 && cfg.Incremental {
+		trailer.Set(raw.NameLiteral("Prev"), raw.NumberInt(prev))
+	}
 	return trailer
 }
 
-func xrefStreamEntries(size int, offsets map[int]int64) []byte {
-	out := make([]byte, 0, size*6)
-	for i := 0; i < size; i++ {
-		if i == 0 {
-			out = appendXRefStreamEntry(out, 0, 0, 65535)
-			continue
-		}
-		if off, ok := offsets[i]; ok {
-			out = appendXRefStreamEntry(out, 1, off, 0)
-		} else {
-			out = appendXRefStreamEntry(out, 0, 0, 0)
-		}
+func xrefStreamIndexAndEntries(offsets map[int]int64) (*raw.ArrayObj, []byte) {
+	offCopy := make(map[int]int64, len(offsets)+1)
+	for k, v := range offsets {
+		offCopy[k] = v
 	}
-	return out
+	if _, ok := offCopy[0]; !ok {
+		offCopy[0] = 0
+	}
+	keys := make([]int, 0, len(offCopy))
+	for k := range offCopy {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	indexArr := raw.NewArray()
+	var entries []byte
+	segStart := -1
+	prev := -1
+	for _, k := range keys {
+		if segStart == -1 {
+			segStart = k
+			prev = k
+		} else if k != prev+1 {
+			indexArr.Append(raw.NumberInt(int64(segStart)))
+			indexArr.Append(raw.NumberInt(int64(prev - segStart + 1)))
+			segStart = k
+		}
+		prev = k
+
+		off := offCopy[k]
+		typ := 0
+		gen := 0
+		if k == 0 {
+			gen = 65535
+		}
+		if off > 0 {
+			typ = 1
+		}
+		entries = appendXRefStreamEntry(entries, typ, off, gen)
+	}
+	if segStart != -1 {
+		indexArr.Append(raw.NumberInt(int64(segStart)))
+		indexArr.Append(raw.NumberInt(int64(prev - segStart + 1)))
+	}
+	return indexArr, entries
 }
 
 func appendXRefStreamEntry(buf []byte, typ int, field2 int64, gen int) []byte {
@@ -368,6 +431,80 @@ func appendXRefStreamEntry(buf []byte, typ int, field2 int64, gen int) []byte {
 	buf = append(buf, byte(offset>>24), byte(offset>>16), byte(offset>>8), byte(offset))
 	buf = append(buf, byte(gen))
 	return buf
+}
+
+type incrementalInfo struct {
+	base        []byte
+	prevOffset  int64
+	startObjNum int
+	prevMaxObj  int
+}
+
+func incrementalContext(doc *semantic.Document, out WriterAt, cfg Config) incrementalInfo {
+	info := incrementalInfo{startObjNum: 1}
+	if !cfg.Incremental {
+		return info
+	}
+	reader, ok := out.(interface{ Bytes() []byte })
+	if !ok {
+		return info
+	}
+	info.base = append([]byte(nil), reader.Bytes()...)
+	info.prevOffset = lastStartXRef(info.base)
+	info.prevMaxObj = maxObjNumFromBytes(info.base)
+	info.startObjNum = info.prevMaxObj + 1
+	if dec := doc.Decoded(); dec != nil && dec.Raw != nil {
+		for ref := range dec.Raw.Objects {
+			if ref.Num >= info.startObjNum {
+				info.startObjNum = ref.Num + 1
+			}
+		}
+	}
+	if info.startObjNum < 1 {
+		info.startObjNum = 1
+	}
+	return info
+}
+
+func lastStartXRef(data []byte) int64 {
+	re := regexp.MustCompile(`startxref\s+(\d+)`)
+	matches := re.FindAllSubmatch(data, -1)
+	if len(matches) == 0 {
+		return 0
+	}
+	// use last occurrence
+	m := matches[len(matches)-1]
+	off, err := strconv.ParseInt(string(m[1]), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return off
+}
+
+func maxObjNumFromBytes(data []byte) int {
+	re := regexp.MustCompile(`\s(\d+)\s+0\s+obj`)
+	matches := re.FindAllSubmatch(data, -1)
+	max := 0
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		num, err := strconv.Atoi(string(m[1]))
+		if err != nil {
+			continue
+		}
+		if num > max {
+			max = num
+		}
+	}
+	return max
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func rectArray(r semantic.Rectangle) *raw.ArrayObj {
