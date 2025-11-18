@@ -249,6 +249,36 @@ func TestWriter_IncrementalAppend(t *testing.T) {
 	}
 }
 
+func TestWriter_StringEscaping(t *testing.T) {
+	b := builder.NewBuilder()
+	text := "Hello (world) \\ \n\t\r"
+	b.SetInfo(&semantic.DocumentInfo{Title: text})
+	b.NewPage(100, 100).DrawText("dummy", 1, 1, builder.TextOptions{}).Finish()
+	doc, err := b.Build()
+	if err != nil {
+		t.Fatalf("build doc: %v", err)
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	out := buf.String()
+	infoStart := strings.Index(out, "/Title")
+	if infoStart == -1 {
+		t.Fatalf("info dict missing Title")
+	}
+	if !strings.Contains(out, `\n`) || !strings.Contains(out, `\t`) {
+		t.Fatalf("expected escaped newline and tab in Title")
+	}
+	if strings.Contains(out, "(Hello (world) \\ ") {
+		t.Fatalf("expected parentheses and backslash to be escaped")
+	}
+	if !strings.Contains(out, `\(world\)`) {
+		t.Fatalf("escaped parentheses missing")
+	}
+}
+
 func maxObjNum(data []byte) int {
 	re := regexp.MustCompile(`\s(\d+)\s+0\s+obj`)
 	matches := re.FindAllSubmatch(data, -1)

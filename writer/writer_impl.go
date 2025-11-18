@@ -276,7 +276,7 @@ func serializePrimitive(o raw.Object) []byte {
 	case raw.NullObj:
 		return []byte("null")
 	case raw.StringObj:
-		return []byte("(" + string(v.Value()) + ")")
+		return escapeLiteralString(v.Value())
 	case *raw.ArrayObj:
 		var b bytes.Buffer
 		b.WriteByte('[')
@@ -431,6 +431,37 @@ func appendXRefStreamEntry(buf []byte, typ int, field2 int64, gen int) []byte {
 	buf = append(buf, byte(offset>>24), byte(offset>>16), byte(offset>>8), byte(offset))
 	buf = append(buf, byte(gen))
 	return buf
+}
+
+// escapeLiteralString escapes characters that need backslash protection in literal strings.
+func escapeLiteralString(rawBytes []byte) []byte {
+	var b bytes.Buffer
+	b.WriteByte('(')
+	for _, ch := range rawBytes {
+		switch ch {
+		case '\\', '(', ')':
+			b.WriteByte('\\')
+			b.WriteByte(ch)
+		case '\n':
+			b.WriteString("\\n")
+		case '\r':
+			b.WriteString("\\r")
+		case '\t':
+			b.WriteString("\\t")
+		case '\b':
+			b.WriteString("\\b")
+		case '\f':
+			b.WriteString("\\f")
+		default:
+			if ch < 0x20 || ch >= 0x80 {
+				fmt.Fprintf(&b, "\\%03o", ch)
+			} else {
+				b.WriteByte(ch)
+			}
+		}
+	}
+	b.WriteByte(')')
+	return b.Bytes()
 }
 
 type incrementalInfo struct {
