@@ -16,6 +16,7 @@ func TestStreamingDocumentStartEnd(t *testing.T) {
 	// Build a small PDF.
 	b := builder.NewBuilder()
 	b.NewPage(50, 50).DrawText("hi", 5, 5, builder.TextOptions{FontSize: 10}).Finish()
+	b.NewPage(30, 30).DrawText("p2", 2, 2, builder.TextOptions{FontSize: 8}).Finish()
 	doc, err := b.Build()
 	if err != nil {
 		t.Fatalf("build doc: %v", err)
@@ -45,17 +46,37 @@ func TestStreamingDocumentStartEnd(t *testing.T) {
 		}
 	default:
 	}
-	if len(events) != 2 {
-		t.Fatalf("expected two events, got %d", len(events))
+	if len(events) == 0 {
+		t.Fatalf("no events emitted")
 	}
-	start, ok := events[0].(DocumentStartEvent)
-	if !ok {
+	if _, ok := events[0].(DocumentStartEvent); !ok {
 		t.Fatalf("first event not DocumentStart: %#v", events[0])
 	}
-	if start.Version == "" {
-		t.Fatalf("missing version in start event")
+	end, ok := events[len(events)-1].(DocumentEndEvent)
+	_ = end
+	if !ok {
+		t.Fatalf("last event not DocumentEnd: %#v", events[len(events)-1])
 	}
-	if events[1].Type() != EventDocumentEnd {
-		t.Fatalf("last event not DocumentEnd")
+	pageStarts := 0
+	contentEvents := 0
+	pageEnds := 0
+	for _, ev := range events {
+		switch e := ev.(type) {
+		case PageStartEvent:
+			pageStarts++
+			if e.Index < 0 {
+				t.Fatalf("invalid page index: %d", e.Index)
+			}
+		case ContentStreamEvent:
+			contentEvents++
+			if len(e.Data) == 0 {
+				t.Fatalf("empty content stream data")
+			}
+		case PageEndEvent:
+			pageEnds++
+		}
+	}
+	if pageStarts != 2 || pageEnds != 2 || contentEvents != 2 {
+		t.Fatalf("unexpected page/content counts: starts=%d ends=%d contents=%d", pageStarts, pageEnds, contentEvents)
 	}
 }

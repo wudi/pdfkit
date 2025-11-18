@@ -41,4 +41,4 @@ Status key: Not started / In progress / Done.
 Status key: Not started / In progress / Done.
 
 - [x] Document start/end streaming: implement streaming.Parser that emits DocumentStart and DocumentEnd events using the existing parse pipeline. Status: Done (streaming parser now parses once and publishes start/end events with version/encryption info).
-- [ ] Page/content streaming: emit PageStart/PageEnd and ContentOperation events with basic resources so consumers can iterate without loading whole documents. Status: Not started.
+- [x] Page/content streaming: emit PageStart/PageEnd and ContentOperation events with basic resources so consumers can iterate without loading whole documents. Status: Done (streaming parser walks the page tree via raw parser, decodes content streams, and emits PageStart/PageEnd plus per-stream ContentStream events).
