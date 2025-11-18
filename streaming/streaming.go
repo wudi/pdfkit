@@ -367,25 +367,30 @@ func rectFromArray(obj raw.Object) ([4]float64, bool) {
 }
 
 func parseOperations(data []byte) []semantic.Operation {
-	tokens := splitTokens(string(data))
+	tokens := lexTokens(data)
 	ops := []semantic.Operation{}
 	stack := []semantic.Operand{}
-	for _, tok := range tokens {
-		if num, err := strconv.ParseFloat(tok, 64); err == nil {
-			stack = append(stack, semantic.NumberOperand{Value: num})
-			continue
+	for i := 0; i < len(tokens); i++ {
+		tok := tokens[i]
+		switch tok.kind {
+		case "number":
+			stack = append(stack, semantic.NumberOperand{Value: tok.num})
+		case "name":
+			stack = append(stack, semantic.NameOperand{Value: tok.text})
+		case "string", "hex":
+			stack = append(stack, semantic.StringOperand{Value: tok.bytes})
+		case "arrayStart":
+			op, next := parseArrayOperand(tokens, i+1)
+			stack = append(stack, op)
+			i = next
+		case "dictStart":
+			op, next := parseDictOperand(tokens, i+1)
+			stack = append(stack, op)
+			i = next
+		case "op":
+			ops = append(ops, semantic.Operation{Operator: tok.text, Operands: stack})
+			stack = stack[:0]
 		}
-		if len(tok) > 0 && tok[0] == '/' {
-			stack = append(stack, semantic.NameOperand{Value: tok[1:]})
-			continue
-		}
-		if len(tok) >= 2 && tok[0] == '(' && tok[len(tok)-1] == ')' {
-			stack = append(stack, semantic.StringOperand{Value: []byte(tok[1 : len(tok)-1])})
-			continue
-		}
-		// treat as operator
-		ops = append(ops, semantic.Operation{Operator: tok, Operands: stack})
-		stack = stack[:0]
 	}
 	return ops
 }
@@ -443,31 +448,45 @@ func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
 					continue
 				}
 				if subtype, ok := xoDict.Get(raw.NameLiteral("Subtype")); ok {
-					if sn, ok := subtype.(raw.NameObj); ok && sn.Value() == "Image" {
-						if stream, ok := doc.Objects[ref].(*raw.StreamObj); ok {
-							xo := semantic.XObject{Subtype: "Image"}
-							if w, ok := xoDict.Get(raw.NameLiteral("Width")); ok {
-								if n, ok := w.(raw.NumberObj); ok {
-									xo.Width = int(n.Int())
+					if sn, ok := subtype.(raw.NameObj); ok {
+						switch sn.Value() {
+						case "Image":
+							if stream, ok := doc.Objects[ref].(*raw.StreamObj); ok {
+								xo := semantic.XObject{Subtype: "Image"}
+								if w, ok := xoDict.Get(raw.NameLiteral("Width")); ok {
+									if n, ok := w.(raw.NumberObj); ok {
+										xo.Width = int(n.Int())
+									}
 								}
-							}
-							if h, ok := xoDict.Get(raw.NameLiteral("Height")); ok {
-								if n, ok := h.(raw.NumberObj); ok {
-									xo.Height = int(n.Int())
+								if h, ok := xoDict.Get(raw.NameLiteral("Height")); ok {
+									if n, ok := h.(raw.NumberObj); ok {
+										xo.Height = int(n.Int())
+									}
 								}
-							}
-							if bpc, ok := xoDict.Get(raw.NameLiteral("BitsPerComponent")); ok {
-								if n, ok := bpc.(raw.NumberObj); ok {
-									xo.BitsPerComponent = int(n.Int())
+								if bpc, ok := xoDict.Get(raw.NameLiteral("BitsPerComponent")); ok {
+									if n, ok := bpc.(raw.NumberObj); ok {
+										xo.BitsPerComponent = int(n.Int())
+									}
 								}
-							}
-							if cs, ok := xoDict.Get(raw.NameLiteral("ColorSpace")); ok {
-								if n, ok := cs.(raw.NameObj); ok {
-									xo.ColorSpace = semantic.ColorSpace{Name: n.Value()}
+								if cs, ok := xoDict.Get(raw.NameLiteral("ColorSpace")); ok {
+									if n, ok := cs.(raw.NameObj); ok {
+										xo.ColorSpace = semantic.ColorSpace{Name: n.Value()}
+									}
 								}
+								xo.Data = decodeStream(stream)
+								res.XObjects[name] = xo
 							}
-							xo.Data = decodeStream(stream)
-							res.XObjects[name] = xo
+						case "Form":
+							if stream, ok := doc.Objects[ref].(*raw.StreamObj); ok {
+								xo := semantic.XObject{Subtype: "Form"}
+								if bboxObj, ok := xoDict.Get(raw.NameLiteral("BBox")); ok {
+									if rect, ok := rectFromArray(bboxObj); ok {
+										xo.BBox = semantic.Rectangle{LLX: rect[0], LLY: rect[1], URX: rect[2], URY: rect[3]}
+									}
+								}
+								xo.Data = decodeStream(stream)
+								res.XObjects[name] = xo
+							}
 						}
 					}
 				}
@@ -505,17 +524,318 @@ func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
 			}
 		}
 	}
+	if patObj, ok := dict.Get(raw.NameLiteral("Pattern")); ok {
+		if patDict, ok := patObj.(*raw.DictObj); ok {
+			res.Patterns = make(map[string]semantic.Pattern)
+			for name, entry := range patDict.KV {
+				ref, pd := resolveDict(doc, entry)
+				if pd == nil {
+					continue
+				}
+				p := semantic.Pattern{}
+				if pt, ok := pd.Get(raw.NameLiteral("PatternType")); ok {
+					if n, ok := pt.(raw.NumberObj); ok {
+						p.PatternType = int(n.Int())
+					}
+				}
+				if paint, ok := pd.Get(raw.NameLiteral("PaintType")); ok {
+					if n, ok := paint.(raw.NumberObj); ok {
+						p.PaintType = int(n.Int())
+					}
+				}
+				if tt, ok := pd.Get(raw.NameLiteral("TilingType")); ok {
+					if n, ok := tt.(raw.NumberObj); ok {
+						p.TilingType = int(n.Int())
+					}
+				}
+				if bbox, ok := pd.Get(raw.NameLiteral("BBox")); ok {
+					if rect, ok := rectFromArray(bbox); ok {
+						p.BBox = semantic.Rectangle{LLX: rect[0], LLY: rect[1], URX: rect[2], URY: rect[3]}
+					}
+				}
+				if xs, ok := pd.Get(raw.NameLiteral("XStep")); ok {
+					if n, ok := xs.(raw.NumberObj); ok {
+						p.XStep = n.Float()
+					}
+				}
+				if ys, ok := pd.Get(raw.NameLiteral("YStep")); ok {
+					if n, ok := ys.(raw.NumberObj); ok {
+						p.YStep = n.Float()
+					}
+				}
+				if stream, ok := doc.Objects[ref].(*raw.StreamObj); ok {
+					p.Content = decodeStream(stream)
+				}
+				res.Patterns[name] = p
+			}
+		}
+	}
+	if shadingObj, ok := dict.Get(raw.NameLiteral("Shading")); ok {
+		if sd, ok := shadingObj.(*raw.DictObj); ok {
+			res.Shadings = make(map[string]semantic.Shading)
+			for name, entry := range sd.KV {
+				_, shDict := resolveDict(doc, entry)
+				if shDict == nil {
+					continue
+				}
+				sh := semantic.Shading{}
+				if st, ok := shDict.Get(raw.NameLiteral("ShadingType")); ok {
+					if n, ok := st.(raw.NumberObj); ok {
+						sh.ShadingType = int(n.Int())
+					}
+				}
+				if cs, ok := shDict.Get(raw.NameLiteral("ColorSpace")); ok {
+					if n, ok := cs.(raw.NameObj); ok {
+						sh.ColorSpace = semantic.ColorSpace{Name: n.Value()}
+					}
+				}
+				if coords, ok := shDict.Get(raw.NameLiteral("Coords")); ok {
+					if arr, ok := coords.(*raw.ArrayObj); ok {
+						for _, it := range arr.Items {
+							if n, ok := it.(raw.NumberObj); ok {
+								sh.Coords = append(sh.Coords, n.Float())
+							}
+						}
+					}
+				}
+				if dom, ok := shDict.Get(raw.NameLiteral("Domain")); ok {
+					if arr, ok := dom.(*raw.ArrayObj); ok {
+						for _, it := range arr.Items {
+							if n, ok := it.(raw.NumberObj); ok {
+								sh.Domain = append(sh.Domain, n.Float())
+							}
+						}
+					}
+				}
+				if ref, ok := entry.(raw.RefObj); ok {
+					if stream, ok := doc.Objects[ref.Ref()].(*raw.StreamObj); ok {
+						sh.Function = decodeStream(stream)
+					}
+				}
+				res.Shadings[name] = sh
+			}
+		}
+	}
 	return res
 }
 
 // splitTokens is a small, naive tokenizer for content streams.
-func splitTokens(src string) []string {
-	fields := strings.Fields(src)
-	out := make([]string, 0, len(fields))
-	for _, f := range fields {
-		out = append(out, f)
+type token struct {
+	kind  string
+	text  string
+	bytes []byte
+	num   float64
+}
+
+// lexTokens parses PDF content tokens including strings, hex strings, arrays, and dictionaries.
+func lexTokens(data []byte) []token {
+	var tokens []token
+	for i := 0; i < len(data); {
+		c := data[i]
+		// Skip whitespace and comments.
+		if isWhite(c) {
+			i++
+			continue
+		}
+		if c == '%' {
+			for i < len(data) && data[i] != '\n' && data[i] != '\r' {
+				i++
+			}
+			continue
+		}
+		switch c {
+		case '[':
+			tokens = append(tokens, token{kind: "arrayStart"})
+			i++
+			continue
+		case ']':
+			tokens = append(tokens, token{kind: "arrayEnd"})
+			i++
+			continue
+		case '<':
+			if i+1 < len(data) && data[i+1] == '<' {
+				tokens = append(tokens, token{kind: "dictStart"})
+				i += 2
+				continue
+			}
+			j := i + 1
+			for j < len(data) && data[j] != '>' {
+				j++
+			}
+			if j < len(data) {
+				hexBytes := parseHexString(data[i+1 : j])
+				tokens = append(tokens, token{kind: "hex", bytes: hexBytes})
+				i = j + 1
+				continue
+			}
+		case '>':
+			if i+1 < len(data) && data[i+1] == '>' {
+				tokens = append(tokens, token{kind: "dictEnd"})
+				i += 2
+				continue
+			}
+		case '/':
+			j := i + 1
+			for j < len(data) && !isDelimiter(data[j]) {
+				j++
+			}
+			tokens = append(tokens, token{kind: "name", text: string(data[i+1 : j])})
+			i = j
+			continue
+		case '(':
+			str, next := readLiteralString(data, i+1)
+			tokens = append(tokens, token{kind: "string", bytes: []byte(str)})
+			i = next
+			continue
+		}
+
+		// Number or operator
+		j := i
+		for j < len(data) && !isDelimiter(data[j]) {
+			j++
+		}
+		if j == i {
+			i++
+			continue
+		}
+		text := string(data[i:j])
+		if num, err := strconv.ParseFloat(text, 64); err == nil {
+			tokens = append(tokens, token{kind: "number", num: num})
+		} else {
+			tokens = append(tokens, token{kind: "op", text: text})
+		}
+		i = j
+	}
+	return tokens
+}
+
+func parseArrayOperand(tokens []token, idx int) (semantic.ArrayOperand, int) {
+	values := []semantic.Operand{}
+	for idx < len(tokens) {
+		tok := tokens[idx]
+		switch tok.kind {
+		case "arrayEnd":
+			return semantic.ArrayOperand{Values: values}, idx
+		case "arrayStart":
+			op, next := parseArrayOperand(tokens, idx+1)
+			values = append(values, op)
+			idx = next
+		case "dictStart":
+			op, next := parseDictOperand(tokens, idx+1)
+			values = append(values, op)
+			idx = next
+		case "number":
+			values = append(values, semantic.NumberOperand{Value: tok.num})
+		case "name":
+			values = append(values, semantic.NameOperand{Value: tok.text})
+		case "string", "hex":
+			values = append(values, semantic.StringOperand{Value: tok.bytes})
+		default:
+			// treat unexpected as operator token wrapped as name
+			if tok.text != "" {
+				values = append(values, semantic.NameOperand{Value: tok.text})
+			}
+		}
+		idx++
+	}
+	return semantic.ArrayOperand{Values: values}, idx
+}
+
+func parseDictOperand(tokens []token, idx int) (semantic.DictOperand, int) {
+	values := make(map[string]semantic.Operand)
+	for idx < len(tokens) {
+		tok := tokens[idx]
+		if tok.kind == "dictEnd" {
+			return semantic.DictOperand{Values: values}, idx
+		}
+		if tok.kind != "name" || idx+1 >= len(tokens) {
+			idx++
+			continue
+		}
+		key := tok.text
+		idx++
+		switch tokens[idx].kind {
+		case "number":
+			values[key] = semantic.NumberOperand{Value: tokens[idx].num}
+		case "name":
+			values[key] = semantic.NameOperand{Value: tokens[idx].text}
+		case "string", "hex":
+			values[key] = semantic.StringOperand{Value: tokens[idx].bytes}
+		case "arrayStart":
+			op, next := parseArrayOperand(tokens, idx+1)
+			values[key] = op
+			idx = next
+		case "dictStart":
+			op, next := parseDictOperand(tokens, idx+1)
+			values[key] = op
+			idx = next
+		}
+		idx++
+	}
+	return semantic.DictOperand{Values: values}, idx
+}
+
+func isWhite(b byte) bool {
+	return b == 0 || b == 9 || b == 10 || b == 12 || b == 13 || b == 32
+}
+
+func isDelimiter(b byte) bool {
+	switch b {
+	case '(', ')', '<', '>', '[', ']', '{', '}', '/', '%':
+		return true
+	}
+	return isWhite(b)
+}
+
+func readLiteralString(data []byte, start int) (string, int) {
+	var buf strings.Builder
+	level := 1
+	i := start
+	for i < len(data) {
+		c := data[i]
+		if c == '\\' && i+1 < len(data) {
+			i++
+			buf.WriteByte(data[i])
+		} else if c == '(' {
+			level++
+			buf.WriteByte(c)
+		} else if c == ')' {
+			level--
+			if level == 0 {
+				return buf.String(), i + 1
+			}
+			buf.WriteByte(c)
+		} else {
+			buf.WriteByte(c)
+		}
+		i++
+	}
+	return buf.String(), i
+}
+
+func parseHexString(data []byte) []byte {
+	trim := strings.Map(func(r rune) rune {
+		if isHexWhite(byte(r)) {
+			return -1
+		}
+		return r
+	}, string(data))
+	if len(trim)%2 == 1 {
+		trim += "0"
+	}
+	out := make([]byte, len(trim)/2)
+	for i := 0; i < len(trim); i += 2 {
+		val, err := strconv.ParseUint(trim[i:i+2], 16, 8)
+		if err != nil {
+			return []byte(trim)
+		}
+		out[i/2] = byte(val)
 	}
 	return out
+}
+
+func isHexWhite(b byte) bool {
+	return b == ' ' || b == '\n' || b == '\r' || b == '\t' || b == '\f'
 }
 
 type readerAtAdapter struct{ ReaderAt }
