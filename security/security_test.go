@@ -120,6 +120,34 @@ func TestIdentityCryptFilterSkipsEncryption(t *testing.T) {
 	}
 }
 
+func TestAES256RejectsWrongPassword(t *testing.T) {
+	fileKey := []byte("0123456789abcdef0123456789abcdef")
+	fileID := []byte("fileid-aes256")
+	password := []byte("pass123")
+
+	uEntry, ue := buildUserEntries(password, fileID, fileKey)
+	oEntry, oe := buildOwnerEntries(password, uEntry, fileKey)
+
+	enc := raw.Dict()
+	enc.Set(raw.NameObj{Val: "Filter"}, raw.NameObj{Val: "Standard"})
+	enc.Set(raw.NameObj{Val: "V"}, raw.NumberInt(5))
+	enc.Set(raw.NameObj{Val: "R"}, raw.NumberInt(6))
+	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberInt(256))
+	enc.Set(raw.NameObj{Val: "U"}, raw.StringObj{Bytes: uEntry})
+	enc.Set(raw.NameObj{Val: "UE"}, raw.StringObj{Bytes: ue})
+	enc.Set(raw.NameObj{Val: "O"}, raw.StringObj{Bytes: oEntry})
+	enc.Set(raw.NameObj{Val: "OE"}, raw.StringObj{Bytes: oe})
+	enc.Set(raw.NameObj{Val: "P"}, raw.NumberInt(-4))
+
+	h, err := (&HandlerBuilder{}).WithEncryptDict(enc).WithFileID(fileID).Build()
+	if err != nil {
+		t.Fatalf("build handler: %v", err)
+	}
+	if err := h.Authenticate("wrong"); err == nil {
+		t.Fatalf("expected authentication failure with wrong password")
+	}
+}
+
 func TestAES256Authentication(t *testing.T) {
 	fileKey := []byte("0123456789abcdef0123456789abcdef")
 	fileID := []byte("fileid-aes256")

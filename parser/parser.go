@@ -20,6 +20,7 @@ type Config struct {
 	MaxIndirect int
 	Security    security.Handler
 	Cache       Cache
+	Password    string
 }
 
 // DocumentParser builds a raw.Document using xref tables/streams and the object loader.
@@ -128,7 +129,7 @@ func (p *DocumentParser) selectSecurity(ctx context.Context, r io.ReaderAt, tabl
 	if err != nil {
 		return nil, err
 	}
-	if err := handler.Authenticate(""); err != nil {
+	if err := handler.Authenticate(p.cfg.Password); err != nil {
 		return nil, err
 	}
 	return handler, nil
