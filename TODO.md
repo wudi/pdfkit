@@ -27,3 +27,11 @@ Status key: Not started / In progress / Done.
 - [x] Builder metadata helpers: expose document-level language (Lang), tagged flag (Marked), and page labels to align builder with semantic.Document fields from design.md. Status: Done (SetLanguage/SetMarked/AddPageLabel added and covered by builder test).
 - [x] Builder outlines: fluent helpers to add outline/bookmark entries that target builder-created pages with XYZ destinations. Status: Done (builder Outline type resolves page pointers to indexes and populates XYZ destinations; writer serializes XYZ Dest arrays).
 - [x] Builder encryption: convenience setter for owner/user passwords, permissions, and metadata encryption flag to populate semantic.Document encryption fields. Status: Done (SetEncryption records passwords/permissions, marks metadata encryption, and is exercised by builder tests).
+
+# Font system plan (multi-language)
+
+Status key: Not started / In progress / Done.
+
+- [ ] TrueType font embedding: load TrueType/OpenType fonts, extract widths and metadata, and embed FontFile2 streams with descriptors suitable for Type0/CID fonts. Status: Not started.
+- [ ] ToUnicode + Identity-H encoding: build ToUnicode CMaps and CID mappings so Unicode text renders correctly for CJK/multi-language content. Status: Not started.
+- [ ] Builder font registration: builder API can register custom TrueType fonts and encode text using the registered fonts (UTF-16BE/CID), covering non-Latin strings. Status: Not started.
