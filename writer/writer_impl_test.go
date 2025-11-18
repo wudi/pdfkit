@@ -3,6 +3,7 @@ package writer
 import (
 	"bytes"
 	"compress/flate"
+	"compress/lzw"
 	"context"
 	"io"
 	"regexp"
@@ -413,6 +414,11 @@ func TestWriter_ContentStream_ASCIIHexAndASCII85(t *testing.T) {
 	})
 	check(FilterRunLength, "RunLengthDecode", func(data []byte) ([]byte, error) {
 		return runLengthDecode(data)
+	})
+	check(FilterLZW, "LZWDecode", func(data []byte) ([]byte, error) {
+		r := lzw.NewReader(bytes.NewReader(data), lzw.LSB, 8)
+		defer r.Close()
+		return io.ReadAll(r)
 	})
 }
 

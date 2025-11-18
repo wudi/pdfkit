@@ -3,6 +3,7 @@ package writer
 import (
 	"bytes"
 	"compress/flate"
+	"compress/lzw"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/ascii85"
@@ -130,6 +131,13 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		case FilterRunLength:
 			streamData = runLengthEncode(streamData)
 			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("RunLengthDecode"))
+		case FilterLZW:
+			data, err := lzwEncode(streamData)
+			if err != nil {
+				return err
+			}
+			streamData = data
+			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("LZWDecode"))
 		}
 		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(streamData))))
 		objects[contentRef] = raw.NewStream(dict, streamData)
@@ -646,6 +654,18 @@ func runLengthEncode(data []byte) []byte {
 	}
 	out.WriteByte(128) // EOD
 	return out.Bytes()
+}
+
+func lzwEncode(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	w := lzw.NewWriter(&buf, lzw.LSB, 8)
+	if _, err := w.Write(data); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func rectArray(r semantic.Rectangle) *raw.ArrayObj {

@@ -25,6 +25,7 @@ const (
 	FilterASCIIHex
 	FilterASCII85
 	FilterRunLength
+	FilterLZW
 )
 
 type Config struct {
