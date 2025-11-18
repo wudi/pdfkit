@@ -413,6 +413,13 @@ func deterministicIDSeed(doc *semantic.Document, cfg Config) []byte {
 	h.Write([]byte(pdfVersion(cfg)))
 	if doc.Info != nil {
 		h.Write([]byte(doc.Info.Title))
+		h.Write([]byte(doc.Info.Author))
+		h.Write([]byte(doc.Info.Subject))
+		h.Write([]byte(doc.Info.Creator))
+		h.Write([]byte(doc.Info.Producer))
+		if len(doc.Info.Keywords) > 0 {
+			h.Write([]byte(strings.Join(doc.Info.Keywords, ",")))
+		}
 	}
 	if doc.Metadata != nil {
 		h.Write(doc.Metadata.Raw)

@@ -651,6 +651,58 @@ func TestWriter_InfoFields(t *testing.T) {
 	}
 }
 
+func TestWriter_IDChangesWithInfo(t *testing.T) {
+	makeDoc := func(title, author string) []byte {
+		doc := &semantic.Document{
+			Pages: []*semantic.Page{
+				{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+			},
+			Info: &semantic.DocumentInfo{Title: title, Author: author},
+		}
+		var buf bytes.Buffer
+		w := (&WriterBuilder{}).Build()
+		if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		return buf.Bytes()
+	}
+	docA := makeDoc("Title", "AuthorA")
+	docB := makeDoc("Title", "AuthorB")
+
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawA, err := rawParser.Parse(context.Background(), bytes.NewReader(docA))
+	if err != nil {
+		t.Fatalf("parse A: %v", err)
+	}
+	rawB, err := rawParser.Parse(context.Background(), bytes.NewReader(docB))
+	if err != nil {
+		t.Fatalf("parse B: %v", err)
+	}
+	idA := firstID(rawA)
+	idB := firstID(rawB)
+	if idA == "" || idB == "" {
+		t.Fatalf("missing IDs: %q %q", idA, idB)
+	}
+	if idA == idB {
+		t.Fatalf("expected differing IDs when info changes")
+	}
+}
+
+func firstID(doc *raw.Document) string {
+	idObj, ok := doc.Trailer.Get(raw.NameLiteral("ID"))
+	if !ok {
+		return ""
+	}
+	arr, ok := idObj.(*raw.ArrayObj)
+	if !ok || arr.Len() == 0 {
+		return ""
+	}
+	if s, ok := arr.Items[0].(raw.StringObj); ok {
+		return string(s.Value())
+	}
+	return ""
+}
+
 func maxObjNum(data []byte) int {
 	re := regexp.MustCompile(`\s(\d+)\s+0\s+obj`)
 	matches := re.FindAllSubmatch(data, -1)
