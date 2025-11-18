@@ -15,6 +15,7 @@ type Document struct {
 	Metadata          *XMPMetadata
 	PageLabels        map[int]string // page index -> prefix
 	Outlines          []OutlineItem
+	Articles          []ArticleThread
 	AcroForm          *AcroForm
 	StructTree        *StructureTree
 	OutputIntents     []OutputIntent
@@ -214,6 +215,18 @@ type OutlineItem struct {
 	Title     string
 	PageIndex int
 	Children  []OutlineItem
+}
+
+// ArticleThread represents an article with an ordered list of beads.
+type ArticleThread struct {
+	Title string
+	Beads []ArticleBead
+}
+
+// ArticleBead describes a single segment of an article.
+type ArticleBead struct {
+	PageIndex int
+	Rect      Rectangle
 }
 
 // AcroForm represents form-level information.

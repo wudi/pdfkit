@@ -1608,6 +1608,81 @@ func TestWriter_OutlinesDest(t *testing.T) {
 	}
 }
 
+func TestWriter_ArticleThreads(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+		Articles: []semantic.ArticleThread{
+			{
+				Title: "Article One",
+				Beads: []semantic.ArticleBead{
+					{PageIndex: 0, Rect: semantic.Rectangle{LLX: 0, LLY: 0, URX: 5, URY: 5}},
+					{PageIndex: 1, Rect: semantic.Rectangle{LLX: 1, LLY: 1, URX: 6, URY: 6}},
+				},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("/Threads")) {
+		t.Fatalf("Threads entry missing from catalog")
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	threadFound := false
+	beadCount := 0
+	beadLinks := 0
+	for _, obj := range rawDoc.Objects {
+		d, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		if typ, ok := d.Get(raw.NameLiteral("Type")); ok {
+			if n, ok := typ.(raw.NameObj); ok && n.Value() == "Thread" {
+				threadFound = true
+				if _, ok := d.Get(raw.NameLiteral("K")); !ok {
+					t.Fatalf("thread missing K")
+				}
+				if _, ok := d.Get(raw.NameLiteral("T")); !ok {
+					t.Fatalf("thread missing title")
+				}
+			}
+			if n, ok := typ.(raw.NameObj); ok && n.Value() == "Bead" {
+				beadCount++
+				if _, ok := d.Get(raw.NameLiteral("P")); !ok {
+					t.Fatalf("bead missing page reference")
+				}
+				if _, ok := d.Get(raw.NameLiteral("R")); !ok {
+					t.Fatalf("bead missing rectangle")
+				}
+				if _, ok := d.Get(raw.NameLiteral("N")); ok {
+					beadLinks++
+				}
+				if _, ok := d.Get(raw.NameLiteral("V")); ok {
+					beadLinks++
+				}
+			}
+		}
+	}
+	if !threadFound {
+		t.Fatalf("thread dictionary not found")
+	}
+	if beadCount != 2 {
+		t.Fatalf("expected two beads, got %d", beadCount)
+	}
+	if beadLinks < 2 {
+		t.Fatalf("expected bead links between beads")
+	}
+}
+
 func TestWriter_LinkAnnotation(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{

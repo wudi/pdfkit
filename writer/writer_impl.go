@@ -704,6 +704,50 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		catalogDict.Set(raw.NameLiteral("Outlines"), raw.Ref(outlineRef.Num, outlineRef.Gen))
 		catalogDict.Set(raw.NameLiteral("PageMode"), raw.NameLiteral("UseOutlines"))
 	}
+	if len(doc.Articles) > 0 {
+		threadArr := raw.NewArray()
+		for _, art := range doc.Articles {
+			if len(art.Beads) == 0 {
+				continue
+			}
+			threadRef := nextRef()
+			threadArr.Append(raw.Ref(threadRef.Num, threadRef.Gen))
+			threadDict := raw.Dict()
+			threadDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Thread"))
+			if art.Title != "" {
+				threadDict.Set(raw.NameLiteral("T"), raw.Str([]byte(art.Title)))
+			}
+			beadRefs := make([]raw.ObjectRef, len(art.Beads))
+			for i := range art.Beads {
+				beadRefs[i] = nextRef()
+			}
+			for i, bead := range art.Beads {
+				bd := raw.Dict()
+				bd.Set(raw.NameLiteral("Type"), raw.NameLiteral("Bead"))
+				if bead.PageIndex >= 0 && bead.PageIndex < len(pageRefs) {
+					pref := pageRefs[bead.PageIndex]
+					bd.Set(raw.NameLiteral("P"), raw.Ref(pref.Num, pref.Gen))
+				}
+				if cropSet(bead.Rect) {
+					bd.Set(raw.NameLiteral("R"), rectArray(bead.Rect))
+				}
+				if i > 0 {
+					prev := beadRefs[i-1]
+					bd.Set(raw.NameLiteral("V"), raw.Ref(prev.Num, prev.Gen))
+				}
+				if i < len(beadRefs)-1 {
+					nextBead := beadRefs[i+1]
+					bd.Set(raw.NameLiteral("N"), raw.Ref(nextBead.Num, nextBead.Gen))
+				}
+				objects[beadRefs[i]] = bd
+			}
+			threadDict.Set(raw.NameLiteral("K"), raw.Ref(beadRefs[0].Num, beadRefs[0].Gen))
+			objects[threadRef] = threadDict
+		}
+		if threadArr.Len() > 0 {
+			catalogDict.Set(raw.NameLiteral("Threads"), threadArr)
+		}
+	}
 	if doc.AcroForm != nil {
 		formRef := nextRef()
 		formDict := raw.Dict()
