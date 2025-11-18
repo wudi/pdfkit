@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"pdflib/recovery"
 	"pdflib/scanner"
 )
 
@@ -25,6 +26,9 @@ type parserImpl struct {
 func (p *parserImpl) Parse(ctx context.Context, r io.ReaderAt) (*Document, error) {
 	s := scanner.New(r, p.cfg.Scanner)
 	tr := &tokenReader{s: s}
+	if rc, ok := s.(interface{ SetRecoveryLocation(recovery.Location) }); ok {
+		rc.SetRecoveryLocation(recovery.Location{})
+	}
 
 	doc := &Document{
 		Objects: make(map[ObjectRef]Object),
@@ -72,6 +76,11 @@ func (p *parserImpl) Parse(ctx context.Context, r io.ReaderAt) (*Document, error
 			tr.unread(kwTok)
 			tr.unread(genTok)
 			continue
+		}
+
+		// Provide object context to recovery-aware scanners.
+		if rc, ok := s.(interface{ SetRecoveryLocation(recovery.Location) }); ok {
+			rc.SetRecoveryLocation(recovery.Location{ObjectNum: objNum, ObjectGen: gen})
 		}
 
 		obj, err := parseObject(tr)

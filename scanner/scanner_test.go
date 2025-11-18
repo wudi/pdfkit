@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"pdflib/recovery"
 )
 
 func newScanner(t *testing.T, data string, cfg Config) Scanner {
@@ -162,6 +164,26 @@ func TestScanner_MaxStringLength(t *testing.T) {
 	}
 }
 
+func TestScanner_StreamCRPrecedingEndstream(t *testing.T) {
+	data := "stream\rdata\rendstream\r"
+	s := newScanner(t, data, Config{})
+	tok := nextToken(t, s)
+	if tok.Type != TokenStream {
+		t.Fatalf("expected stream token, got %+v", tok)
+	}
+	if got := string(tok.Value.([]byte)); got != "data" {
+		t.Fatalf("unexpected stream payload: %q", got)
+	}
+}
+
+func TestScanner_StreamScanLimit(t *testing.T) {
+	data := "stream\nabc"
+	s := newScanner(t, data, Config{MaxStreamScan: 2})
+	if _, err := s.Next(); err == nil || !strings.Contains(err.Error(), "endstream not found") {
+		t.Fatalf("expected scan limit error, got %v", err)
+	}
+}
+
 func TestScanner_MaxLiteralStringLength(t *testing.T) {
 	s := newScanner(t, "(abcdef)", Config{MaxStringLength: 3})
 	if _, err := s.Next(); err == nil || !strings.Contains(err.Error(), "literal string too long") {
@@ -178,13 +200,13 @@ func TestScanner_MaxStreamLength(t *testing.T) {
 }
 
 func TestScanner_InlineImage(t *testing.T) {
-	data := "ID abc EI BT"
+	data := "ID \nabc\nEI\nBT"
 	s := newScanner(t, data, Config{MaxInlineImage: 10})
 	tok := nextToken(t, s)
 	if tok.Type != TokenInlineImage {
 		t.Fatalf("expected inline image token, got %+v", tok)
 	}
-	if got := string(tok.Value.([]byte)); got != "abc " {
+	if got := string(tok.Value.([]byte)); got != "abc\n" {
 		t.Fatalf("unexpected inline image payload: %q", got)
 	}
 	// Next token should be BT keyword
@@ -195,7 +217,7 @@ func TestScanner_InlineImage(t *testing.T) {
 }
 
 func TestScanner_InlineImageTooLong(t *testing.T) {
-	data := "ID abcdefghijk EI"
+	data := "ID \nabcdefghijk\nEI"
 	s := newScanner(t, data, Config{MaxInlineImage: 5})
 	if _, err := s.Next(); err == nil || !strings.Contains(err.Error(), "inline image too long") {
 		t.Fatalf("expected inline image too long error, got %v", err)
@@ -208,5 +230,98 @@ func TestScanner_StreamMissingEOL(t *testing.T) {
 	s := newScanner(t, data, Config{})
 	if _, err := s.Next(); err == nil || !strings.Contains(err.Error(), "missing EOL") {
 		t.Fatalf("expected missing EOL error, got %v", err)
+	}
+}
+
+func TestScanner_UnterminatedLiteralString(t *testing.T) {
+	s := newScanner(t, "(abc", Config{})
+	if _, err := s.Next(); err == nil || !strings.Contains(err.Error(), "unterminated literal string") {
+		t.Fatalf("expected unterminated literal string error, got %v", err)
+	}
+}
+
+func TestScanner_UnterminatedHexString(t *testing.T) {
+	s := newScanner(t, "<abc", Config{})
+	if _, err := s.Next(); err == nil || !strings.Contains(err.Error(), "unterminated hex string") {
+		t.Fatalf("expected unterminated hex string error, got %v", err)
+	}
+}
+
+func TestScanner_DepthLimits(t *testing.T) {
+	s := newScanner(t, "<< /A << /B << >> >> >>", Config{MaxDictDepth: 2})
+	var err error
+	for err == nil {
+		_, err = s.Next()
+	}
+	if !strings.Contains(err.Error(), "dict depth exceeded") {
+		t.Fatalf("expected dict depth exceeded, got %v", err)
+	}
+}
+
+type fixRecovery struct{}
+
+func (f *fixRecovery) OnError(ctx recovery.Context, err error, loc recovery.Location) recovery.Action {
+	return recovery.ActionFix
+}
+
+func TestScanner_FixUnterminatedLiteralString(t *testing.T) {
+	s := New(bytes.NewReader([]byte("(abc")), Config{Recovery: &fixRecovery{}})
+	tok, err := s.Next()
+	if err != nil {
+		t.Fatalf("expected recovery to continue, got %v", err)
+	}
+	if tok.Type != TokenString || string(tok.Value.([]byte)) != "abc" {
+		t.Fatalf("unexpected token after recovery: %+v", tok)
+	}
+}
+
+func TestScanner_FixUnterminatedHexString(t *testing.T) {
+	s := New(bytes.NewReader([]byte("<4142")), Config{Recovery: &fixRecovery{}})
+	tok, err := s.Next()
+	if err != nil {
+		t.Fatalf("expected recovery to continue, got %v", err)
+	}
+	if tok.Type != TokenString || string(tok.Value.([]byte)) != "AB" {
+		t.Fatalf("unexpected token after recovery: %+v", tok)
+	}
+}
+
+func TestScanner_FixTruncatedStreamLength(t *testing.T) {
+	s := New(bytes.NewReader([]byte("stream\nabc")), Config{Recovery: &fixRecovery{}})
+	s.SetNextStreamLength(5)
+	tok, err := s.Next()
+	if err != nil {
+		t.Fatalf("expected recovery to continue, got %v", err)
+	}
+	if tok.Type != TokenStream || string(tok.Value.([]byte)) != "abc" {
+		t.Fatalf("unexpected stream payload after recovery: %+v", tok)
+	}
+}
+
+type recordRecovery struct {
+	loc recovery.Location
+	err error
+}
+
+func (r *recordRecovery) OnError(ctx recovery.Context, err error, loc recovery.Location) recovery.Action {
+	r.loc = loc
+	r.err = err
+	return recovery.ActionWarn
+}
+
+func TestScanner_RecoveryContextIncludesObject(t *testing.T) {
+	rec := &recordRecovery{}
+	s := New(bytes.NewReader([]byte("<abc")), Config{Recovery: rec})
+	if rc, ok := s.(interface{ SetRecoveryLocation(recovery.Location) }); ok {
+		rc.SetRecoveryLocation(recovery.Location{ObjectNum: 5, ObjectGen: 2, Component: "parser"})
+	}
+	if _, err := s.Next(); err == nil {
+		t.Fatalf("expected unterminated hex string error")
+	}
+	if rec.loc.ObjectNum != 5 || rec.loc.ObjectGen != 2 {
+		t.Fatalf("expected object context 5 2, got %+v", rec.loc)
+	}
+	if !strings.Contains(rec.loc.Component, "scanner:hex") {
+		t.Fatalf("expected component to include scanner:hex, got %q", rec.loc.Component)
 	}
 }
