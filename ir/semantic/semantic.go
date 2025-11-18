@@ -13,6 +13,7 @@ type Document struct {
 	Catalog           *Catalog
 	Info              *DocumentInfo
 	Metadata          *XMPMetadata
+	PageLabels        map[int]string // page index -> prefix
 	StructTree        *StructureTree
 	decoded           *decoded.DecodedDocument
 	Permissions       raw.Permissions

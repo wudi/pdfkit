@@ -289,6 +289,23 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		vp.Set(raw.NameLiteral("DisplayDocTitle"), raw.Bool(true))
 		catalogDict.Set(raw.NameLiteral("ViewerPreferences"), vp)
 	}
+	if len(doc.PageLabels) > 0 {
+		nums := raw.NewArray()
+		indices := make([]int, 0, len(doc.PageLabels))
+		for idx := range doc.PageLabels {
+			indices = append(indices, idx)
+		}
+		sort.Ints(indices)
+		for _, idx := range indices {
+			nums.Append(raw.NumberInt(int64(idx)))
+			entry := raw.Dict()
+			entry.Set(raw.NameLiteral("P"), raw.Str([]byte(doc.PageLabels[idx])))
+			nums.Append(entry)
+		}
+		labels := raw.Dict()
+		labels.Set(raw.NameLiteral("Nums"), nums)
+		catalogDict.Set(raw.NameLiteral("PageLabels"), labels)
+	}
 	objects[catalogRef] = catalogDict
 
 	// Serialize

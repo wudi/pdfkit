@@ -730,7 +730,8 @@ func TestWriter_ViewerPreferences(t *testing.T) {
 		Pages: []*semantic.Page{
 			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
 		},
-		Info: &semantic.DocumentInfo{Title: "Show Title"},
+		Info:       &semantic.DocumentInfo{Title: "Show Title"},
+		PageLabels: map[int]string{0: "A-", 1: "B-"},
 	}
 	var buf bytes.Buffer
 	w := (&WriterBuilder{}).Build()
@@ -763,6 +764,21 @@ func TestWriter_ViewerPreferences(t *testing.T) {
 				}
 				if b, ok := ddt.(raw.BoolObj); !ok || !b.Value() {
 					t.Fatalf("DisplayDocTitle not true: %#v", ddt)
+				}
+				if pl, ok := d.Get(raw.NameLiteral("PageLabels")); ok {
+					if plDict, ok := pl.(*raw.DictObj); ok {
+						if nums, ok := plDict.Get(raw.NameLiteral("Nums")); ok {
+							if arr, ok := nums.(*raw.ArrayObj); !ok || arr.Len() == 0 {
+								t.Fatalf("PageLabels Nums missing entries")
+							}
+						} else {
+							t.Fatalf("PageLabels missing Nums")
+						}
+					} else {
+						t.Fatalf("PageLabels not dict: %#v", pl)
+					}
+				} else {
+					t.Fatalf("PageLabels missing")
 				}
 				return
 			}
