@@ -148,6 +148,24 @@ func TestAES256RejectsWrongPassword(t *testing.T) {
 	}
 }
 
+func TestAES256RejectsMalformedEntries(t *testing.T) {
+	enc := raw.Dict()
+	enc.Set(raw.NameObj{Val: "Filter"}, raw.NameObj{Val: "Standard"})
+	enc.Set(raw.NameObj{Val: "V"}, raw.NumberInt(5))
+	enc.Set(raw.NameObj{Val: "R"}, raw.NumberInt(6))
+	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberInt(256))
+	enc.Set(raw.NameObj{Val: "U"}, raw.StringObj{Bytes: []byte("short")})
+	enc.Set(raw.NameObj{Val: "UE"}, raw.StringObj{Bytes: []byte("short")})
+
+	h, err := (&HandlerBuilder{}).WithEncryptDict(enc).WithFileID([]byte("id")).Build()
+	if err != nil {
+		t.Fatalf("build handler: %v", err)
+	}
+	if err := h.Authenticate("pass"); err == nil {
+		t.Fatalf("expected authentication failure for malformed UE/U")
+	}
+}
+
 func TestAES256Authentication(t *testing.T) {
 	fileKey := []byte("0123456789abcdef0123456789abcdef")
 	fileID := []byte("fileid-aes256")
