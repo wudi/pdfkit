@@ -195,6 +195,7 @@ func (o *objectLoader) loadFromObjectStream(ctx context.Context, ref raw.ObjectR
 			filters.NewRunLengthDecoder(),
 			filters.NewASCII85Decoder(),
 			filters.NewASCIIHexDecoder(),
+			filters.NewCryptDecoder(),
 		}, filters.Limits{})
 		decoded, err := p.Decode(ctx, data, filterNames, filterParams)
 		if err != nil {
@@ -284,6 +285,38 @@ func filtersForStream(d *raw.DictObj) ([]string, []raw.Dictionary) {
 	return names, params
 }
 
+func cryptFilterForStream(d *raw.DictObj) (string, bool) {
+	if d == nil {
+		return "", false
+	}
+	names, params := filtersForStream(d)
+	if len(names) == 0 {
+		return "", false
+	}
+	for idx, name := range names {
+		if name != "Crypt" {
+			continue
+		}
+		var dp raw.Dictionary
+		if len(params) == len(names) {
+			dp = params[idx]
+		} else if len(params) == 1 {
+			dp = params[0]
+		} else if idx < len(params) {
+			dp = params[idx]
+		}
+		if dp != nil {
+			if nObj, ok := dp.Get(raw.NameObj{Val: "Name"}); ok {
+				if n, ok := nObj.(raw.NameObj); ok {
+					return n.Val, true
+				}
+			}
+		}
+		return "", true // default Crypt filter
+	}
+	return "", false
+}
+
 func (o *objectLoader) decryptObject(ref raw.ObjectRef, obj raw.Object) (raw.Object, error) {
 	if o.security == nil || !o.security.IsEncrypted() {
 		return obj, nil
@@ -324,7 +357,11 @@ func (o *objectLoader) decryptObject(ref raw.ObjectRef, obj raw.Object) (raw.Obj
 			if isMetadataStream(v.Dict) {
 				class = security.DataClassMetadataStream
 			}
-			dec, err := o.security.Decrypt(ref.Num, ref.Gen, v.Data, class)
+			cryptFilter, hasCrypt := cryptFilterForStream(v.Dict)
+			if hasCrypt && cryptFilter == "Identity" {
+				return v, nil
+			}
+			dec, err := o.decryptStreamWithFilter(ref.Num, ref.Gen, v.Data, class, cryptFilter)
 			if err != nil {
 				return nil, err
 			}
@@ -352,6 +389,15 @@ func (o *objectLoader) shouldDecryptStream(dict *raw.DictObj) bool {
 		}
 	}
 	return true
+}
+
+func (o *objectLoader) decryptStreamWithFilter(objNum, gen int, data []byte, class security.DataClass, cryptFilter string) ([]byte, error) {
+	if h, ok := o.security.(interface {
+		DecryptWithFilter(objNum, gen int, data []byte, class security.DataClass, cryptFilter string) ([]byte, error)
+	}); ok {
+		return h.DecryptWithFilter(objNum, gen, data, class, cryptFilter)
+	}
+	return o.security.Decrypt(objNum, gen, data, class)
 }
 
 func isMetadataStream(d *raw.DictObj) bool {

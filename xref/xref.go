@@ -376,6 +376,7 @@ func parseXRefStream(ctx context.Context, data []byte, offset int64, cfg Resolve
 			filters.NewRunLengthDecoder(),
 			filters.NewASCII85Decoder(),
 			filters.NewASCIIHexDecoder(),
+			filters.NewCryptDecoder(),
 		}, filters.Limits{})
 		decoded, err := p.Decode(ctx, streamData, filterNames, filterParams)
 		if err != nil {

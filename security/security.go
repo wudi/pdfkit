@@ -30,7 +30,9 @@ const (
 type Handler interface {
 	IsEncrypted() bool
 	Authenticate(password string) error
+	DecryptWithFilter(objNum, gen int, data []byte, class DataClass, cryptFilter string) ([]byte, error)
 	Decrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error)
+	EncryptWithFilter(objNum, gen int, data []byte, class DataClass, cryptFilter string) ([]byte, error)
 	Encrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error)
 	Permissions() Permissions
 	EncryptMetadata() bool
@@ -146,6 +148,7 @@ func (b *HandlerBuilder) Build() (Handler, error) {
 		useAES:      useAES,
 		streamAlgo:  streamAlgo,
 		stringAlgo:  stringAlgo,
+		cryptFilters: cryptFilters,
 		trailer:     b.trailer,
 	}
 	return h, nil
@@ -178,6 +181,7 @@ type standardHandler struct {
 	useAES      bool
 	streamAlgo  cryptAlgo
 	stringAlgo  cryptAlgo
+	cryptFilters map[string]cryptAlgo
 	trailer     raw.Dictionary
 }
 
@@ -208,30 +212,37 @@ func (h *standardHandler) Authenticate(password string) error {
 	return nil
 }
 
-func (h *standardHandler) Decrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error) {
+func (h *standardHandler) DecryptWithFilter(objNum, gen int, data []byte, class DataClass, cryptFilter string) ([]byte, error) {
 	if !h.authed {
 		if err := h.Authenticate(""); err != nil {
 			return nil, err
 		}
 	}
-	algo := h.pickAlgo(class)
-	if algo == algoNone || len(data) == 0 {
-		return data, nil
+	algo, err := h.algoFor(class, cryptFilter)
+	if err != nil {
+		return nil, err
 	}
-	key := objectKey(h.key, objNum, gen, h.r, algo == algoAES)
-	if algo == algoAES {
-		return aesCrypt(key, data, false)
-	}
-	return rc4Crypt(key, data)
+	return h.decryptWithAlgo(algo, objNum, gen, data)
+}
+
+func (h *standardHandler) Decrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error) {
+	return h.DecryptWithFilter(objNum, gen, data, class, "")
 }
 
 func (h *standardHandler) Encrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error) {
+	return h.EncryptWithFilter(objNum, gen, data, class, "")
+}
+
+func (h *standardHandler) EncryptWithFilter(objNum, gen int, data []byte, class DataClass, cryptFilter string) ([]byte, error) {
 	if !h.authed {
 		if err := h.Authenticate(""); err != nil {
 			return nil, err
 		}
 	}
-	algo := h.pickAlgo(class)
+	algo, err := h.algoFor(class, cryptFilter)
+	if err != nil {
+		return nil, err
+	}
 	if algo == algoNone || len(data) == 0 {
 		return data, nil
 	}
@@ -257,6 +268,31 @@ func (h *standardHandler) pickAlgo(class DataClass) cryptAlgo {
 		return algoAES
 	}
 	return algoRC4
+}
+
+func (h *standardHandler) algoFor(class DataClass, filter string) (cryptAlgo, error) {
+	if filter == "Identity" {
+		return algoNone, nil
+	}
+	if filter == "Standard" || filter == "" {
+		return h.pickAlgo(class), nil
+	}
+	if algo, ok := h.cryptFilters[filter]; ok {
+		return algo, nil
+	}
+	return algoUnset, fmt.Errorf("crypt filter %s not defined", filter)
+}
+
+func (h *standardHandler) decryptWithAlgo(algo cryptAlgo, objNum, gen int, data []byte) ([]byte, error) {
+	if algo == algoNone || len(data) == 0 {
+		return data, nil
+	}
+	useAES := algo == algoAES
+	key := objectKey(h.key, objNum, gen, h.r, useAES)
+	if useAES {
+		return aesCrypt(key, data, false)
+	}
+	return rc4Crypt(key, data)
 }
 
 func (h *standardHandler) Permissions() Permissions {
@@ -320,7 +356,13 @@ type noEncryptionHandler struct{}
 
 func (noEncryptionHandler) IsEncrypted() bool                  { return false }
 func (noEncryptionHandler) Authenticate(password string) error { return nil }
+func (noEncryptionHandler) DecryptWithFilter(objNum, gen int, data []byte, class DataClass, cryptFilter string) ([]byte, error) {
+	return data, nil
+}
 func (noEncryptionHandler) Decrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error) {
+	return data, nil
+}
+func (noEncryptionHandler) EncryptWithFilter(objNum, gen int, data []byte, class DataClass, cryptFilter string) ([]byte, error) {
 	return data, nil
 }
 func (noEncryptionHandler) Encrypt(objNum, gen int, data []byte, class DataClass) ([]byte, error) {

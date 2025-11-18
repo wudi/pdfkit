@@ -34,6 +34,7 @@ func NewDefault() *Pipeline {
 			filters.NewRunLengthDecoder(),
 			filters.NewASCII85Decoder(),
 			filters.NewASCIIHexDecoder(),
+			filters.NewCryptDecoder(),
 		},
 		filters.Limits{},
 	)

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"pdflib/ir/raw"
+	"pdflib/security"
 	"pdflib/xref"
 )
 
@@ -85,4 +86,81 @@ func buildPDF() string {
 	buf.WriteString("%%EOF\n")
 
 	return buf.String()
+}
+
+type cryptStub struct {
+	calls    int
+	filter   string
+	encrypted bool
+}
+
+func (c *cryptStub) IsEncrypted() bool { return c.encrypted }
+func (c *cryptStub) Authenticate(password string) error { return nil }
+func (c *cryptStub) DecryptWithFilter(objNum, gen int, data []byte, class security.DataClass, cryptFilter string) ([]byte, error) {
+	c.calls++
+	c.filter = cryptFilter
+	return data, nil
+}
+func (c *cryptStub) Decrypt(objNum, gen int, data []byte, class security.DataClass) ([]byte, error) {
+	c.calls++
+	return data, nil
+}
+func (c *cryptStub) EncryptWithFilter(objNum, gen int, data []byte, class security.DataClass, cryptFilter string) ([]byte, error) {
+	return data, nil
+}
+func (c *cryptStub) Encrypt(objNum, gen int, data []byte, class security.DataClass) ([]byte, error) {
+	return data, nil
+}
+func (c *cryptStub) Permissions() security.Permissions { return security.Permissions{} }
+func (c *cryptStub) EncryptMetadata() bool             { return true }
+
+func TestDecryptStreamSkipsIdentityCryptFilter(t *testing.T) {
+	stub := &cryptStub{encrypted: true}
+	dict := raw.Dict()
+	dict.Set(raw.NameLiteral("Filter"), raw.NameObj{Val: "Crypt"})
+	dp := raw.Dict()
+	dp.Set(raw.NameLiteral("Name"), raw.NameObj{Val: "Identity"})
+	dict.Set(raw.NameLiteral("DecodeParms"), dp)
+	stream := raw.NewStream(dict, []byte("plaintext"))
+
+	loader := &objectLoader{security: stub}
+	obj, err := loader.decryptObject(raw.ObjectRef{Num: 5, Gen: 0}, stream)
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	out, ok := obj.(*raw.StreamObj)
+	if !ok {
+		t.Fatalf("expected stream, got %T", obj)
+	}
+	if string(out.RawData()) != "plaintext" {
+		t.Fatalf("unexpected data: %q", out.RawData())
+	}
+	if stub.calls != 0 {
+		t.Fatalf("expected decrypt not called for identity filter, got %d", stub.calls)
+	}
+}
+
+func TestDecryptStreamUsesCryptFilterName(t *testing.T) {
+	stub := &cryptStub{encrypted: true}
+	dict := raw.Dict()
+	dict.Set(raw.NameLiteral("Filter"), raw.NameObj{Val: "Crypt"})
+	dp := raw.Dict()
+	dp.Set(raw.NameLiteral("Name"), raw.NameObj{Val: "CF1"})
+	dict.Set(raw.NameLiteral("DecodeParms"), dp)
+	stream := raw.NewStream(dict, []byte("ciphertext"))
+
+	loader := &objectLoader{security: stub}
+	obj, err := loader.decryptObject(raw.ObjectRef{Num: 9, Gen: 2}, stream)
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	if _, ok := obj.(*raw.StreamObj); !ok {
+		t.Fatalf("expected stream, got %T", obj)
+	}
+	if stub.calls != 1 {
+		t.Fatalf("expected decrypt called once, got %d", stub.calls)
+	}
+	if stub.filter != "CF1" {
+		t.Fatalf("crypt filter name propagated, got %q", stub.filter)
+	}
 }

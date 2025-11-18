@@ -180,6 +180,15 @@ func (asciiHexDecoder) Decode(ctx context.Context, in []byte, params raw.Diction
 }
 func NewASCIIHexDecoder() Decoder { return asciiHexDecoder{} }
 
+type cryptDecoder struct{}
+
+func (cryptDecoder) Name() string { return "Crypt" }
+func (cryptDecoder) Decode(ctx context.Context, in []byte, params raw.Dictionary) ([]byte, error) {
+	// Crypt filter is applied via the security handler; decoding stage treats it as transparent.
+	return in, nil
+}
+func NewCryptDecoder() Decoder { return cryptDecoder{} }
+
 // Flate, LZW left intentionally minimal; ASCII decoders above, Flate below.
 
 // flateDecoder implements FlateDecode using the standard library.
