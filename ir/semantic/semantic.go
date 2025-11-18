@@ -116,9 +116,10 @@ type StructureTree struct{}
 
 // Annotation represents a simple page annotation.
 type Annotation struct {
-	Subtype string
-	Rect    Rectangle
-	URI     string // used for Link annotations
+	Subtype  string
+	Rect     Rectangle
+	URI      string // used for Link annotations
+	Contents string
 }
 
 // Builder produces a Semantic document from Decoded IR.

@@ -784,6 +784,59 @@ func TestWriter_LinkAnnotation(t *testing.T) {
 	}
 }
 
+func TestWriter_TextAnnotationContents(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 50, URY: 50},
+				Annotations: []semantic.Annotation{
+					{
+						Subtype:  "Text",
+						Rect:     semantic.Rectangle{LLX: 1, LLY: 1, URX: 10, URY: 10},
+						Contents: "note here",
+					},
+				},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	found := false
+	for _, obj := range rawDoc.Objects {
+		d, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		typ, _ := d.Get(raw.NameLiteral("Type"))
+		if n, ok := typ.(raw.NameObj); !ok || n.Value() != "Annot" {
+			continue
+		}
+		sub, _ := d.Get(raw.NameLiteral("Subtype"))
+		if n, ok := sub.(raw.NameObj); !ok || n.Value() != "Text" {
+			continue
+		}
+		contents, ok := d.Get(raw.NameLiteral("Contents"))
+		if !ok {
+			t.Fatalf("text annotation missing contents")
+		}
+		if s, ok := contents.(raw.StringObj); !ok || string(s.Value()) != "note here" {
+			t.Fatalf("unexpected contents: %#v", contents)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatalf("text annotation not found")
+	}
+}
+
 func firstID(doc *raw.Document) string {
 	idObj, ok := doc.Trailer.Get(raw.NameLiteral("ID"))
 	if !ok {

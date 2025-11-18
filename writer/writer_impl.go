@@ -247,6 +247,8 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 					action.Set(raw.NameLiteral("S"), raw.NameLiteral("URI"))
 					action.Set(raw.NameLiteral("URI"), raw.Str([]byte(a.URI)))
 					aDict.Set(raw.NameLiteral("A"), action)
+				} else if a.Contents != "" {
+					aDict.Set(raw.NameLiteral("Contents"), raw.Str([]byte(a.Contents)))
 				}
 				aDict.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberInt(0), raw.NumberInt(0), raw.NumberInt(0)))
 				objects[aRef] = aDict
