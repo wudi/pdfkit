@@ -768,6 +768,11 @@ func TestWriter_ViewerPreferences(t *testing.T) {
 				if b, ok := ddt.(raw.BoolObj); !ok || !b.Value() {
 					t.Fatalf("DisplayDocTitle not true: %#v", ddt)
 				}
+				if pm, ok := d.Get(raw.NameLiteral("PageMode")); !ok {
+					t.Fatalf("PageMode missing")
+				} else if n, ok := pm.(raw.NameObj); !ok || n.Value() != "UseOutlines" {
+					t.Fatalf("unexpected PageMode: %#v", pm)
+				}
 				if pl, ok := d.Get(raw.NameLiteral("PageLabels")); ok {
 					if plDict, ok := pl.(*raw.DictObj); ok {
 						if nums, ok := plDict.Get(raw.NameLiteral("Nums")); ok {

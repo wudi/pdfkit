@@ -331,6 +331,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		outlineDict.Set(raw.NameLiteral("Last"), raw.Ref(last.Num, last.Gen))
 		outlineDict.Set(raw.NameLiteral("Count"), raw.NumberInt(total))
 		catalogDict.Set(raw.NameLiteral("Outlines"), raw.Ref(outlineRef.Num, outlineRef.Gen))
+		catalogDict.Set(raw.NameLiteral("PageMode"), raw.NameLiteral("UseOutlines"))
 	}
 	objects[catalogRef] = catalogDict
 
