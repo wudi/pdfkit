@@ -298,6 +298,25 @@ func TestScanner_FixTruncatedStreamLength(t *testing.T) {
 	}
 }
 
+func TestScanner_FixArrayUnderflow(t *testing.T) {
+	s := New(bytes.NewReader([]byte("] 1")), Config{Recovery: &fixRecovery{}})
+	tok := nextToken(t, s)
+	if tok.Type != TokenNumber || tok.Value != int64(1) {
+		t.Fatalf("expected to skip underflowing ], got %+v", tok)
+	}
+}
+
+func TestScanner_FixStreamScanLimit(t *testing.T) {
+	s := New(bytes.NewReader([]byte("stream\nabc")), Config{MaxStreamScan: 1, Recovery: &fixRecovery{}})
+	tok, err := s.Next()
+	if err != nil {
+		t.Fatalf("expected recovery to allow stream token, got %v", err)
+	}
+	if tok.Type != TokenStream || string(tok.Value.([]byte)) != "abc" {
+		t.Fatalf("unexpected stream payload after recovery: %+v", tok)
+	}
+}
+
 type recordRecovery struct {
 	loc recovery.Location
 	err error

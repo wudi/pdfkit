@@ -95,6 +95,7 @@ func (s *pdfScanner) SetNextStreamLength(n int64)               { s.nextStreamLe
 func (s *pdfScanner) SetRecoveryLocation(loc recovery.Location) { s.recLoc = loc }
 
 func (s *pdfScanner) Next() (Token, error) {
+	s.lastAction = recovery.ActionFail
 	if err := s.skipWSAndComments(); err != nil {
 		if errors.Is(err, io.EOF) {
 			return Token{}, io.EOF
@@ -808,6 +809,7 @@ func (s *pdfScanner) recover(err error, loc string) error {
 		ObjectGen:  location.ObjectGen,
 		Component:  location.Component,
 	})
+	s.lastAction = action
 	switch action {
 	case recovery.ActionSkip:
 		return nil
@@ -825,23 +827,46 @@ func (s *pdfScanner) emit(tok Token) (Token, error) {
 	case TokenArray:
 		s.arrayDepth++
 		if s.cfg.MaxArrayDepth > 0 && s.arrayDepth > s.cfg.MaxArrayDepth {
-			return Token{}, s.recover(errors.New("array depth exceeded"), "array")
+			if err := s.recover(errors.New("array depth exceeded"), "array"); err != nil && s.lastAction != recovery.ActionFix {
+				return Token{}, err
+			}
+			if s.lastAction == recovery.ActionFix {
+				s.arrayDepth = s.cfg.MaxArrayDepth
+			}
 		}
 	case TokenDict:
 		s.dictDepth++
 		if s.cfg.MaxDictDepth > 0 && s.dictDepth > s.cfg.MaxDictDepth {
-			return Token{}, s.recover(errors.New("dict depth exceeded"), "dict")
+			if err := s.recover(errors.New("dict depth exceeded"), "dict"); err != nil && s.lastAction != recovery.ActionFix {
+				return Token{}, err
+			}
+			if s.lastAction == recovery.ActionFix {
+				s.dictDepth = s.cfg.MaxDictDepth
+			}
 		}
 	case TokenKeyword:
 		if tok.Value == "]" {
 			if s.arrayDepth == 0 {
-				return Token{}, s.recover(errors.New("array depth underflow"), "array")
+				if err := s.recover(errors.New("array depth underflow"), "array"); err != nil && s.lastAction != recovery.ActionFix {
+					return Token{}, err
+				}
+				if s.lastAction == recovery.ActionFix {
+					// drop the unmatched closing and move to next token
+					return s.Next()
+				}
+				return Token{}, nil
 			}
 			s.arrayDepth--
 		}
 		if tok.Value == ">>" {
 			if s.dictDepth == 0 {
-				return Token{}, s.recover(errors.New("dict depth underflow"), "dict")
+				if err := s.recover(errors.New("dict depth underflow"), "dict"); err != nil && s.lastAction != recovery.ActionFix {
+					return Token{}, err
+				}
+				if s.lastAction == recovery.ActionFix {
+					return s.Next()
+				}
+				return Token{}, nil
 			}
 			s.dictDepth--
 		}
