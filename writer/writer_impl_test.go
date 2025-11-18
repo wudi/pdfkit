@@ -5,6 +5,7 @@ import (
 	"compress/flate"
 	"compress/lzw"
 	"context"
+	"errors"
 	"io"
 	"regexp"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 	"pdflib/ir"
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
+	"pdflib/observability"
 	"pdflib/parser"
 	"pdflib/security"
 	"pdflib/xref"
@@ -27,6 +29,45 @@ import (
 type staticCtx struct{}
 
 func (staticCtx) Done() <-chan struct{} { return nil }
+
+type recordingTracer struct{ spans []*recordingSpan }
+
+type recordingSpan struct {
+	name     string
+	tags     map[string]interface{}
+	err      error
+	finished bool
+}
+
+func (t *recordingTracer) StartSpan(ctx context.Context, name string) (context.Context, observability.Span) {
+	span := &recordingSpan{name: name, tags: make(map[string]interface{})}
+	t.spans = append(t.spans, span)
+	return ctx, span
+}
+
+func (s *recordingSpan) SetTag(key string, value interface{}) {
+	if s.tags == nil {
+		s.tags = make(map[string]interface{})
+	}
+	s.tags[key] = value
+}
+
+func (s *recordingSpan) SetError(err error) { s.err = err }
+
+func (s *recordingSpan) Finish() { s.finished = true }
+
+func (t *recordingTracer) spanByName(name string) *recordingSpan {
+	for i := len(t.spans) - 1; i >= 0; i-- {
+		if t.spans[i].name == name {
+			return t.spans[i]
+		}
+	}
+	return nil
+}
+
+type errorWriter struct{}
+
+func (errorWriter) Write([]byte) (int, error) { return 0, errors.New("write error") }
 
 func TestWriterRoundTripPipeline(t *testing.T) {
 	// Build a simple document with one page and text.
@@ -1690,6 +1731,48 @@ func TestWriter_OutlinesXYZDest(t *testing.T) {
 	}
 	if !foundXYZ {
 		t.Fatalf("XYZ destination not serialized")
+	}
+}
+
+func TestWriter_TracingSuccess(t *testing.T) {
+	tracer := &recordingTracer{}
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Tracer: tracer}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	writeSpan := tracer.spanByName("writer.write")
+	if writeSpan == nil || !writeSpan.finished {
+		t.Fatalf("write span not recorded or not finished: %+v", writeSpan)
+	}
+	if writeSpan.err != nil {
+		t.Fatalf("unexpected error recorded on span: %v", writeSpan.err)
+	}
+	if pages, ok := writeSpan.tags["pages"]; !ok || pages != 1 {
+		t.Fatalf("pages tag missing or wrong: %+v", writeSpan.tags)
+	}
+}
+
+func TestWriter_TracingError(t *testing.T) {
+	tracer := &recordingTracer{}
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+	}
+	w := (&WriterBuilder{}).Build()
+	err := w.Write(staticCtx{}, doc, errorWriter{}, Config{Tracer: tracer})
+	if err == nil {
+		t.Fatalf("expected error from write")
+	}
+	writeSpan := tracer.spanByName("writer.write")
+	if writeSpan == nil || writeSpan.err == nil {
+		t.Fatalf("expected error on span, got %+v", writeSpan)
 	}
 }
 

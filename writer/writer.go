@@ -3,6 +3,7 @@ package writer
 import (
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
+	"pdflib/observability"
 )
 
 type PDFVersion string
@@ -41,6 +42,7 @@ type Config struct {
 	ObjectStreams bool
 	SubsetFonts   bool
 	PDFALevel     PDFALevel
+	Tracer        observability.Tracer
 }
 
 type Writer interface {
