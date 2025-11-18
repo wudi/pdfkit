@@ -99,8 +99,6 @@ The library provides both **high-level convenience APIs** for typical PDF tasks 
 ```
 
 **Cross-Cutting Concerns (injected into all layers):**
-- Logging & Observability
-- Metrics & Telemetry
 - Error Recovery Strategy
 - Context & Cancellation
 - Security Limits
