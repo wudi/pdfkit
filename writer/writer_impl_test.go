@@ -513,6 +513,55 @@ func TestWriter_ProcSetIncluded(t *testing.T) {
 	}
 }
 
+func TestWriter_SerializeOperations(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 100, URY: 100},
+				Contents: []semantic.ContentStream{
+					{
+						Operations: []semantic.Operation{
+							{Operator: "BT"},
+							{Operator: "Tf", Operands: []semantic.Operand{semantic.NameOperand{Value: "F1"}, semantic.NumberOperand{Value: 12}}},
+							{Operator: "Tj", Operands: []semantic.Operand{semantic.StringOperand{Value: []byte("Hello")}}},
+							{Operator: "ET"},
+						},
+					},
+				},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	found := false
+	for _, obj := range rawDoc.Objects {
+		stream, ok := obj.(*raw.StreamObj)
+		if !ok {
+			continue
+		}
+		if tObj, ok := stream.Dict.Get(raw.NameLiteral("Type")); ok {
+			if n, ok := tObj.(raw.NameObj); ok && n.Value() == "XRef" {
+				continue
+			}
+		}
+		data := string(stream.Data)
+		if strings.Contains(data, "BT\n/F1 12 Tf\n(Hello) Tj\nET\n") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("serialized operations not present in content stream")
+	}
+}
+
 func maxObjNum(data []byte) int {
 	re := regexp.MustCompile(`\s(\d+)\s+0\s+obj`)
 	matches := re.FindAllSubmatch(data, -1)

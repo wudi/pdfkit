@@ -109,7 +109,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	for _, p := range doc.Pages {
 		contentData := []byte{}
 		for _, cs := range p.Contents {
-			contentData = append(contentData, cs.RawBytes...)
+			contentData = append(contentData, serializeContentStream(cs)...)
 		}
 		streamData := contentData
 		contentRef := nextRef()
@@ -578,6 +578,69 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func serializeContentStream(cs semantic.ContentStream) []byte {
+	if len(cs.RawBytes) > 0 {
+		return cs.RawBytes
+	}
+	if len(cs.Operations) == 0 {
+		return nil
+	}
+	var buf bytes.Buffer
+	for _, op := range cs.Operations {
+		for i, operand := range op.Operands {
+			if i > 0 {
+				buf.WriteByte(' ')
+			}
+			buf.Write(serializeOperand(operand))
+		}
+		if len(op.Operands) > 0 {
+			buf.WriteByte(' ')
+		}
+		buf.WriteString(op.Operator)
+		buf.WriteByte('\n')
+	}
+	return buf.Bytes()
+}
+
+func serializeOperand(op semantic.Operand) []byte {
+	switch v := op.(type) {
+	case semantic.NumberOperand:
+		// %g keeps minimal form while preserving integer vs float readability.
+		return []byte(fmt.Sprintf("%g", v.Value))
+	case semantic.NameOperand:
+		return []byte("/" + v.Value)
+	case semantic.StringOperand:
+		return escapeLiteralString(v.Value)
+	case semantic.ArrayOperand:
+		var buf bytes.Buffer
+		buf.WriteByte('[')
+		for i, it := range v.Values {
+			if i > 0 {
+				buf.WriteByte(' ')
+			}
+			buf.Write(serializeOperand(it))
+		}
+		buf.WriteByte(']')
+		return buf.Bytes()
+	case semantic.DictOperand:
+		var buf bytes.Buffer
+		buf.WriteString("<<")
+		keys := make([]string, 0, len(v.Values))
+		for k := range v.Values {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			buf.WriteString("/" + k + " ")
+			buf.Write(serializeOperand(v.Values[k]))
+		}
+		buf.WriteString(">>")
+		return buf.Bytes()
+	default:
+		return []byte("null")
+	}
 }
 
 func pickContentFilter(cfg Config) ContentFilter {
