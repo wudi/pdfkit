@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"pdflib/contentstream"
+	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
 )
 
@@ -17,6 +18,7 @@ type PDFBuilder interface {
 	SetMarked(marked bool) PDFBuilder
 	AddPageLabel(pageIndex int, prefix string) PDFBuilder
 	AddOutline(out Outline) PDFBuilder
+	SetEncryption(ownerPassword, userPassword string, perms raw.Permissions, encryptMetadata bool) PDFBuilder
 	RegisterFont(name string, font *semantic.Font) PDFBuilder
 	Build() (*semantic.Document, error)
 }
@@ -97,17 +99,22 @@ type Outline struct {
 }
 
 type builderImpl struct {
-	pages        []*semantic.Page
-	info         *semantic.DocumentInfo
-	metadata     []byte
-	lang         string
-	marked       bool
-	pageLabels   map[int]string
-	outlines     []Outline
-	fonts        map[string]*semantic.Font
-	defaultFont  string
-	xobjectCount int
-	xobjectNames map[*semantic.Image]string
+	pages         []*semantic.Page
+	info          *semantic.DocumentInfo
+	metadata      []byte
+	lang          string
+	marked        bool
+	pageLabels    map[int]string
+	outlines      []Outline
+	ownerPassword string
+	userPassword  string
+	permissions   raw.Permissions
+	encrypted     bool
+	encryptMeta   bool
+	fonts         map[string]*semantic.Font
+	defaultFont   string
+	xobjectCount  int
+	xobjectNames  map[*semantic.Image]string
 }
 
 type pageBuilderImpl struct {
@@ -167,6 +174,15 @@ func (b *builderImpl) AddOutline(out Outline) PDFBuilder {
 	return b
 }
 
+func (b *builderImpl) SetEncryption(ownerPassword, userPassword string, perms raw.Permissions, encryptMetadata bool) PDFBuilder {
+	b.ownerPassword = ownerPassword
+	b.userPassword = userPassword
+	b.permissions = perms
+	b.encrypted = true
+	b.encryptMeta = encryptMetadata
+	return b
+}
+
 func (b *builderImpl) RegisterFont(name string, font *semantic.Font) PDFBuilder {
 	if b.fonts == nil {
 		b.fonts = make(map[string]*semantic.Font)
@@ -201,6 +217,13 @@ func (b *builderImpl) Build() (*semantic.Document, error) {
 	}
 	if len(b.metadata) > 0 {
 		doc.Metadata = &semantic.XMPMetadata{Raw: b.metadata}
+	}
+	if b.encrypted {
+		doc.OwnerPassword = b.ownerPassword
+		doc.UserPassword = b.userPassword
+		doc.Permissions = b.permissions
+		doc.Encrypted = true
+		doc.MetadataEncrypted = b.encryptMeta
 	}
 	return doc, nil
 }

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"pdflib/contentstream"
+	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
 )
 
@@ -212,5 +213,29 @@ func TestBuilder_Outlines(t *testing.T) {
 	}
 	if len(parent.Children) != 1 || parent.Children[0].PageIndex != 1 {
 		t.Fatalf("child outline not preserved: %+v", parent.Children)
+	}
+}
+
+func TestBuilder_SetEncryption(t *testing.T) {
+	perms := raw.Permissions{Print: true, Modify: true}
+	b := NewBuilder().
+		SetEncryption("owner", "user", perms, true)
+	b.NewPage(5, 5).Finish()
+
+	doc, err := b.Build()
+	if err != nil {
+		t.Fatalf("build doc: %v", err)
+	}
+	if !doc.Encrypted {
+		t.Fatalf("encrypted flag not set")
+	}
+	if doc.OwnerPassword != "owner" || doc.UserPassword != "user" {
+		t.Fatalf("passwords not set: %q %q", doc.OwnerPassword, doc.UserPassword)
+	}
+	if !doc.Permissions.Print || !doc.Permissions.Modify {
+		t.Fatalf("permissions not copied: %+v", doc.Permissions)
+	}
+	if !doc.MetadataEncrypted {
+		t.Fatalf("metadata encryption flag not set")
 	}
 }
