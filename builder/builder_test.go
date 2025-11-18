@@ -1,10 +1,16 @@
 package builder
 
 import (
+	"bytes"
+	"context"
 	"testing"
 
 	"pdflib/contentstream"
+	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
+	"pdflib/parser"
+	"pdflib/security"
+	"pdflib/writer"
 )
 
 func TestBuilder_DrawTextPopulatesResourcesAndOps(t *testing.T) {
@@ -150,4 +156,86 @@ func TestBuilder_PageBoxesAnnotations(t *testing.T) {
 	if len(page.Annotations) != 1 || page.Annotations[0].URI != "https://example.com" {
 		t.Fatalf("annotation not added correctly: %+v", page.Annotations)
 	}
+}
+
+func TestBuilder_InvoiceA4(t *testing.T) {
+	b := NewBuilder()
+	b.NewPage(595, 842).
+		DrawText("Invoice #1234", 50, 800, TextOptions{FontSize: 24, Color: Color{R: 0.1, G: 0.1, B: 0.1}}).
+		DrawText("Bill To:", 50, 770, TextOptions{FontSize: 12}).
+		DrawLine(50, 760, 545, 760, LineOptions{StrokeColor: Color{B: 0.5}, LineWidth: 1}).
+		DrawRectangle(50, 600, 495, 120, RectOptions{Stroke: true, Fill: false, LineWidth: 1}).
+		DrawText("Item", 60, 700, TextOptions{FontSize: 10}).
+		DrawText("Qty", 300, 700, TextOptions{FontSize: 10}).
+		DrawText("Amount", 450, 700, TextOptions{FontSize: 10}).
+		DrawText("Subtotal: $100.00", 400, 620, TextOptions{FontSize: 12}).
+		DrawText("Total: $100.00", 400, 600, TextOptions{FontSize: 14, RenderMode: contentstream.TextFillStroke}).
+		Finish()
+	doc, err := b.Build()
+	if err != nil {
+		t.Fatalf("build doc: %v", err)
+	}
+	if len(doc.Pages) != 1 {
+		t.Fatalf("expected single page invoice")
+	}
+	if doc.Pages[0].MediaBox != (semantic.Rectangle{0, 0, 595, 842}) {
+		t.Fatalf("unexpected media box: %+v", doc.Pages[0].MediaBox)
+	}
+	// Serialize with writer to validate output.
+	var buf bytes.Buffer
+	w := (&writer.WriterBuilder{}).Build()
+	cfg := writer.Config{Deterministic: true, ContentFilter: writer.FilterNone}
+	if err := w.Write(context.Background(), doc, &buf, cfg); err != nil {
+		t.Fatalf("write invoice: %v", err)
+	}
+	data := buf.Bytes()
+	if !bytes.Contains(data, []byte("Invoice #1234")) {
+		t.Fatalf("invoice text missing in output")
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{Security: security.NoopHandler()})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("parse invoice: %v", err)
+	}
+	foundMediaBox := false
+	for _, obj := range rawDoc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		if tObj, ok := dict.Get(raw.NameLiteral("Type")); ok {
+			if name, ok := tObj.(raw.NameObj); ok && name.Value() == "Page" {
+				mbObj, ok := dict.Get(raw.NameLiteral("MediaBox"))
+				if !ok {
+					continue
+				}
+				arr, ok := mbObj.(*raw.ArrayObj)
+				if !ok || arr.Len() != 4 {
+					t.Fatalf("mediabox not array: %T", mbObj)
+				}
+				vals := make([]float64, 0, 4)
+				for i := 0; i < 4; i++ {
+					val, ok := numberValue(arr.Items[i])
+					if ok {
+						vals = append(vals, val)
+					}
+				}
+				if len(vals) == 4 && vals[2] == 595 && vals[3] == 842 {
+					foundMediaBox = true
+					break
+				}
+			}
+		}
+	}
+	if !foundMediaBox {
+		t.Fatalf("A4 media box not found in raw output")
+	}
+}
+
+func numberValue(obj raw.Object) (float64, bool) {
+	switch v := obj.(type) {
+	case raw.NumberObj:
+		return v.Float(), true
+	}
+	return 0, false
 }
