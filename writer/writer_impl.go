@@ -55,9 +55,14 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	writeSpan.SetTag("pages", len(doc.Pages))
 	writeSpan.SetTag("xref_streams", cfg.XRefStreams)
 	writeSpan.SetTag("incremental", cfg.Incremental)
+	logger := loggerFromConfig(cfg)
+	logger.Info("writer.write.start", observability.Int("pages", len(doc.Pages)))
 	defer func() {
 		if err != nil {
 			writeSpan.SetError(err)
+			logger.Error("writer.write.error", observability.Error("err", err))
+		} else {
+			logger.Info("writer.write.finish", observability.Int("pages", len(doc.Pages)))
 		}
 		writeSpan.Finish()
 	}()
@@ -1066,6 +1071,13 @@ func tracerFromConfig(cfg Config) observability.Tracer {
 		return cfg.Tracer
 	}
 	return observability.NopTracer()
+}
+
+func loggerFromConfig(cfg Config) observability.Logger {
+	if cfg.Logger != nil {
+		return cfg.Logger
+	}
+	return observability.NopLogger{}
 }
 
 func contextFrom(ctx Context) context.Context {

@@ -69,6 +69,29 @@ type errorWriter struct{}
 
 func (errorWriter) Write([]byte) (int, error) { return 0, errors.New("write error") }
 
+type logEntry struct {
+	level string
+	msg   string
+}
+
+type recordingLogger struct{ entries []logEntry }
+
+func (r *recordingLogger) Debug(msg string, _ ...observability.Field) {
+	r.entries = append(r.entries, logEntry{"debug", msg})
+}
+func (r *recordingLogger) Info(msg string, _ ...observability.Field) {
+	r.entries = append(r.entries, logEntry{"info", msg})
+}
+func (r *recordingLogger) Warn(msg string, _ ...observability.Field) {
+	r.entries = append(r.entries, logEntry{"warn", msg})
+}
+func (r *recordingLogger) Error(msg string, _ ...observability.Field) {
+	r.entries = append(r.entries, logEntry{"error", msg})
+}
+func (r *recordingLogger) With(_ ...observability.Field) observability.Logger {
+	return r
+}
+
 func TestWriterRoundTripPipeline(t *testing.T) {
 	// Build a simple document with one page and text.
 	b := builder.NewBuilder()
@@ -1773,6 +1796,35 @@ func TestWriter_TracingError(t *testing.T) {
 	writeSpan := tracer.spanByName("writer.write")
 	if writeSpan == nil || writeSpan.err == nil {
 		t.Fatalf("expected error on span, got %+v", writeSpan)
+	}
+}
+
+func TestWriter_Logging(t *testing.T) {
+	logger := &recordingLogger{}
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+	}
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &bytes.Buffer{}, Config{Logger: logger}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	if len(logger.entries) < 2 || logger.entries[0].msg != "writer.write.start" || logger.entries[len(logger.entries)-1].msg != "writer.write.finish" {
+		t.Fatalf("unexpected log entries: %+v", logger.entries)
+	}
+	logger2 := &recordingLogger{}
+	if err := w.Write(staticCtx{}, doc, errorWriter{}, Config{Logger: logger2}); err == nil {
+		t.Fatalf("expected error from writer")
+	}
+	foundError := false
+	for _, e := range logger2.entries {
+		if e.level == "error" && e.msg == "writer.write.error" {
+			foundError = true
+		}
+	}
+	if !foundError {
+		t.Fatalf("error log not emitted: %+v", logger2.entries)
 	}
 }
 

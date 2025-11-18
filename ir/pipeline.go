@@ -52,6 +52,12 @@ func (p *Pipeline) WithPassword(pwd string) *Pipeline {
 	return p
 }
 
+// WithLogger sets the logger for parse phases.
+func (p *Pipeline) WithLogger(logger observability.Logger) *Pipeline {
+	p.logger = logger
+	return p
+}
+
 // WithTracer sets the tracer used for parsing spans.
 func (p *Pipeline) WithTracer(tracer observability.Tracer) *Pipeline {
 	p.tracer = tracer
@@ -64,10 +70,15 @@ func (p *Pipeline) Parse(ctx context.Context, r io.ReaderAt) (doc *semantic.Docu
 		dp.SetPassword(p.password)
 	}
 	tracer := pipelineTracer(p.tracer)
+	logger := pipelineLogger(p.logger)
+	logger.Info("pipeline.parse.start")
 	ctx, pipeSpan := tracer.StartSpan(ctx, "pipeline.parse")
 	defer func() {
 		if err != nil {
 			pipeSpan.SetError(err)
+			logger.Error("pipeline.parse.error", observability.Error("err", err))
+		} else {
+			logger.Info("pipeline.parse.finish", observability.Int("pages", len(doc.Pages)))
 		}
 		pipeSpan.Finish()
 	}()
@@ -110,4 +121,11 @@ func pipelineTracer(t observability.Tracer) observability.Tracer {
 		return t
 	}
 	return observability.NopTracer()
+}
+
+func pipelineLogger(l observability.Logger) observability.Logger {
+	if l != nil {
+		return l
+	}
+	return observability.NopLogger{}
 }

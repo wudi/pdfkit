@@ -124,3 +124,63 @@ func TestPipelineTracingError(t *testing.T) {
 		t.Fatalf("pipeline span missing error: %+v", span)
 	}
 }
+
+type recordingLogger struct{ entries []logEntry }
+
+type logEntry struct {
+	level string
+	msg   string
+}
+
+func (r *recordingLogger) Debug(msg string, _ ...observability.Field) {
+	r.entries = append(r.entries, logEntry{"debug", msg})
+}
+func (r *recordingLogger) Info(msg string, _ ...observability.Field) {
+	r.entries = append(r.entries, logEntry{"info", msg})
+}
+func (r *recordingLogger) Warn(msg string, _ ...observability.Field) {
+	r.entries = append(r.entries, logEntry{"warn", msg})
+}
+func (r *recordingLogger) Error(msg string, _ ...observability.Field) {
+	r.entries = append(r.entries, logEntry{"error", msg})
+}
+func (r *recordingLogger) With(_ ...observability.Field) observability.Logger {
+	return r
+}
+
+func TestPipelineLogging(t *testing.T) {
+	logger := &recordingLogger{}
+	p := NewDefault().WithLogger(logger)
+	if _, err := p.Parse(context.Background(), bytes.NewReader(minimalPDF())); err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if len(logger.entries) < 2 || logger.entries[0].msg != "pipeline.parse.start" || logger.entries[len(logger.entries)-1].msg != "pipeline.parse.finish" {
+		t.Fatalf("unexpected log entries: %+v", logger.entries)
+	}
+	logger2 := &recordingLogger{}
+	p = NewDefault().WithLogger(logger2)
+	if _, err := p.Parse(context.Background(), bytes.NewReader([]byte("bad"))); err == nil {
+		t.Fatalf("expected parse error")
+	}
+	foundError := false
+	for _, e := range logger2.entries {
+		if e.level == "error" && e.msg == "pipeline.parse.error" {
+			foundError = true
+		}
+	}
+	if !foundError {
+		t.Fatalf("expected error log, got %+v", logger2.entries)
+	}
+}
+
+func minimalPDF() []byte {
+	buf := &bytes.Buffer{}
+	buf.WriteString("%PDF-1.7\n")
+	objOff := buf.Len()
+	fmt.Fprintf(buf, "1 0 obj\n<< /Length 0 >>\nstream\n\nendstream\nendobj\n")
+	xrefOff := buf.Len()
+	fmt.Fprintf(buf, "xref\n0 2\n0000000000 65535 f \n%010d 00000 n \n", objOff)
+	buf.WriteString("trailer << /Size 2 /Root 1 0 R >>\nstartxref\n")
+	fmt.Fprintf(buf, "%d\n%%%%EOF\n", xrefOff)
+	return buf.Bytes()
+}

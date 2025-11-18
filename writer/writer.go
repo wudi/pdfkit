@@ -43,6 +43,7 @@ type Config struct {
 	SubsetFonts   bool
 	PDFALevel     PDFALevel
 	Tracer        observability.Tracer
+	Logger        observability.Logger
 }
 
 type Writer interface {
