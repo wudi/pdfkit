@@ -16,18 +16,20 @@ import (
 	"fmt"
 
 	"pdflib/builder"
+	"pdflib/fonts"
 	"pdflib/ir"
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
 	"pdflib/parser"
 	"pdflib/security"
 	"pdflib/xref"
+
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 type staticCtx struct{}
 
 func (staticCtx) Done() <-chan struct{} { return nil }
-
 
 func TestWriterRoundTripPipeline(t *testing.T) {
 	// Build a simple document with one page and text.
@@ -675,6 +677,51 @@ func TestWriter_FontTrueTypeAndCID(t *testing.T) {
 	}
 	if !regexp.MustCompile(`/W\s*\[\s*1\s+2\s+500\s+5\s+5\s+700\s*\]`).Match(data) {
 		t.Fatalf("expected W array for CID widths")
+	}
+}
+
+func TestWriter_EmbedTrueTypeFont(t *testing.T) {
+	ttFont, err := fonts.LoadTrueType("GoRegular", goregular.TTF)
+	if err != nil {
+		t.Fatalf("load truetype: %v", err)
+	}
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 100, URY: 100},
+				Resources: &semantic.Resources{
+					Fonts: map[string]*semantic.Font{
+						"F1": ttFont,
+					},
+				},
+				Contents: []semantic.ContentStream{{
+					Operations: []semantic.Operation{
+						{Operator: "BT"},
+						{Operator: "Tf", Operands: []semantic.Operand{semantic.NameOperand{Value: "F1"}, semantic.NumberOperand{Value: 12}}},
+						{Operator: "Tj", Operands: []semantic.Operand{semantic.StringOperand{Value: []byte("Hello")}}},
+						{Operator: "ET"},
+					},
+				}},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	data := buf.Bytes()
+	if !bytes.Contains(data, []byte("/FontFile2")) {
+		t.Fatalf("expected embedded FontFile2 stream")
+	}
+	if !bytes.Contains(data, []byte(fmt.Sprintf("/Length %d", len(goregular.TTF)))) {
+		t.Fatalf("font file length missing")
+	}
+	if !bytes.Contains(data, []byte("/Type0")) || !bytes.Contains(data, []byte("/CIDFontType2")) {
+		t.Fatalf("expected Type0 font with CIDFontType2 descendant")
+	}
+	if !bytes.Contains(data, []byte("/Identity-H")) {
+		t.Fatalf("expected Identity-H encoding for embedded font")
 	}
 }
 
@@ -1693,7 +1740,6 @@ func TestWriter_OutlinesXYZDest(t *testing.T) {
 		t.Fatalf("XYZ destination not serialized")
 	}
 }
-
 
 func TestWriter_ComplianceFlags(t *testing.T) {
 	doc := &semantic.Document{

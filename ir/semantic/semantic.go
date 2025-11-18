@@ -109,6 +109,7 @@ type Font struct {
 	Widths         map[int]int // character code -> width
 	CIDSystemInfo  *CIDSystemInfo
 	DescendantFont *CIDFont
+	Descriptor     *FontDescriptor
 	ref            raw.ObjectRef
 }
 
@@ -179,6 +180,21 @@ type CIDFont struct {
 	CIDSystemInfo CIDSystemInfo
 	DW            int
 	W             map[int]int // CID -> width
+	Descriptor    *FontDescriptor
+}
+
+// FontDescriptor carries metrics and font file embedding details.
+type FontDescriptor struct {
+	FontName     string
+	Flags        int
+	ItalicAngle  float64
+	Ascent       float64
+	Descent      float64
+	CapHeight    float64
+	StemV        int
+	FontBBox     [4]float64
+	FontFile     []byte
+	FontFileType string // FontFile2 (TrueType) or FontFile3
 }
 
 type Catalog struct{}

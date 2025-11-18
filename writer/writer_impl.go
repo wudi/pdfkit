@@ -68,6 +68,53 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	xobjectRefs := map[string]raw.ObjectRef{}
 	patternRefs := map[string]raw.ObjectRef{}
 	shadingRefs := map[string]raw.ObjectRef{}
+	addFontDescriptor := func(fd *semantic.FontDescriptor) *raw.ObjectRef {
+		if fd == nil {
+			return nil
+		}
+		ref := nextRef()
+		d := raw.Dict()
+		d.Set(raw.NameLiteral("Type"), raw.NameLiteral("FontDescriptor"))
+		name := fd.FontName
+		if name == "" {
+			name = "CustomFont"
+		}
+		d.Set(raw.NameLiteral("FontName"), raw.NameLiteral(name))
+		flags := fd.Flags
+		if flags == 0 {
+			flags = 4
+		}
+		d.Set(raw.NameLiteral("Flags"), raw.NumberInt(int64(flags)))
+		d.Set(raw.NameLiteral("ItalicAngle"), raw.NumberFloat(fd.ItalicAngle))
+		d.Set(raw.NameLiteral("Ascent"), raw.NumberFloat(fd.Ascent))
+		d.Set(raw.NameLiteral("Descent"), raw.NumberFloat(fd.Descent))
+		d.Set(raw.NameLiteral("CapHeight"), raw.NumberFloat(fd.CapHeight))
+		stem := fd.StemV
+		if stem == 0 {
+			stem = 80
+		}
+		d.Set(raw.NameLiteral("StemV"), raw.NumberInt(int64(stem)))
+		bbox := raw.NewArray(
+			raw.NumberFloat(fd.FontBBox[0]),
+			raw.NumberFloat(fd.FontBBox[1]),
+			raw.NumberFloat(fd.FontBBox[2]),
+			raw.NumberFloat(fd.FontBBox[3]),
+		)
+		d.Set(raw.NameLiteral("FontBBox"), bbox)
+		if len(fd.FontFile) > 0 {
+			streamDict := raw.Dict()
+			streamDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(fd.FontFile))))
+			streamRef := nextRef()
+			objects[streamRef] = raw.NewStream(streamDict, fd.FontFile)
+			key := "FontFile2"
+			if fd.FontFileType != "" {
+				key = fd.FontFileType
+			}
+			d.Set(raw.NameLiteral(key), raw.Ref(streamRef.Num, streamRef.Gen))
+		}
+		objects[ref] = d
+		return &ref
+	}
 	ensureFont := func(font *semantic.Font) raw.ObjectRef {
 		base := "Helvetica"
 		encoding := ""
@@ -147,6 +194,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 			if len(widths) > 0 {
 				descDict.Set(raw.NameLiteral("W"), encodeCIDWidths(widths))
 			}
+			if fd := addFontDescriptor(fontDescriptor(desc, font)); fd != nil {
+				descDict.Set(raw.NameLiteral("FontDescriptor"), raw.Ref(fd.Num, fd.Gen))
+			}
 			objects[descRef] = descDict
 			fontDict.Set(raw.NameLiteral("DescendantFonts"), raw.NewArray(raw.Ref(descRef.Num, descRef.Gen)))
 		} else {
@@ -158,6 +208,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 				fontDict.Set(raw.NameLiteral("FirstChar"), raw.NumberInt(int64(first)))
 				fontDict.Set(raw.NameLiteral("LastChar"), raw.NumberInt(int64(last)))
 				fontDict.Set(raw.NameLiteral("Widths"), widthsArr)
+			}
+			if fd := addFontDescriptor(fontDescriptor(nil, font)); fd != nil {
+				fontDict.Set(raw.NameLiteral("FontDescriptor"), raw.Ref(fd.Num, fd.Gen))
 			}
 		}
 		objects[ref] = fontDict
@@ -1384,8 +1437,34 @@ func fontKey(base, encoding, subtype string, font *semantic.Font) string {
 			h.Write([]byte(font.CIDSystemInfo.Ordering))
 			h.Write([]byte(fmt.Sprint(font.CIDSystemInfo.Supplement)))
 		}
+		if font.Descriptor != nil {
+			fd := font.Descriptor
+			h.Write([]byte(fd.FontName))
+			h.Write([]byte(fmt.Sprint(fd.Flags, fd.ItalicAngle, fd.Ascent, fd.Descent, fd.CapHeight, fd.StemV)))
+			h.Write([]byte(fmt.Sprint(fd.FontBBox)))
+			h.Write([]byte(fd.FontFileType))
+			h.Write(fd.FontFile)
+		}
+		if font.DescendantFont != nil && font.DescendantFont.Descriptor != nil {
+			fd := font.DescendantFont.Descriptor
+			h.Write([]byte(fd.FontName))
+			h.Write([]byte(fmt.Sprint(fd.Flags, fd.ItalicAngle, fd.Ascent, fd.Descent, fd.CapHeight, fd.StemV)))
+			h.Write([]byte(fmt.Sprint(fd.FontBBox)))
+			h.Write([]byte(fd.FontFileType))
+			h.Write(fd.FontFile)
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func fontDescriptor(cid *semantic.CIDFont, font *semantic.Font) *semantic.FontDescriptor {
+	if cid != nil && cid.Descriptor != nil {
+		return cid.Descriptor
+	}
+	if font != nil {
+		return font.Descriptor
+	}
+	return nil
 }
 
 func encodeWidths(widths map[int]int) (first, last int, arr *raw.ArrayObj) {

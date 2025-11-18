@@ -32,6 +32,6 @@ Status key: Not started / In progress / Done.
 
 Status key: Not started / In progress / Done.
 
-- [ ] TrueType font embedding: load TrueType/OpenType fonts, extract widths and metadata, and embed FontFile2 streams with descriptors suitable for Type0/CID fonts. Status: Not started.
+- [x] TrueType font embedding: load TrueType/OpenType fonts, extract widths and metadata, and embed FontFile2 streams with descriptors suitable for Type0/CID fonts. Status: Done (sfnt-based loader builds Identity-H Type0 fonts with descriptor/BBox metrics and embeds FontFile2 streams).
 - [ ] ToUnicode + Identity-H encoding: build ToUnicode CMaps and CID mappings so Unicode text renders correctly for CJK/multi-language content. Status: Not started.
 - [ ] Builder font registration: builder API can register custom TrueType fonts and encode text using the registered fonts (UTF-16BE/CID), covering non-Latin strings. Status: Not started.
