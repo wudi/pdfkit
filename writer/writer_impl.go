@@ -165,6 +165,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	}
 	// Pages
 	unionFonts := raw.Dict()
+	unionExtGStates := raw.Dict()
 	procSet := raw.NewArray(raw.NameLiteral("PDF"), raw.NameLiteral("Text"))
 	for i, p := range doc.Pages {
 		ref := nextRef()
@@ -212,6 +213,28 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 			}
 		}
 		resDict.Set(raw.NameLiteral("Font"), fontResDict)
+		if p.Resources != nil && len(p.Resources.ExtGStates) > 0 {
+			gsDict := raw.Dict()
+			for name, gs := range p.Resources.ExtGStates {
+				entry := raw.Dict()
+				if gs.LineWidth != nil {
+					entry.Set(raw.NameLiteral("LW"), raw.NumberFloat(*gs.LineWidth))
+				}
+				if gs.StrokeAlpha != nil {
+					entry.Set(raw.NameLiteral("CA"), raw.NumberFloat(*gs.StrokeAlpha))
+				}
+				if gs.FillAlpha != nil {
+					entry.Set(raw.NameLiteral("ca"), raw.NumberFloat(*gs.FillAlpha))
+				}
+				gsDict.Set(raw.NameLiteral(name), entry)
+				if _, ok := unionExtGStates.KV[name]; !ok {
+					unionExtGStates.Set(raw.NameLiteral(name), entry)
+				}
+			}
+			if gsDict.Len() > 0 {
+				resDict.Set(raw.NameLiteral("ExtGState"), gsDict)
+			}
+		}
 		if procSet.Len() > 0 {
 			resDict.Set(raw.NameLiteral("ProcSet"), procSet)
 		}
@@ -271,6 +294,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	if unionFonts.Len() > 0 {
 		pagesRes := raw.Dict()
 		pagesRes.Set(raw.NameLiteral("Font"), unionFonts)
+		if unionExtGStates.Len() > 0 {
+			pagesRes.Set(raw.NameLiteral("ExtGState"), unionExtGStates)
+		}
 		if procSet.Len() > 0 {
 			pagesRes.Set(raw.NameLiteral("ProcSet"), procSet)
 		}

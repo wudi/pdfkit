@@ -87,13 +87,21 @@ func (DictOperand) Type() string { return "dict" }
 
 // Resources holds per-page resources with optional inheritance.
 type Resources struct {
-	Fonts map[string]*Font
+	Fonts      map[string]*Font
+	ExtGStates map[string]ExtGState
 }
 
 // Font represents a font resource.
 type Font struct {
 	BaseFont string
 	ref      raw.ObjectRef
+}
+
+// ExtGState captures graphics state defaults such as transparency.
+type ExtGState struct {
+	LineWidth   *float64
+	StrokeAlpha *float64
+	FillAlpha   *float64
 }
 
 // Rectangle represents a PDF rectangle.

@@ -592,6 +592,82 @@ func TestWriter_ProcSetIncluded(t *testing.T) {
 	}
 }
 
+func TestWriter_ExtGStateResources(t *testing.T) {
+	lw := 2.5
+	stroke := 0.5
+	fill := 0.25
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 10, URY: 10},
+				Resources: &semantic.Resources{
+					ExtGStates: map[string]semantic.ExtGState{
+						"GS1": {LineWidth: &lw, StrokeAlpha: &stroke, FillAlpha: &fill},
+					},
+				},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	out := buf.String()
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	foundPage := false
+	foundPages := false
+	for _, obj := range rawDoc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		typ, _ := dict.Get(raw.NameLiteral("Type"))
+		if name, ok := typ.(raw.NameObj); ok && name.Value() == "Page" {
+			if res, ok := dict.Get(raw.NameLiteral("Resources")); ok {
+				if resDict, ok := res.(*raw.DictObj); ok {
+					if gs, ok := resDict.Get(raw.NameLiteral("ExtGState")); ok {
+						if gsDict, ok := gs.(*raw.DictObj); ok {
+							if entry, ok := gsDict.Get(raw.NameLiteral("GS1")); ok {
+								if _, ok := entry.(*raw.DictObj); ok {
+									foundPage = true
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		if name, ok := typ.(raw.NameObj); ok && name.Value() == "Pages" {
+			if res, ok := dict.Get(raw.NameLiteral("Resources")); ok {
+				if resDict, ok := res.(*raw.DictObj); ok {
+					if gs, ok := resDict.Get(raw.NameLiteral("ExtGState")); ok {
+						if gsDict, ok := gs.(*raw.DictObj); ok {
+							if entry, ok := gsDict.Get(raw.NameLiteral("GS1")); ok {
+								if _, ok := entry.(*raw.DictObj); ok {
+									foundPages = true
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if !foundPage || !foundPages {
+		t.Fatalf("extgstate missing (page=%v pages=%v)", foundPage, foundPages)
+	}
+	expected := "/ExtGState <</GS1 <</CA 0.500000/LW 2.500000/ca 0.250000>>"
+	if strings.Count(out, expected) < 2 {
+		t.Fatalf("extgstate values not serialized twice as expected")
+	}
+}
+
 func TestWriter_SerializeOperations(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{
