@@ -990,6 +990,43 @@ func TestWriter_TextAnnotationContents(t *testing.T) {
 	}
 }
 
+func TestWriter_AcroFormNeedAppearances(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 20, URY: 20}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+		AcroForm: &semantic.AcroForm{NeedAppearances: true},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	found := false
+	for _, obj := range rawDoc.Objects {
+		if d, ok := obj.(*raw.DictObj); ok {
+			if fields, ok := d.Get(raw.NameLiteral("Fields")); ok {
+				if arr, ok := fields.(*raw.ArrayObj); ok && arr.Len() == 0 {
+					if na, ok := d.Get(raw.NameLiteral("NeedAppearances")); ok {
+						if b, ok := na.(raw.BoolObj); ok && b.Value() {
+							found = true
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("AcroForm not serialized with NeedAppearances")
+	}
+}
+
 func firstID(doc *raw.Document) string {
 	idObj, ok := doc.Trailer.Get(raw.NameLiteral("ID"))
 	if !ok {

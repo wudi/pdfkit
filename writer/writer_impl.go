@@ -333,6 +333,16 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		catalogDict.Set(raw.NameLiteral("Outlines"), raw.Ref(outlineRef.Num, outlineRef.Gen))
 		catalogDict.Set(raw.NameLiteral("PageMode"), raw.NameLiteral("UseOutlines"))
 	}
+	if doc.AcroForm != nil {
+		formRef := nextRef()
+		formDict := raw.Dict()
+		formDict.Set(raw.NameLiteral("Fields"), raw.NewArray())
+		if doc.AcroForm.NeedAppearances {
+			formDict.Set(raw.NameLiteral("NeedAppearances"), raw.Bool(true))
+		}
+		objects[formRef] = formDict
+		catalogDict.Set(raw.NameLiteral("AcroForm"), raw.Ref(formRef.Num, formRef.Gen))
+	}
 	objects[catalogRef] = catalogDict
 
 	// Serialize

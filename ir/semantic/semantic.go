@@ -15,6 +15,7 @@ type Document struct {
 	Metadata          *XMPMetadata
 	PageLabels        map[int]string // page index -> prefix
 	Outlines          []OutlineItem
+	AcroForm          *AcroForm
 	StructTree        *StructureTree
 	decoded           *decoded.DecodedDocument
 	Permissions       raw.Permissions
@@ -134,6 +135,11 @@ type OutlineItem struct {
 	Title     string
 	PageIndex int
 	Children  []OutlineItem
+}
+
+// AcroForm represents form-level information.
+type AcroForm struct {
+	NeedAppearances bool
 }
 
 // Builder produces a Semantic document from Decoded IR.
