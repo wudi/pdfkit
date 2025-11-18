@@ -27,4 +27,4 @@ Status key: Not started / In progress / Done.
 
 - [x] Tracer interface: expose observability.Tracer/Span per design to allow spans around parse/build/write operations, plus metric name constants. Status: Done (Tracer/Span interfaces and nop implementations added with metric name constants).
 - [x] Writer tracing: accept a tracer in writer Config or builder and emit spans for document write phases (xref build, content emit, encryption) with errors tagged. Status: Done (Config.Tracer added; writer emits spans for write/build/serialize/xref/encrypt and records errors; tests cover success/error spans).
-- [ ] Parser/pipeline tracing: thread observability.Tracer through pipeline.Parse, raw parser, and decoder to emit spans for parse/decode/build with error tagging.
+- [x] Parser/pipeline tracing: thread observability.Tracer through pipeline.Parse, raw parser, and decoder to emit spans for parse/decode/build with error tagging. Status: Done (Pipeline.WithTracer added; Parse emits spans for raw parse, decode, semantic build, and root parse with errors tagged; tests cover success and failure).

@@ -23,6 +23,7 @@ type Pipeline struct {
 	recovery         recovery.Strategy
 	logger           observability.Logger
 	password         string
+	tracer           observability.Tracer
 }
 
 // NewDefault constructs a pipeline with basic components (raw parser, filter decoder, no-op security, minimal semantic builder).
@@ -51,27 +52,62 @@ func (p *Pipeline) WithPassword(pwd string) *Pipeline {
 	return p
 }
 
+// WithTracer sets the tracer used for parsing spans.
+func (p *Pipeline) WithTracer(tracer observability.Tracer) *Pipeline {
+	p.tracer = tracer
+	return p
+}
+
 // Parse orchestrates Raw -> Decoded -> Semantic pipeline.
-func (p *Pipeline) Parse(ctx context.Context, r io.ReaderAt) (*semantic.Document, error) {
+func (p *Pipeline) Parse(ctx context.Context, r io.ReaderAt) (doc *semantic.Document, err error) {
 	if dp, ok := p.rawParser.(*parser.DocumentParser); ok {
 		dp.SetPassword(p.password)
 	}
+	tracer := pipelineTracer(p.tracer)
+	ctx, pipeSpan := tracer.StartSpan(ctx, "pipeline.parse")
+	defer func() {
+		if err != nil {
+			pipeSpan.SetError(err)
+		}
+		pipeSpan.Finish()
+	}()
+
+	ctx, rawSpan := tracer.StartSpan(ctx, "pipeline.raw_parse")
 	rawDoc, err := p.rawParser.Parse(ctx, r)
 	if err != nil {
+		rawSpan.SetError(err)
+		rawSpan.Finish()
 		return nil, fmt.Errorf("raw parsing failed: %w", err)
 	}
+	rawSpan.Finish()
 
 	decoder := decoded.NewDecoder(p.filterPipeline)
 
+	ctx, decodeSpan := tracer.StartSpan(ctx, "pipeline.decode")
 	decodedDoc, err := decoder.Decode(ctx, rawDoc)
 	if err != nil {
+		decodeSpan.SetError(err)
+		decodeSpan.Finish()
 		return nil, fmt.Errorf("decoding failed: %w", err)
 	}
+	decodeSpan.Finish()
 
+	ctx, buildSpan := tracer.StartSpan(ctx, "pipeline.semantic_build")
 	semDoc, err := p.semanticBuilder.Build(ctx, decodedDoc)
 	if err != nil {
+		buildSpan.SetError(err)
+		buildSpan.Finish()
 		return nil, fmt.Errorf("semantic building failed: %w", err)
 	}
+	buildSpan.Finish()
+	pipeSpan.SetTag("pages", len(semDoc.Pages))
 
 	return semDoc, nil
+}
+
+func pipelineTracer(t observability.Tracer) observability.Tracer {
+	if t != nil {
+		return t
+	}
+	return observability.NopTracer()
 }
