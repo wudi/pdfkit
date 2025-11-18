@@ -20,6 +20,8 @@ type Document struct {
 	StructTree        *StructureTree
 	OutputIntents     []OutputIntent
 	decoded           *decoded.DecodedDocument
+	OwnerPassword     string
+	UserPassword      string
 	Permissions       raw.Permissions
 	Encrypted         bool
 	MetadataEncrypted bool

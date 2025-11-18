@@ -133,23 +133,23 @@ func (b *HandlerBuilder) Build() (Handler, error) {
 	}
 	useAES := streamAlgo == algoAES || stringAlgo == algoAES || baseAlgo == algoAES
 	h := &standardHandler{
-		v:           int(v),
-		r:           int(r),
-		lengthBits:  keyLen,
-		owner:       owner,
-		user:        user,
-		oEntry:      oEntry,
-		uEntry:      uEntry,
-		oe:          oe,
-		ue:          ue,
-		p:           int32(pVal),
-		fileID:      id,
-		encryptMeta: encryptMeta,
-		useAES:      useAES,
-		streamAlgo:  streamAlgo,
-		stringAlgo:  stringAlgo,
+		v:            int(v),
+		r:            int(r),
+		lengthBits:   keyLen,
+		owner:        owner,
+		user:         user,
+		oEntry:       oEntry,
+		uEntry:       uEntry,
+		oe:           oe,
+		ue:           ue,
+		p:            int32(pVal),
+		fileID:       id,
+		encryptMeta:  encryptMeta,
+		useAES:       useAES,
+		streamAlgo:   streamAlgo,
+		stringAlgo:   stringAlgo,
 		cryptFilters: cryptFilters,
-		trailer:     b.trailer,
+		trailer:      b.trailer,
 	}
 	return h, nil
 }
@@ -164,25 +164,25 @@ const (
 )
 
 type standardHandler struct {
-	key         []byte
-	v           int
-	r           int
-	lengthBits  int
-	owner       []byte
-	user        []byte
-	oEntry      []byte
-	uEntry      []byte
-	oe          []byte
-	ue          []byte
-	p           int32
-	fileID      []byte
-	encryptMeta bool
-	authed      bool
-	useAES      bool
-	streamAlgo  cryptAlgo
-	stringAlgo  cryptAlgo
+	key          []byte
+	v            int
+	r            int
+	lengthBits   int
+	owner        []byte
+	user         []byte
+	oEntry       []byte
+	uEntry       []byte
+	oe           []byte
+	ue           []byte
+	p            int32
+	fileID       []byte
+	encryptMeta  bool
+	authed       bool
+	useAES       bool
+	streamAlgo   cryptAlgo
+	stringAlgo   cryptAlgo
 	cryptFilters map[string]cryptAlgo
-	trailer     raw.Dictionary
+	trailer      raw.Dictionary
 }
 
 func (h *standardHandler) IsEncrypted() bool { return true }
@@ -463,6 +463,70 @@ func deriveKey(pwd, owner []byte, pVal int32, fileID []byte, keyLenBytes int, r 
 		}
 	}
 	return key[:keyLenBytes], nil
+}
+
+// PermissionsValue builds the Standard security permissions flags for a document.
+func PermissionsValue(p raw.Permissions) int32 {
+	val := int32(-4) // bits 1-2 must be 0
+	if !p.Print {
+		val &^= 1 << 2
+	}
+	if !p.Modify {
+		val &^= 1 << 3
+	}
+	if !p.Copy {
+		val &^= 1 << 4
+	}
+	if !p.ModifyAnnotations {
+		val &^= 1 << 5
+	}
+	if !p.FillForms {
+		val &^= 1 << 8
+	}
+	if !p.ExtractAccessible {
+		val &^= 1 << 9
+	}
+	if !p.Assemble {
+		val &^= 1 << 10
+	}
+	if !p.PrintHighQuality {
+		val &^= 1 << 11
+	}
+	return val
+}
+
+// BuildStandardEncryption constructs an Encrypt dictionary and primary key for the Standard security handler.
+func BuildStandardEncryption(userPwd, ownerPwd string, permissions raw.Permissions, fileID []byte, encryptMetadata bool) (*raw.DictObj, []byte, error) {
+	if len(ownerPwd) == 0 {
+		if len(userPwd) > 0 {
+			ownerPwd = userPwd
+		} else {
+			ownerPwd = "owner"
+		}
+	}
+	userPad := padPassword([]byte(userPwd))
+	ownerPad := padPassword([]byte(ownerPwd))
+	ownerDigest := md5.Sum(ownerPad)
+	oVal := rc4Simple(ownerDigest[:5], userPad)
+	pVal := PermissionsValue(permissions)
+	fileKey, err := deriveKey([]byte(userPwd), oVal, pVal, fileID, 5, 2)
+	if err != nil {
+		return nil, nil, err
+	}
+	uVal := rc4Simple(fileKey, passwordPadding)
+
+	enc := raw.Dict()
+	enc.Set(raw.NameObj{Val: "Filter"}, raw.NameObj{Val: "Standard"})
+	enc.Set(raw.NameObj{Val: "V"}, raw.NumberObj{I: 1, IsInt: true})
+	enc.Set(raw.NameObj{Val: "R"}, raw.NumberObj{I: 2, IsInt: true})
+	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberObj{I: 40, IsInt: true})
+	enc.Set(raw.NameObj{Val: "O"}, raw.Str(oVal))
+	enc.Set(raw.NameObj{Val: "U"}, raw.Str(uVal))
+	enc.Set(raw.NameObj{Val: "P"}, raw.NumberObj{I: int64(pVal), IsInt: true})
+	if !encryptMetadata {
+		enc.Set(raw.NameObj{Val: "EncryptMetadata"}, raw.Bool(encryptMetadata))
+	}
+	return enc, fileKey, nil
 }
 
 func checkUserPassword(key []byte, userEntry []byte, fileID []byte, r int) bool {

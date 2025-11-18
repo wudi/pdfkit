@@ -12,6 +12,7 @@ import (
 	"math"
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
+	"pdflib/security"
 	"regexp"
 	"sort"
 	"strconv"
@@ -49,6 +50,7 @@ func (w *impl) SerializeObject(ref raw.ObjectRef, obj raw.Object) ([]byte, error
 func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Config) error {
 	version := pdfVersion(cfg)
 	incr := incrementalContext(doc, out, cfg)
+	idPair := fileID(doc, cfg)
 	// Build raw objects from semantic (minimal subset: catalog, pages, page, fonts, content streams)
 	objects := make(map[raw.ObjectRef]raw.Object)
 	objNum := incr.startObjNum
@@ -320,19 +322,24 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		objects[ref] = raw.NewStream(dict, doc.Metadata.Raw)
 	}
 
-	// Encrypt dictionary (Standard handler stub)
+	// Encrypt dictionary (Standard handler)
 	var encryptRef *raw.ObjectRef
+	var encryptionHandler security.Handler
 	if doc.Encrypted {
 		ref := nextRef()
 		encryptRef = &ref
-		enc := raw.Dict()
-		enc.Set(raw.NameLiteral("Filter"), raw.NameLiteral("Standard"))
-		enc.Set(raw.NameLiteral("V"), raw.NumberInt(1))
-		enc.Set(raw.NameLiteral("R"), raw.NumberInt(2))
-		enc.Set(raw.NameLiteral("Length"), raw.NumberInt(40))
-		enc.Set(raw.NameLiteral("O"), raw.Str(make([]byte, 32)))
-		enc.Set(raw.NameLiteral("U"), raw.Str(make([]byte, 32)))
-		enc.Set(raw.NameLiteral("P"), raw.NumberInt(int64(permissionsValue(doc.Permissions))))
+		enc, _, err := security.BuildStandardEncryption(doc.UserPassword, doc.OwnerPassword, doc.Permissions, idPair[0], doc.MetadataEncrypted)
+		if err != nil {
+			return err
+		}
+		handler, err := (&security.HandlerBuilder{}).WithEncryptDict(enc).WithFileID(idPair[0]).Build()
+		if err != nil {
+			return err
+		}
+		if err := handler.Authenticate(doc.UserPassword); err != nil {
+			return err
+		}
+		encryptionHandler = handler
 		objects[ref] = enc
 	}
 
@@ -860,6 +867,18 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	}
 	objects[catalogRef] = catalogDict
 
+	if encryptionHandler != nil {
+		for ref, obj := range objects {
+			if encryptRef != nil && ref == *encryptRef {
+				continue
+			}
+			if metadataRef != nil && ref == *metadataRef && !doc.MetadataEncrypted {
+				continue
+			}
+			objects[ref] = encryptObject(obj, ref, encryptionHandler, metadataRef, doc.MetadataEncrypted)
+		}
+	}
+
 	// Serialize
 	var buf bytes.Buffer
 	initialOffset := int64(0)
@@ -902,7 +921,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		offsets[xrefRef.Num] = xrefOffset
 		size := maxInt(maxObjNum, incr.prevMaxObj) + 1
 
-		trailer := buildTrailer(size, catalogRef, infoRef, encryptRef, doc, cfg, incr.prevOffset)
+		trailer := buildTrailer(size, catalogRef, infoRef, encryptRef, doc, cfg, incr.prevOffset, idPair)
 		trailer.Set(raw.NameLiteral("Type"), raw.NameLiteral("XRef"))
 		trailer.Set(raw.NameLiteral("W"), raw.NewArray(raw.NumberInt(1), raw.NumberInt(4), raw.NumberInt(1)))
 		indexArr, entries := xrefStreamIndexAndEntries(offsets)
@@ -929,7 +948,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 				buf.WriteString("0000000000 65535 f \n")
 			}
 		}
-		trailer := buildTrailer(size, catalogRef, infoRef, encryptRef, doc, cfg, incr.prevOffset)
+		trailer := buildTrailer(size, catalogRef, infoRef, encryptRef, doc, cfg, incr.prevOffset, idPair)
 		buf.WriteString("trailer\n")
 		buf.Write(serializePrimitive(trailer))
 		buf.WriteString("\nstartxref\n")
@@ -1091,7 +1110,7 @@ func deterministicIDSeed(doc *semantic.Document, cfg Config) []byte {
 	return buf
 }
 
-func buildTrailer(size int, catalogRef raw.ObjectRef, infoRef *raw.ObjectRef, encryptRef *raw.ObjectRef, doc *semantic.Document, cfg Config, prev int64) *raw.DictObj {
+func buildTrailer(size int, catalogRef raw.ObjectRef, infoRef *raw.ObjectRef, encryptRef *raw.ObjectRef, doc *semantic.Document, cfg Config, prev int64, ids [2][]byte) *raw.DictObj {
 	trailer := raw.Dict()
 	trailer.Set(raw.NameLiteral("Size"), raw.NumberInt(int64(size)))
 	trailer.Set(raw.NameLiteral("Root"), raw.Ref(catalogRef.Num, catalogRef.Gen))
@@ -1101,10 +1120,9 @@ func buildTrailer(size int, catalogRef raw.ObjectRef, infoRef *raw.ObjectRef, en
 	if encryptRef != nil {
 		trailer.Set(raw.NameLiteral("Encrypt"), raw.Ref(encryptRef.Num, encryptRef.Gen))
 	}
-	fileIDs := fileID(doc, cfg)
 	idArr := raw.NewArray(
-		raw.Str([]byte(hex.EncodeToString(fileIDs[0]))),
-		raw.Str([]byte(hex.EncodeToString(fileIDs[1]))),
+		raw.HexStr(ids[0]),
+		raw.HexStr(ids[1]),
 	)
 	trailer.Set(raw.NameLiteral("ID"), idArr)
 	if prev > 0 && cfg.Incremental {
@@ -1401,34 +1419,55 @@ func shadingKey(name string, s semantic.Shading) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// permissionsValue builds the Standard security permissions flags.
-func permissionsValue(p raw.Permissions) int32 {
-	val := int32(-4) // bits 1-2 must be 0
-	if !p.Print {
-		val &^= 1 << 2
+func encryptObject(obj raw.Object, ref raw.ObjectRef, handler security.Handler, metadataRef *raw.ObjectRef, encryptMetadata bool) raw.Object {
+	if handler == nil {
+		return obj
 	}
-	if !p.Modify {
-		val &^= 1 << 3
+	if metadataRef != nil && !encryptMetadata && ref == *metadataRef {
+		return obj
 	}
-	if !p.Copy {
-		val &^= 1 << 4
+	switch v := obj.(type) {
+	case raw.StringObj:
+		encrypted, err := handler.Encrypt(ref.Num, ref.Gen, v.Value(), security.DataClassString)
+		if err != nil {
+			return obj
+		}
+		return raw.Str(encrypted)
+	case raw.HexStringObj:
+		encrypted, err := handler.Encrypt(ref.Num, ref.Gen, v.Value(), security.DataClassString)
+		if err != nil {
+			return obj
+		}
+		return raw.HexStr(encrypted)
+	case *raw.ArrayObj:
+		arr := raw.NewArray()
+		for _, item := range v.Items {
+			arr.Append(encryptObject(item, ref, handler, metadataRef, encryptMetadata))
+		}
+		return arr
+	case *raw.DictObj:
+		d := raw.Dict()
+		for k, val := range v.KV {
+			d.Set(raw.NameLiteral(k), encryptObject(val, ref, handler, metadataRef, encryptMetadata))
+		}
+		return d
+	case *raw.StreamObj:
+		class := security.DataClassStream
+		if metadataRef != nil && ref == *metadataRef {
+			class = security.DataClassMetadataStream
+		}
+		data, err := handler.Encrypt(ref.Num, ref.Gen, v.Data, class)
+		if err != nil {
+			return obj
+		}
+		dictEncrypted := encryptObject(v.Dict, ref, handler, metadataRef, encryptMetadata)
+		if dd, ok := dictEncrypted.(*raw.DictObj); ok {
+			return raw.NewStream(dd, data)
+		}
+		return raw.NewStream(v.Dict, data)
+	default:
+		return obj
 	}
-	if !p.ModifyAnnotations {
-		val &^= 1 << 5
-	}
-	if !p.FillForms {
-		val &^= 1 << 8
-	}
-	if !p.ExtractAccessible {
-		val &^= 1 << 9
-	}
-	if !p.Assemble {
-		val &^= 1 << 10
-	}
-	if !p.PrintHighQuality {
-		val &^= 1 << 11
-	}
-	return val
 }
 
 func scanObjectOffsets(data []byte) map[int]int64 {

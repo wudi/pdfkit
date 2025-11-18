@@ -20,6 +20,7 @@ import (
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
 	"pdflib/parser"
+	"pdflib/security"
 	"pdflib/xref"
 )
 
@@ -90,9 +91,25 @@ func TestWriter_InfoMetadataIDDeterministic(t *testing.T) {
 	if !bytes.Contains(data, []byte("/Metadata")) {
 		t.Fatalf("missing Metadata reference in catalog")
 	}
-	reID := regexp.MustCompile(`/ID\s*\[\(\s*([0-9a-f]+)\s*\)\s*\(\s*([0-9a-f]+)\s*\)\]`)
-	matches := reID.FindSubmatch(data)
-	if len(matches) != 3 || !bytes.Equal(matches[1], matches[2]) {
+	rawParser := parser.NewDocumentParser(parser.Config{Security: security.NoopHandler()})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("parse for IDs: %v", err)
+	}
+	idObj, ok := rawDoc.Trailer.Get(raw.NameLiteral("ID"))
+	if !ok {
+		t.Fatalf("ID missing from trailer")
+	}
+	idArr, ok := idObj.(*raw.ArrayObj)
+	if !ok || idArr.Len() != 2 {
+		t.Fatalf("ID array malformed")
+	}
+	idA := idBytes(idArr.Items[0])
+	idB := idBytes(idArr.Items[1])
+	if len(idA) == 0 || len(idB) == 0 {
+		t.Fatalf("ID entries empty")
+	}
+	if !bytes.Equal(idA, idB) {
 		t.Fatalf("expected matching ID pair in trailer")
 	}
 
@@ -432,7 +449,7 @@ func TestWriter_ContentStream_ASCIIHexAndASCII85(t *testing.T) {
 		if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true, ContentFilter: filter}); err != nil {
 			t.Fatalf("write pdf (%s): %v", expectedFilter, err)
 		}
-		rawParser := parser.NewDocumentParser(parser.Config{})
+		rawParser := parser.NewDocumentParser(parser.Config{Security: security.NoopHandler()})
 		rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
 		if err != nil {
 			t.Fatalf("parse raw pdf: %v", err)
@@ -544,7 +561,7 @@ func TestWriter_FontWidths(t *testing.T) {
 	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
-	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawParser := parser.NewDocumentParser(parser.Config{Security: security.NoopHandler()})
 	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
 	if err != nil {
 		t.Fatalf("parse raw: %v", err)
@@ -724,7 +741,7 @@ func TestWriter_ProcSetIncluded(t *testing.T) {
 	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
-	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawParser := parser.NewDocumentParser(parser.Config{Security: security.NoopHandler()})
 	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
 	if err != nil {
 		t.Fatalf("parse raw: %v", err)
@@ -785,7 +802,7 @@ func TestWriter_ProcSetWithImages(t *testing.T) {
 	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
-	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawParser := parser.NewDocumentParser(parser.Config{Security: security.NoopHandler()})
 	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
 	if err != nil {
 		t.Fatalf("parse raw: %v", err)
@@ -1551,7 +1568,7 @@ func TestWriter_OutlinesDest(t *testing.T) {
 	destOK := 0
 	childCountOK := false
 	roleMapOK := false
-	for ref, obj := range rawDoc.Objects {
+	for _, obj := range rawDoc.Objects {
 		d, ok := obj.(*raw.DictObj)
 		if !ok {
 			continue
@@ -1576,9 +1593,6 @@ func TestWriter_OutlinesDest(t *testing.T) {
 					}
 				}
 			}
-		}
-		if ref == (raw.ObjectRef{}) {
-			// skip
 		}
 		if typ, ok := d.Get(raw.NameLiteral("Type")); ok {
 			if n, ok := typ.(raw.NameObj); ok && n.Value() == "StructTreeRoot" {
@@ -2070,6 +2084,96 @@ func TestWriter_AcroFormWidgetAppearance(t *testing.T) {
 	}
 }
 
+func TestWriter_EncryptsContentStream(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 20, URY: 20}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT (Secret) Tj ET")}}},
+		},
+		Metadata:          &semantic.XMPMetadata{Raw: []byte("<meta>visible</meta>")},
+		Encrypted:         true,
+		UserPassword:      "user",
+		OwnerPassword:     "owner",
+		MetadataEncrypted: false,
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{Security: security.NoopHandler()})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	encVal, ok := rawDoc.Trailer.Get(raw.NameLiteral("Encrypt"))
+	if !ok {
+		t.Fatalf("encrypt entry missing")
+	}
+	encRef, ok := encVal.(raw.RefObj)
+	if !ok {
+		t.Fatalf("encrypt entry not ref: %#v", encVal)
+	}
+	encDictObj, ok := rawDoc.Objects[encRef.Ref()].(*raw.DictObj)
+	if !ok {
+		t.Fatalf("encrypt dictionary not found")
+	}
+	handler, err := (&security.HandlerBuilder{}).WithEncryptDict(encDictObj).WithTrailer(rawDoc.Trailer).Build()
+	if err != nil {
+		t.Fatalf("build handler: %v", err)
+	}
+	if err := handler.Authenticate("user"); err != nil {
+		t.Fatalf("authenticate user: %v", err)
+	}
+	var contentsRef raw.RefObj
+	var metadataRef raw.RefObj
+	for _, obj := range rawDoc.Objects {
+		d, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		if typ, ok := d.Get(raw.NameLiteral("Type")); ok {
+			if n, ok := typ.(raw.NameObj); ok && n.Value() == "Page" {
+				if cVal, ok := d.Get(raw.NameLiteral("Contents")); ok {
+					if r, ok := cVal.(raw.RefObj); ok {
+						contentsRef = r
+					}
+				}
+			}
+			if n, ok := typ.(raw.NameObj); ok && n.Value() == "Catalog" {
+				if md, ok := d.Get(raw.NameLiteral("Metadata")); ok {
+					if r, ok := md.(raw.RefObj); ok {
+						metadataRef = r
+					}
+				}
+			}
+		}
+	}
+	if contentsRef.Ref().Num == 0 {
+		t.Fatalf("contents reference not found")
+	}
+	streamObj, ok := rawDoc.Objects[contentsRef.Ref()].(*raw.StreamObj)
+	if !ok {
+		t.Fatalf("content stream not found")
+	}
+	if bytes.Contains(streamObj.Data, []byte("Secret")) {
+		t.Fatalf("content stream appears unencrypted")
+	}
+	dec, err := handler.Decrypt(contentsRef.Ref().Num, contentsRef.Ref().Gen, streamObj.Data, security.DataClassStream)
+	if err != nil {
+		t.Fatalf("decrypt stream: %v", err)
+	}
+	if !bytes.Contains(dec, []byte("Secret")) {
+		t.Fatalf("decrypted stream missing content: %q", dec)
+	}
+	if metadataRef.Ref().Num > 0 {
+		if mdStream, ok := rawDoc.Objects[metadataRef.Ref()].(*raw.StreamObj); ok {
+			if !bytes.Contains(mdStream.Data, []byte("<meta>visible</meta>")) {
+				t.Fatalf("metadata stream unexpectedly encrypted")
+			}
+		}
+	}
+}
+
 func TestWriter_XRefStreamStartOffset(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{
@@ -2108,10 +2212,18 @@ func firstID(doc *raw.Document) string {
 	if !ok || arr.Len() == 0 {
 		return ""
 	}
-	if s, ok := arr.Items[0].(raw.StringObj); ok {
-		return string(s.Value())
+	return hex.EncodeToString(idBytes(arr.Items[0]))
+}
+
+func idBytes(obj raw.Object) []byte {
+	switch v := obj.(type) {
+	case raw.StringObj:
+		return v.Value()
+	case raw.HexStringObj:
+		return v.Value()
+	default:
+		return nil
 	}
-	return ""
 }
 
 func maxObjNum(data []byte) int {

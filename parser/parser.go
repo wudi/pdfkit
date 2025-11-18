@@ -152,6 +152,9 @@ func fileIDFromTrailer(trailer *raw.DictObj) []byte {
 			if s, ok := arr.Items[0].(raw.StringObj); ok {
 				return s.Value()
 			}
+			if hx, ok := arr.Items[0].(raw.HexStringObj); ok {
+				return hx.Value()
+			}
 		}
 	}
 	return nil
