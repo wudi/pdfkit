@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf16"
 )
 
 type impl struct{ interceptors []Interceptor }
@@ -115,6 +116,20 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		objects[ref] = d
 		return &ref
 	}
+	addToUnicode := func(font *semantic.Font) *raw.ObjectRef {
+		if font == nil || len(font.ToUnicode) == 0 {
+			return nil
+		}
+		cmap := buildToUnicodeCMap(font)
+		if len(cmap) == 0 {
+			return nil
+		}
+		ref := nextRef()
+		d := raw.Dict()
+		d.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(cmap))))
+		objects[ref] = raw.NewStream(d, cmap)
+		return &ref
+	}
 	ensureFont := func(font *semantic.Font) raw.ObjectRef {
 		base := "Helvetica"
 		encoding := ""
@@ -199,6 +214,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 			}
 			objects[descRef] = descDict
 			fontDict.Set(raw.NameLiteral("DescendantFonts"), raw.NewArray(raw.Ref(descRef.Num, descRef.Gen)))
+			if uref := addToUnicode(font); uref != nil {
+				fontDict.Set(raw.NameLiteral("ToUnicode"), raw.Ref(uref.Num, uref.Gen))
+			}
 		} else {
 			if encoding != "" {
 				fontDict.Set(raw.NameLiteral("Encoding"), raw.NameLiteral(encoding))
@@ -1453,6 +1471,19 @@ func fontKey(base, encoding, subtype string, font *semantic.Font) string {
 			h.Write([]byte(fd.FontFileType))
 			h.Write(fd.FontFile)
 		}
+		if len(font.ToUnicode) > 0 {
+			cids := make([]int, 0, len(font.ToUnicode))
+			for cid := range font.ToUnicode {
+				cids = append(cids, cid)
+			}
+			sort.Ints(cids)
+			for _, cid := range cids {
+				h.Write([]byte(fmt.Sprintf("%d:", cid)))
+				for _, r := range font.ToUnicode[cid] {
+					h.Write([]byte(fmt.Sprintf("%d", r)))
+				}
+			}
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -1465,6 +1496,79 @@ func fontDescriptor(cid *semantic.CIDFont, font *semantic.Font) *semantic.FontDe
 		return font.Descriptor
 	}
 	return nil
+}
+
+func buildToUnicodeCMap(font *semantic.Font) []byte {
+	if font == nil || len(font.ToUnicode) == 0 {
+		return nil
+	}
+	keys := make([]int, 0, len(font.ToUnicode))
+	for cid := range font.ToUnicode {
+		keys = append(keys, cid)
+	}
+	sort.Ints(keys)
+	if len(keys) == 0 {
+		return nil
+	}
+	registry, ordering, supplement := "Adobe", "Identity", 0
+	if font.CIDSystemInfo != nil {
+		if font.CIDSystemInfo.Registry != "" {
+			registry = font.CIDSystemInfo.Registry
+		}
+		if font.CIDSystemInfo.Ordering != "" {
+			ordering = font.CIDSystemInfo.Ordering
+		}
+		supplement = font.CIDSystemInfo.Supplement
+	} else if font.DescendantFont != nil {
+		registry = font.DescendantFont.CIDSystemInfo.Registry
+		ordering = font.DescendantFont.CIDSystemInfo.Ordering
+		supplement = font.DescendantFont.CIDSystemInfo.Supplement
+	}
+	name := font.BaseFont
+	if name == "" {
+		name = "ToUnicode"
+	}
+	name = strings.ReplaceAll(name, " ", "") + "-UTF16"
+	minCID, maxCID := keys[0], keys[len(keys)-1]
+	var buf bytes.Buffer
+	buf.WriteString("/CIDInit /ProcSet findresource begin\n")
+	buf.WriteString("12 dict begin\n")
+	buf.WriteString("begincmap\n")
+	buf.WriteString(fmt.Sprintf("/CIDSystemInfo << /Registry (%s) /Ordering (%s) /Supplement %d >> def\n", registry, ordering, supplement))
+	buf.WriteString(fmt.Sprintf("/CMapName /%s def\n", name))
+	buf.WriteString("/CMapType 2 def\n")
+	buf.WriteString("1 begincodespacerange\n")
+	buf.WriteString(fmt.Sprintf("<%04X> <%04X>\n", minCID, maxCID))
+	buf.WriteString("endcodespacerange\n")
+	for i := 0; i < len(keys); {
+		chunk := len(keys) - i
+		if chunk > 100 {
+			chunk = 100
+		}
+		buf.WriteString(fmt.Sprintf("%d beginbfchar\n", chunk))
+		for j := 0; j < chunk; j++ {
+			cid := keys[i+j]
+			buf.WriteString(fmt.Sprintf("<%04X> <%s>\n", cid, utf16Hex(font.ToUnicode[cid])))
+		}
+		buf.WriteString("endbfchar\n")
+		i += chunk
+	}
+	buf.WriteString("endcmap\n")
+	buf.WriteString("CMapName currentdict /CMap defineresource pop\n")
+	buf.WriteString("end\nend\n")
+	return buf.Bytes()
+}
+
+func utf16Hex(runes []rune) string {
+	if len(runes) == 0 {
+		return ""
+	}
+	encoded := utf16.Encode(runes)
+	var b strings.Builder
+	for _, u := range encoded {
+		b.WriteString(fmt.Sprintf("%04X", u))
+	}
+	return b.String()
 }
 
 func encodeWidths(widths map[int]int) (first, last int, arr *raw.ArrayObj) {

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"encoding/ascii85"
 	"encoding/hex"
@@ -685,6 +686,33 @@ func TestWriter_EmbedTrueTypeFont(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load truetype: %v", err)
 	}
+	var sampleCID int
+	var sampleRune rune
+	for cid, runes := range ttFont.ToUnicode {
+		for _, r := range runes {
+			if r > 127 {
+				sampleCID = cid
+				sampleRune = r
+				break
+			}
+		}
+		if sampleCID != 0 {
+			break
+		}
+	}
+	if sampleCID == 0 {
+		for cid, runes := range ttFont.ToUnicode {
+			if len(runes) > 0 {
+				sampleCID = cid
+				sampleRune = runes[0]
+				break
+			}
+		}
+	}
+	if sampleCID == 0 {
+		t.Fatalf("no ToUnicode mappings found in font")
+	}
+	cidBytes := []byte{byte(sampleCID >> 8), byte(sampleCID)}
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{
 			{
@@ -698,7 +726,7 @@ func TestWriter_EmbedTrueTypeFont(t *testing.T) {
 					Operations: []semantic.Operation{
 						{Operator: "BT"},
 						{Operator: "Tf", Operands: []semantic.Operand{semantic.NameOperand{Value: "F1"}, semantic.NumberOperand{Value: 12}}},
-						{Operator: "Tj", Operands: []semantic.Operand{semantic.StringOperand{Value: []byte("Hello")}}},
+						{Operator: "Tj", Operands: []semantic.Operand{semantic.StringOperand{Value: cidBytes}}},
 						{Operator: "ET"},
 					},
 				}},
@@ -723,6 +751,19 @@ func TestWriter_EmbedTrueTypeFont(t *testing.T) {
 	if !bytes.Contains(data, []byte("/Identity-H")) {
 		t.Fatalf("expected Identity-H encoding for embedded font")
 	}
+	expectedMap := fmt.Sprintf("<%04X> <%s>", sampleCID, toUnicodeHex([]rune{sampleRune}))
+	if !bytes.Contains(data, []byte(expectedMap)) {
+		t.Fatalf("expected ToUnicode mapping for CID %d rune %U", sampleCID, sampleRune)
+	}
+}
+
+func toUnicodeHex(runes []rune) string {
+	encoded := utf16.Encode(runes)
+	var b strings.Builder
+	for _, u := range encoded {
+		fmt.Fprintf(&b, "%04X", u)
+	}
+	return b.String()
 }
 
 func TestWriter_EncryptDictionary(t *testing.T) {

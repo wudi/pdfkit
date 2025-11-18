@@ -107,6 +107,7 @@ type Font struct {
 	BaseFont       string
 	Encoding       string
 	Widths         map[int]int // character code -> width
+	ToUnicode      map[int][]rune
 	CIDSystemInfo  *CIDSystemInfo
 	DescendantFont *CIDFont
 	Descriptor     *FontDescriptor

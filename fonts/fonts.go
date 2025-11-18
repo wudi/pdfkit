@@ -65,6 +65,7 @@ func LoadTrueType(name string, data []byte) (*semantic.Font, error) {
 	}
 
 	cidInfo := semantic.CIDSystemInfo{Registry: "Adobe", Ordering: "Identity", Supplement: 0}
+	toUnicode := buildToUnicodeMap(font, buf)
 	descendant := &semantic.CIDFont{
 		Subtype:       "CIDFontType2",
 		BaseFont:      baseName,
@@ -82,6 +83,7 @@ func LoadTrueType(name string, data []byte) (*semantic.Font, error) {
 		CIDSystemInfo:  &cidInfo,
 		DescendantFont: descendant,
 		Descriptor:     descriptor,
+		ToUnicode:      toUnicode,
 	}, nil
 }
 
@@ -108,4 +110,16 @@ func italicAngle(font *sfnt.Font) float64 {
 
 func scaleFixed(val fixed.Int26_6, unitsPerEm sfnt.Units) float64 {
 	return float64(val) * 1000.0 / (64.0 * float64(unitsPerEm))
+}
+
+func buildToUnicodeMap(font *sfnt.Font, buf *sfnt.Buffer) map[int][]rune {
+	mapping := make(map[int][]rune)
+	for r := rune(0); r <= 0xFFFF; r++ {
+		glyph, err := font.GlyphIndex(buf, r)
+		if err != nil || glyph == 0 {
+			continue
+		}
+		mapping[int(glyph)] = []rune{r}
+	}
+	return mapping
 }
