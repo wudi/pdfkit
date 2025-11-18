@@ -45,6 +45,8 @@ type Config struct {
 	MaxStreamLength int64
 	MaxStreamScan   int64
 	MaxInlineImage  int64
+	MaxNameLength   int64
+	MaxNumberLength int
 	WindowSize      int64
 	Recovery        recovery.Strategy
 }
@@ -66,6 +68,8 @@ type pdfScanner struct {
 	dictDepth     int
 	recLoc        recovery.Location
 	lastAction    recovery.Action
+	fixArrayClose int
+	fixDictClose  int
 }
 
 // New loads entire ReaderAt into memory and returns a scanner.
@@ -96,8 +100,26 @@ func (s *pdfScanner) SetRecoveryLocation(loc recovery.Location) { s.recLoc = loc
 
 func (s *pdfScanner) Next() (Token, error) {
 	s.lastAction = recovery.ActionFail
+	if s.fixArrayClose > 0 {
+		s.fixArrayClose--
+		return s.emit(Token{Type: TokenKeyword, Value: "]", Pos: s.pos})
+	}
+	if s.fixDictClose > 0 {
+		s.fixDictClose--
+		return s.emit(Token{Type: TokenKeyword, Value: ">>", Pos: s.pos})
+	}
 	if err := s.skipWSAndComments(); err != nil {
 		if errors.Is(err, io.EOF) {
+			if s.arrayDepth > 0 || s.dictDepth > 0 {
+				if recErr := s.recover(errors.New("unexpected EOF inside container"), "eof"); recErr != nil && s.lastAction != recovery.ActionFix {
+					return Token{}, recErr
+				}
+				if s.lastAction == recovery.ActionFix {
+					s.fixArrayClose = s.arrayDepth
+					s.fixDictClose = s.dictDepth
+					return s.Next()
+				}
+			}
 			return Token{}, io.EOF
 		}
 		return Token{}, err
@@ -250,6 +272,9 @@ func (s *pdfScanner) scanName() (Token, error) {
 		}
 		out.WriteByte(c)
 		s.pos++
+		if s.cfg.MaxNameLength > 0 && int64(out.Len()) > s.cfg.MaxNameLength {
+			return Token{}, s.recover(errors.New("name too long"), "name")
+		}
 	}
 	return s.emit(Token{Type: TokenName, Value: out.String(), Pos: start})
 }
@@ -766,6 +791,7 @@ func (s *pdfScanner) scanNumberString() string {
 	start := s.pos
 	var buf bytes.Buffer
 	seenDigit := false
+	dotSeen := false
 	for {
 		if err := s.ensure(s.pos); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -777,19 +803,38 @@ func (s *pdfScanner) scanNumberString() string {
 			break
 		}
 		c := s.data[s.pos]
-		if c == '+' || c == '-' || c == '.' || (c >= '0' && c <= '9') {
-			buf.WriteByte(c)
-			if c >= '0' && c <= '9' {
-				seenDigit = true
+		switch {
+		case c == '+' || c == '-':
+			if buf.Len() > 0 {
+				return s.finishNumber(start, &buf, seenDigit)
 			}
+			buf.WriteByte(c)
 			s.pos++
-			continue
+		case c == '.':
+			if dotSeen {
+				return s.finishNumber(start, &buf, seenDigit)
+			}
+			dotSeen = true
+			buf.WriteByte(c)
+			s.pos++
+		case c >= '0' && c <= '9':
+			buf.WriteByte(c)
+			seenDigit = true
+			s.pos++
+		default:
+			return s.finishNumber(start, &buf, seenDigit)
 		}
-		break
 	}
+	return s.finishNumber(start, &buf, seenDigit)
+}
+
+func (s *pdfScanner) finishNumber(start int64, buf *bytes.Buffer, seenDigit bool) string {
 	if !seenDigit {
 		s.pos = start
 		return ""
+	}
+	if s.cfg.MaxNumberLength > 0 && buf.Len() > s.cfg.MaxNumberLength {
+		_ = s.recover(errors.New("number too long"), "number")
 	}
 	return buf.String()
 }

@@ -1,11 +1,13 @@
 package parser
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"sync"
 
+	"pdflib/filters"
 	"pdflib/ir/raw"
 	"pdflib/recovery"
 	"pdflib/scanner"
@@ -37,6 +39,10 @@ func (b *ObjectLoaderBuilder) WithXRef(table xref.Table) *ObjectLoaderBuilder {
 	b.xrefTable = table
 	return b
 }
+func (b *ObjectLoaderBuilder) WithReader(r io.ReaderAt) *ObjectLoaderBuilder {
+	b.reader = r
+	return b
+}
 func (b *ObjectLoaderBuilder) WithSecurity(h security.Handler) *ObjectLoaderBuilder {
 	b.security = h
 	return b
@@ -59,6 +65,7 @@ type objectLoader struct {
 	cache     Cache
 	recovery  recovery.Strategy
 	mu        sync.Mutex
+	objstm    map[int]map[int]raw.Object
 }
 
 func (o *objectLoader) Load(ctx context.Context, ref raw.ObjectRef) (raw.Object, error) {
@@ -94,10 +101,18 @@ func (o *objectLoader) loadOnce(ctx context.Context, ref raw.ObjectRef) (raw.Obj
 	}
 	offset, gen, found := o.xrefTable.Lookup(ref.Num)
 	if !found {
+		if osNum, idx, ok := o.xrefTable.ObjStream(ref.Num); ok {
+			return o.loadFromObjectStream(ctx, ref, osNum, idx)
+		}
 		return nil, errors.New("object not found in xref")
 	}
 
 	// Build a fresh scanner per load to avoid shared cursor complications.
+	return o.loadAtOffset(ref.Num, offset, gen)
+}
+
+// loadAtOffset assumes caller holds the loader mutex.
+func (o *objectLoader) loadAtOffset(objNum int, offset int64, gen int) (raw.Object, error) {
 	s := scanner.New(o.reader, scanner.Config{Recovery: o.recovery})
 	if err := s.Seek(offset); err != nil {
 		return nil, err
@@ -110,7 +125,7 @@ func (o *objectLoader) loadOnce(ctx context.Context, ref raw.ObjectRef) (raw.Obj
 		return nil, err
 	}
 	num, ok := toInt(tokNum.Value)
-	if tokNum.Type != scanner.TokenNumber || !ok || int(num) != ref.Num {
+	if tokNum.Type != scanner.TokenNumber || !ok || int(num) != objNum {
 		return nil, errors.New("object header number mismatch")
 	}
 	tokGen, err := tr.next()
@@ -138,8 +153,129 @@ func (o *objectLoader) loadOnce(ctx context.Context, ref raw.ObjectRef) (raw.Obj
 			obj = raw.NewStream(dict, copyBytes(streamTok.Value))
 		}
 	}
-
 	return obj, nil
+}
+
+func (o *objectLoader) loadFromObjectStream(ctx context.Context, ref raw.ObjectRef, objStreamNum int, idx int) (raw.Object, error) {
+	if o.objstm == nil {
+		o.objstm = make(map[int]map[int]raw.Object)
+	}
+	if objs, ok := o.objstm[objStreamNum]; ok {
+		if obj, ok2 := objs[idx]; ok2 {
+			return obj, nil
+		}
+	}
+	offset, gen, ok := o.xrefTable.Lookup(objStreamNum)
+	if !ok {
+		return nil, errors.New("object stream entry missing")
+	}
+	streamObj, err := o.loadAtOffset(objStreamNum, offset, gen)
+	if err != nil {
+		return nil, err
+	}
+	st, ok := streamObj.(*raw.StreamObj)
+	if !ok {
+		return nil, errors.New("object stream is not a stream")
+	}
+	nObj := int(getIntFromDict(st.Dict, "N"))
+	first := int(getIntFromDict(st.Dict, "First"))
+	data := st.RawData()
+	if first > len(data) {
+		return nil, errors.New("object stream First exceeds length")
+	}
+	filterNames, filterParams := filtersForStream(st.Dict)
+	if len(filterNames) > 0 {
+		p := filters.NewPipeline([]filters.Decoder{
+			filters.NewFlateDecoder(),
+			filters.NewASCII85Decoder(),
+			filters.NewASCIIHexDecoder(),
+		}, filters.Limits{})
+		decoded, err := p.Decode(ctx, data, filterNames, filterParams)
+		if err != nil {
+			return nil, err
+		}
+		data = decoded
+	}
+	header := data[:first]
+	body := data[first:]
+	// parse header pairs
+	s := scanner.New(bytes.NewReader(header), scanner.Config{Recovery: o.recovery})
+	var pairs []int
+	for len(pairs)/2 < nObj {
+		tok, err := s.Next()
+		if err != nil {
+			return nil, err
+		}
+		if tok.Type != scanner.TokenNumber {
+			continue
+		}
+		val, _ := toInt(tok.Value)
+		pairs = append(pairs, int(val))
+	}
+	// Build objects map
+	objs := make(map[int]raw.Object)
+	bodyScanner := func(start int) scanner.Scanner {
+		cfg := scanner.Config{Recovery: o.recovery}
+		sc := scanner.New(bytes.NewReader(body[start:]), cfg)
+		return sc
+	}
+	for i := 0; i < nObj; i++ {
+		objNum := pairs[2*i]
+		off := pairs[2*i+1]
+		sc := bodyScanner(off)
+		tr := &tokenReader{s: sc}
+		obj, err := parseObject(tr)
+		if err != nil {
+			return nil, err
+		}
+		objs[objNum] = obj
+	}
+	o.objstm[objStreamNum] = objs
+	if obj, ok := objs[ref.Num]; ok {
+		return obj, nil
+	}
+	return nil, errors.New("object not found in object stream")
+}
+
+func getIntFromDict(d *raw.DictObj, key string) int64 {
+	if v, ok := d.Get(raw.NameObj{Val: key}); ok {
+		if n, ok := v.(raw.NumberObj); ok {
+			return n.Int()
+		}
+	}
+	return 0
+}
+
+func filtersForStream(d *raw.DictObj) ([]string, []raw.Dictionary) {
+	fObj, ok := d.Get(raw.NameObj{Val: "Filter"})
+	if !ok {
+		return nil, nil
+	}
+	var names []string
+	switch v := fObj.(type) {
+	case raw.NameObj:
+		names = []string{v.Val}
+	case *raw.ArrayObj:
+		for _, it := range v.Items {
+			if n, ok := it.(raw.NameObj); ok {
+				names = append(names, n.Val)
+			}
+		}
+	}
+	var params []raw.Dictionary
+	if dp, ok := d.Get(raw.NameObj{Val: "DecodeParms"}); ok {
+		switch p := dp.(type) {
+		case *raw.DictObj:
+			params = append(params, p)
+		case *raw.ArrayObj:
+			for _, it := range p.Items {
+				if dd, ok := it.(*raw.DictObj); ok {
+					params = append(params, dd)
+				}
+			}
+		}
+	}
+	return names, params
 }
 
 // Parsing helpers (duplicated from raw parser for loader-focused parsing).

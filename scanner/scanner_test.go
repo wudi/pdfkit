@@ -157,6 +157,13 @@ func TestScanner_StreamFallbackToEndstream(t *testing.T) {
 	}
 }
 
+func TestScanner_NameTooLong(t *testing.T) {
+	s := newScanner(t, "/abcdefgh", Config{MaxNameLength: 5})
+	if _, err := s.Next(); err == nil || !strings.Contains(err.Error(), "name too long") {
+		t.Fatalf("expected name too long error, got %v", err)
+	}
+}
+
 func TestScanner_MaxStringLength(t *testing.T) {
 	s := newScanner(t, "<000102>", Config{MaxStringLength: 2})
 	if _, err := s.Next(); err == nil || !strings.Contains(err.Error(), "hex string too long") {
@@ -314,6 +321,30 @@ func TestScanner_FixStreamScanLimit(t *testing.T) {
 	}
 	if tok.Type != TokenStream || string(tok.Value.([]byte)) != "abc" {
 		t.Fatalf("unexpected stream payload after recovery: %+v", tok)
+	}
+}
+
+func TestScanner_FixUnclosedArrayAtEOF(t *testing.T) {
+	s := New(bytes.NewReader([]byte("[1 2 ")), Config{Recovery: &fixRecovery{}})
+	tok := nextToken(t, s)
+	if tok.Type != TokenArray {
+		t.Fatalf("expected array start, got %+v", tok)
+	}
+	// read 1, 2, then expect auto-closed array via recovery fix
+	tok = nextToken(t, s)
+	if tok.Type != TokenNumber || tok.Value != int64(1) {
+		t.Fatalf("expected 1, got %+v", tok)
+	}
+	tok = nextToken(t, s)
+	if tok.Type != TokenNumber || tok.Value != int64(2) {
+		t.Fatalf("expected 2, got %+v", tok)
+	}
+	tok = nextToken(t, s)
+	if tok.Type != TokenKeyword || tok.Value != "]" {
+		t.Fatalf("expected auto-closed ], got %+v", tok)
+	}
+	if _, err := s.Next(); err == nil {
+		t.Fatalf("expected EOF after auto-close")
 	}
 }
 
