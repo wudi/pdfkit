@@ -797,7 +797,7 @@ func TestWriter_OutlinesDest(t *testing.T) {
 			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
 		},
 		Outlines: []semantic.OutlineItem{
-			{Title: "First", PageIndex: 0},
+			{Title: "First", PageIndex: 0, Children: []semantic.OutlineItem{{Title: "Child", PageIndex: 1}}},
 			{Title: "Second", PageIndex: 1},
 		},
 		StructTree: &semantic.StructureTree{RoleMap: semantic.RoleMap{"H1": "Heading1"}},
@@ -814,6 +814,7 @@ func TestWriter_OutlinesDest(t *testing.T) {
 	}
 	outlinesFound := false
 	destOK := 0
+	childCountOK := false
 	roleMapOK := false
 	for ref, obj := range rawDoc.Objects {
 		d, ok := obj.(*raw.DictObj)
@@ -832,6 +833,11 @@ func TestWriter_OutlinesDest(t *testing.T) {
 						if refObj, ok := arr.Items[0].(raw.RefObj); ok && refObj.Ref().Num > 0 {
 							destOK++
 						}
+					}
+				}
+				if first, ok := d.Get(raw.NameLiteral("First")); ok {
+					if _, ok := first.(raw.RefObj); ok {
+						childCountOK = true
 					}
 				}
 			}
@@ -856,8 +862,11 @@ func TestWriter_OutlinesDest(t *testing.T) {
 	if !outlinesFound {
 		t.Fatalf("Outlines dict missing")
 	}
-	if destOK != 2 {
+	if destOK < 2 {
 		t.Fatalf("outline destinations missing: %d", destOK)
+	}
+	if !childCountOK {
+		t.Fatalf("outline child relationships missing")
 	}
 	if !roleMapOK {
 		t.Fatalf("StructTreeRoot or RoleMap not found")

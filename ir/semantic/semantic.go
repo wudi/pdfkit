@@ -133,6 +133,7 @@ type Annotation struct {
 type OutlineItem struct {
 	Title     string
 	PageIndex int
+	Children  []OutlineItem
 }
 
 // Builder produces a Semantic document from Decoded IR.

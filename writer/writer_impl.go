@@ -322,34 +322,14 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	}
 	if len(doc.Outlines) > 0 {
 		outlineRef := nextRef()
-		itemRefs := make([]raw.ObjectRef, len(doc.Outlines))
-		for i := range doc.Outlines {
-			itemRefs[i] = nextRef()
-		}
 		outlineDict := raw.Dict()
 		outlineDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Outlines"))
-		outlineDict.Set(raw.NameLiteral("First"), raw.Ref(itemRefs[0].Num, itemRefs[0].Gen))
-		outlineDict.Set(raw.NameLiteral("Last"), raw.Ref(itemRefs[len(itemRefs)-1].Num, itemRefs[len(itemRefs)-1].Gen))
-		outlineDict.Set(raw.NameLiteral("Count"), raw.NumberInt(int64(len(doc.Outlines))))
 		objects[outlineRef] = outlineDict
 
-		for i, item := range doc.Outlines {
-			d := raw.Dict()
-			d.Set(raw.NameLiteral("Title"), raw.Str([]byte(item.Title)))
-			if item.PageIndex >= 0 && item.PageIndex < len(pageRefs) {
-				pref := pageRefs[item.PageIndex]
-				dest := raw.NewArray(raw.Ref(pref.Num, pref.Gen), raw.NameLiteral("Fit"))
-				d.Set(raw.NameLiteral("Dest"), dest)
-			}
-			d.Set(raw.NameLiteral("Parent"), raw.Ref(outlineRef.Num, outlineRef.Gen))
-			if i > 0 {
-				d.Set(raw.NameLiteral("Prev"), raw.Ref(itemRefs[i-1].Num, itemRefs[i-1].Gen))
-			}
-			if i < len(itemRefs)-1 {
-				d.Set(raw.NameLiteral("Next"), raw.Ref(itemRefs[i+1].Num, itemRefs[i+1].Gen))
-			}
-			objects[itemRefs[i]] = d
-		}
+		first, last, total := w.buildOutlines(doc.Outlines, outlineRef, pageRefs, objects, nextRef, outlineRef)
+		outlineDict.Set(raw.NameLiteral("First"), raw.Ref(first.Num, first.Gen))
+		outlineDict.Set(raw.NameLiteral("Last"), raw.Ref(last.Num, last.Gen))
+		outlineDict.Set(raw.NameLiteral("Count"), raw.NumberInt(total))
 		catalogDict.Set(raw.NameLiteral("Outlines"), raw.Ref(outlineRef.Num, outlineRef.Gen))
 	}
 	objects[catalogRef] = catalogDict
@@ -429,6 +409,44 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 
 	_, err := out.Write(buf.Bytes())
 	return err
+}
+
+func (w *impl) buildOutlines(items []semantic.OutlineItem, parent raw.ObjectRef, pageRefs []raw.ObjectRef, objects map[raw.ObjectRef]raw.Object, nextRef func() raw.ObjectRef, root raw.ObjectRef) (first, last raw.ObjectRef, count int64) {
+	if len(items) == 0 {
+		return first, last, 0
+	}
+	refs := make([]raw.ObjectRef, len(items))
+	for i := range items {
+		refs[i] = nextRef()
+	}
+	for i, item := range items {
+		count++
+		d := raw.Dict()
+		d.Set(raw.NameLiteral("Title"), raw.Str([]byte(item.Title)))
+		if item.PageIndex >= 0 && item.PageIndex < len(pageRefs) {
+			pref := pageRefs[item.PageIndex]
+			dest := raw.NewArray(raw.Ref(pref.Num, pref.Gen), raw.NameLiteral("Fit"))
+			d.Set(raw.NameLiteral("Dest"), dest)
+		}
+		d.Set(raw.NameLiteral("Parent"), raw.Ref(parent.Num, parent.Gen))
+		if i > 0 {
+			d.Set(raw.NameLiteral("Prev"), raw.Ref(refs[i-1].Num, refs[i-1].Gen))
+		}
+		if i < len(refs)-1 {
+			d.Set(raw.NameLiteral("Next"), raw.Ref(refs[i+1].Num, refs[i+1].Gen))
+		}
+		if len(item.Children) > 0 {
+			firstChild, lastChild, childCount := w.buildOutlines(item.Children, refs[i], pageRefs, objects, nextRef, root)
+			d.Set(raw.NameLiteral("First"), raw.Ref(firstChild.Num, firstChild.Gen))
+			d.Set(raw.NameLiteral("Last"), raw.Ref(lastChild.Num, lastChild.Gen))
+			d.Set(raw.NameLiteral("Count"), raw.NumberInt(childCount))
+			count += childCount
+		}
+		objects[refs[i]] = d
+	}
+	first = refs[0]
+	last = refs[len(refs)-1]
+	return first, last, count
 }
 
 func serializePrimitive(o raw.Object) []byte {
