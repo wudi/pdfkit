@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
 	"pdflib/builder"
 	"pdflib/ir"
 	"pdflib/ir/semantic"
+	"pdflib/xref"
 )
 
 type staticCtx struct{}
@@ -148,5 +150,48 @@ func TestWriter_PageGeometryAndResources(t *testing.T) {
 	fontsRegex := regexp.MustCompile(`/Font\s*<<[^>]*?/FBody\s+\d+\s+0\s+R[^>]*?/FMono\s+\d+\s+0\s+R[^>]*?>>`)
 	if !fontsRegex.Match(data) {
 		t.Fatalf("expected page font resource entries")
+	}
+}
+
+func TestWriter_XRefStream(t *testing.T) {
+	b := builder.NewBuilder()
+	b.NewPage(100, 100).DrawText("XRef", 5, 5, builder.TextOptions{FontSize: 9}).Finish()
+	doc, err := b.Build()
+	if err != nil {
+		t.Fatalf("build doc: %v", err)
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	cfg := Config{XRefStreams: true, Deterministic: true}
+	if err := w.Write(staticCtx{}, doc, &buf, cfg); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	data := buf.Bytes()
+	if !bytes.Contains(data, []byte("/Type /XRef")) {
+		t.Fatalf("expected xref stream type")
+	}
+	re := regexp.MustCompile(`startxref\s+(\d+)`)
+	m := re.FindSubmatch(data)
+	if len(m) != 2 {
+		t.Fatalf("startxref not found")
+	}
+	startOff, err := strconv.Atoi(string(m[1]))
+	if err != nil {
+		t.Fatalf("parse startxref: %v", err)
+	}
+	if startOff <= 0 || startOff >= len(data) {
+		t.Fatalf("startxref out of bounds: %d", startOff)
+	}
+
+	res := xref.NewResolver(xref.ResolverConfig{})
+	table, err := res.Resolve(context.Background(), bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("resolve xref stream: %v", err)
+	}
+	if table.Type() != "xref-stream" {
+		t.Fatalf("expected xref-stream table, got %s", table.Type())
+	}
+	if off, _, ok := table.Lookup(1); !ok || off == 0 {
+		t.Fatalf("catalog entry missing in xref stream")
 	}
 }

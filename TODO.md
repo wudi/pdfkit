@@ -2,7 +2,7 @@
 
 Status key: Not started / In progress / Done.
 
-- [ ] File structure: emit versioned header, unique file ID, body objects, xref table/stream with correct byte offsets, trailer with Size/Root/Info/ID/Encrypt, `%%EOF`, and incremental update support. Status: In progress (versioned headers, Info/Metadata references, and trailer IDs added; xref streams and incremental updates still pending).
+- [ ] File structure: emit versioned header, unique file ID, body objects, xref table/stream with correct byte offsets, trailer with Size/Root/Info/ID/Encrypt, `%%EOF`, and incremental update support. Status: In progress (versioned headers, Info/Metadata references, trailer IDs, and xref streams added; incremental updates still pending).
 - [ ] Object model: cover all primitive types (null/bool/number/string/name/array/dict/stream/indirect refs), indirect serialization, generation numbers, and reuse. Status: Not started.
 - [ ] Page tree: build Catalog/Pages hierarchy with Count/Kids, media/trim boxes, rotation, and inherited Resources. Status: In progress (MediaBox/CropBox geometry, rotation, and UserUnit written; resource inheritance not yet handled).
 - [ ] Content streams: encode filters (Flate/ASCIIHex/ASCII85; optionally LZW/RunLength/JPX/JBIG2), lengths, and operators for text/graphics state/paths/shadings/images/forms/annotations. Status: Not started.

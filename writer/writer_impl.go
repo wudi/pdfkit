@@ -184,35 +184,46 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		offsets[ref.Num] = offset
 	}
 	// XRef
-	xrefOffset := buf.Len()
-	maxObjNum := ordered[len(ordered)-1].Num
-	buf.WriteString("xref\n0 ")
-	buf.WriteString(fmt.Sprintf("%d\n", maxObjNum+1))
-	buf.WriteString("0000000000 65535 f \n")
-	for i := 1; i <= maxObjNum; i++ {
-		if off, ok := offsets[i]; ok {
-			buf.WriteString(fmt.Sprintf("%010d 00000 n \n", off))
-		} else {
-			buf.WriteString("0000000000 65535 f \n")
+	if cfg.XRefStreams {
+		xrefRef := nextRef()
+		maxObjNum := xrefRef.Num
+		xrefOffset := int64(buf.Len())
+		offsets[xrefRef.Num] = xrefOffset
+		size := maxObjNum + 1
+
+		trailer := buildTrailer(size, catalogRef, infoRef, doc, cfg)
+		trailer.Set(raw.NameLiteral("Type"), raw.NameLiteral("XRef"))
+		trailer.Set(raw.NameLiteral("W"), raw.NewArray(raw.NumberInt(1), raw.NumberInt(4), raw.NumberInt(1)))
+		trailer.Set(raw.NameLiteral("Index"), raw.NewArray(raw.NumberInt(0), raw.NumberInt(int64(size))))
+		entries := xrefStreamEntries(size, offsets)
+		trailer.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(entries))))
+
+		xrefStream := raw.NewStream(trailer, entries)
+		serialized, _ := w.SerializeObject(xrefRef, xrefStream)
+		buf.Write(serialized)
+
+		buf.WriteString("startxref\n")
+		buf.WriteString(fmt.Sprintf("%d\n%%EOF\n", xrefOffset))
+	} else {
+		xrefOffset := buf.Len()
+		maxObjNum := ordered[len(ordered)-1].Num
+		size := maxObjNum + 1
+		buf.WriteString("xref\n0 ")
+		buf.WriteString(fmt.Sprintf("%d\n", size))
+		buf.WriteString("0000000000 65535 f \n")
+		for i := 1; i <= maxObjNum; i++ {
+			if off, ok := offsets[i]; ok {
+				buf.WriteString(fmt.Sprintf("%010d 00000 n \n", off))
+			} else {
+				buf.WriteString("0000000000 65535 f \n")
+			}
 		}
+		trailer := buildTrailer(size, catalogRef, infoRef, doc, cfg)
+		buf.WriteString("trailer\n")
+		buf.Write(serializePrimitive(trailer))
+		buf.WriteString("\nstartxref\n")
+		buf.WriteString(fmt.Sprintf("%d\n%%EOF\n", xrefOffset))
 	}
-	// Trailer
-	trailer := raw.Dict()
-	trailer.Set(raw.NameLiteral("Size"), raw.NumberInt(int64(maxObjNum+1)))
-	trailer.Set(raw.NameLiteral("Root"), raw.Ref(catalogRef.Num, catalogRef.Gen))
-	if infoRef != nil {
-		trailer.Set(raw.NameLiteral("Info"), raw.Ref(infoRef.Num, infoRef.Gen))
-	}
-	fileIDs := fileID(doc, cfg)
-	idArr := raw.NewArray(
-		raw.Str([]byte(hex.EncodeToString(fileIDs[0]))),
-		raw.Str([]byte(hex.EncodeToString(fileIDs[1]))),
-	)
-	trailer.Set(raw.NameLiteral("ID"), idArr)
-	buf.WriteString("trailer\n")
-	buf.Write(serializePrimitive(trailer))
-	buf.WriteString("\nstartxref\n")
-	buf.WriteString(fmt.Sprintf("%d\n%%EOF\n", xrefOffset))
 
 	_, err := out.Write(buf.Bytes())
 	return err
@@ -316,6 +327,46 @@ func deterministicIDSeed(doc *semantic.Document, cfg Config) []byte {
 	}
 	buf := make([]byte, 16)
 	copy(buf, sum)
+	return buf
+}
+
+func buildTrailer(size int, catalogRef raw.ObjectRef, infoRef *raw.ObjectRef, doc *semantic.Document, cfg Config) *raw.DictObj {
+	trailer := raw.Dict()
+	trailer.Set(raw.NameLiteral("Size"), raw.NumberInt(int64(size)))
+	trailer.Set(raw.NameLiteral("Root"), raw.Ref(catalogRef.Num, catalogRef.Gen))
+	if infoRef != nil {
+		trailer.Set(raw.NameLiteral("Info"), raw.Ref(infoRef.Num, infoRef.Gen))
+	}
+	fileIDs := fileID(doc, cfg)
+	idArr := raw.NewArray(
+		raw.Str([]byte(hex.EncodeToString(fileIDs[0]))),
+		raw.Str([]byte(hex.EncodeToString(fileIDs[1]))),
+	)
+	trailer.Set(raw.NameLiteral("ID"), idArr)
+	return trailer
+}
+
+func xrefStreamEntries(size int, offsets map[int]int64) []byte {
+	out := make([]byte, 0, size*6)
+	for i := 0; i < size; i++ {
+		if i == 0 {
+			out = appendXRefStreamEntry(out, 0, 0, 65535)
+			continue
+		}
+		if off, ok := offsets[i]; ok {
+			out = appendXRefStreamEntry(out, 1, off, 0)
+		} else {
+			out = appendXRefStreamEntry(out, 0, 0, 0)
+		}
+	}
+	return out
+}
+
+func appendXRefStreamEntry(buf []byte, typ int, field2 int64, gen int) []byte {
+	buf = append(buf, byte(typ))
+	offset := uint32(field2)
+	buf = append(buf, byte(offset>>24), byte(offset>>16), byte(offset>>8), byte(offset))
+	buf = append(buf, byte(gen))
 	return buf
 }
 
