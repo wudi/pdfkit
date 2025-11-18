@@ -501,6 +501,30 @@ func TestWriter_ContentStream_ASCIIHexAndASCII85(t *testing.T) {
 	})
 }
 
+func TestWriter_ContentStreamJPXJBIG2(t *testing.T) {
+	content := []byte{0x00, 0x01, 0x02}
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 5, URY: 5}, Contents: []semantic.ContentStream{{RawBytes: content}}},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{ContentFilter: FilterJPX, Deterministic: true}); err != nil {
+		t.Fatalf("write jpx: %v", err)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("/Filter /JPXDecode")) {
+		t.Fatalf("JPX filter not set")
+	}
+	buf.Reset()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{ContentFilter: FilterJBIG2, Deterministic: true}); err != nil {
+		t.Fatalf("write jbig2: %v", err)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("/Filter /JBIG2Decode")) {
+		t.Fatalf("JBIG2 filter not set")
+	}
+}
+
 func TestSerializePrimitive_HexString(t *testing.T) {
 	out := serializePrimitive(raw.HexStr([]byte{0x00, 0xAB, 0x10, 0xFF}))
 	if string(out) != "<00AB10FF>" {

@@ -26,6 +26,8 @@ const (
 	FilterASCII85
 	FilterRunLength
 	FilterLZW
+	FilterJPX
+	FilterJBIG2
 )
 
 type Config struct {

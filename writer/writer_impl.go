@@ -312,6 +312,10 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 			}
 			streamData = data
 			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("LZWDecode"))
+		case FilterJPX:
+			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("JPXDecode"))
+		case FilterJBIG2:
+			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("JBIG2Decode"))
 		}
 		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(streamData))))
 		objects[contentRef] = raw.NewStream(dict, streamData)
