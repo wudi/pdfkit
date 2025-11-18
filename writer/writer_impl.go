@@ -164,7 +164,8 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		fontRefs[key] = ref
 		return ref
 	}
-	ensureXObject := func(name string, xo semantic.XObject) raw.ObjectRef {
+	var ensureXObject func(name string, xo semantic.XObject) raw.ObjectRef
+	ensureXObject = func(name string, xo semantic.XObject) raw.ObjectRef {
 		key := xoKey(name, xo)
 		if ref, ok := xobjectRefs[key]; ok {
 			return ref
@@ -192,9 +193,17 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 			if xo.BitsPerComponent > 0 {
 				dict.Set(raw.NameLiteral("BitsPerComponent"), raw.NumberInt(int64(xo.BitsPerComponent)))
 			}
+			if xo.Interpolate {
+				dict.Set(raw.NameLiteral("Interpolate"), raw.Bool(true))
+			}
 		}
 		if sub == "Form" && cropSet(xo.BBox) {
 			dict.Set(raw.NameLiteral("BBox"), rectArray(xo.BBox))
+		}
+		if xo.SMask != nil {
+			maskName := fmt.Sprintf("%s:SMask", name)
+			maskRef := ensureXObject(maskName, *xo.SMask)
+			dict.Set(raw.NameLiteral("SMask"), raw.Ref(maskRef.Num, maskRef.Gen))
 		}
 		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(xo.Data))))
 		objects[ref] = raw.NewStream(dict, xo.Data)
@@ -1308,6 +1317,12 @@ func xoKey(name string, xo semantic.XObject) string {
 	h.Write([]byte(xo.ColorSpace.Name))
 	h.Write([]byte(fmt.Sprintf("%f-%f-%f-%f", xo.BBox.LLX, xo.BBox.LLY, xo.BBox.URX, xo.BBox.URY)))
 	h.Write(xo.Data)
+	if xo.Interpolate {
+		h.Write([]byte{1})
+	}
+	if xo.SMask != nil {
+		h.Write([]byte(xoKey(name+":SMask", *xo.SMask)))
+	}
 	return hex.EncodeToString(h.Sum(nil))
 }
 

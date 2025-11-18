@@ -133,7 +133,12 @@ type XObject struct {
 	BitsPerComponent int
 	Data             []byte
 	BBox             Rectangle // used for Form XObjects
+	Interpolate      bool
+	SMask            *XObject
 }
+
+// Image is an alias for XObject for image convenience APIs.
+type Image = XObject
 
 // Pattern describes a simple tiling pattern stream.
 type Pattern struct {
