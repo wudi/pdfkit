@@ -790,6 +790,60 @@ func TestWriter_ViewerPreferences(t *testing.T) {
 	t.Fatalf("catalog not found")
 }
 
+func TestWriter_OutlinesDest(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+		Outlines: []semantic.OutlineItem{
+			{Title: "First", PageIndex: 0},
+			{Title: "Second", PageIndex: 1},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	outlinesFound := false
+	destOK := 0
+	for ref, obj := range rawDoc.Objects {
+		d, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		if typ, ok := d.Get(raw.NameLiteral("Type")); ok {
+			if n, ok := typ.(raw.NameObj); ok && n.Value() == "Outlines" {
+				outlinesFound = true
+			}
+		}
+		if titleObj, ok := d.Get(raw.NameLiteral("Title")); ok {
+			if _, ok := titleObj.(raw.StringObj); ok {
+				if dest, ok := d.Get(raw.NameLiteral("Dest")); ok {
+					if arr, ok := dest.(*raw.ArrayObj); ok && arr.Len() >= 2 {
+						if refObj, ok := arr.Items[0].(raw.RefObj); ok && refObj.Ref().Num > 0 {
+							destOK++
+						}
+					}
+				}
+			}
+		}
+		_ = ref
+	}
+	if !outlinesFound {
+		t.Fatalf("Outlines dict missing")
+	}
+	if destOK != 2 {
+		t.Fatalf("outline destinations missing: %d", destOK)
+	}
+}
+
 func TestWriter_LinkAnnotation(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{
