@@ -13,6 +13,13 @@ Status key: Not started / In progress / Done.
 - [x] Compliance: PDF/A tagging (StructTreeRoot), role maps, font consistency, OutputIntents, downgrade/clip to target level. Status: Done (StructTreeRoot emitted with RoleMap when provided; OutputIntents serialized with ICC profile streams; Catalog now carries Lang and MarkInfo/Marked for tagged PDF).
 - [x] Validation/robustness: length bounds, offset consistency, deterministic ordering, malformed stream avoidance, readback tests. Status: Done (xref table and xref stream startxref offsets validated; deterministic ordering for dict keys and IDs in place; xref table offsets cross-checked against actual object positions and decrypt/metadata paths covered by tests).
 
+# Parser robustness plan
+
+Status key: Not started / In progress / Done.
+
+- [ ] Inline image end detection: tighten inline image scanning to avoid false positives in binary content and obey PDF EOD rules. Status: Not started.
+- [ ] Memory-bounded scanning: support bounded/sliding scanner buffers so large files do not require whole-file buffering while still honoring random-access seeks. Status: Not started.
+
 # Builder completeness plan
 
 Status key: Not started / In progress / Done.
