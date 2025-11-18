@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"encoding/ascii85"
+	"encoding/hex"
+
 	"pdflib/builder"
 	"pdflib/ir"
 	"pdflib/ir/raw"
@@ -332,6 +335,81 @@ func TestWriter_ContentStreamCompression(t *testing.T) {
 	if !found {
 		t.Fatalf("compressed content stream not found")
 	}
+}
+
+func TestWriter_ContentStream_ASCIIHexAndASCII85(t *testing.T) {
+	text := "encode me please"
+	check := func(filter ContentFilter, expectedFilter string, decoder func(data []byte) ([]byte, error)) {
+		b := builder.NewBuilder()
+		b.NewPage(100, 100).DrawText(text, 1, 1, builder.TextOptions{}).Finish()
+		doc, err := b.Build()
+		if err != nil {
+			t.Fatalf("build doc: %v", err)
+		}
+		var buf bytes.Buffer
+		w := (&WriterBuilder{}).Build()
+		if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true, ContentFilter: filter}); err != nil {
+			t.Fatalf("write pdf (%s): %v", expectedFilter, err)
+		}
+		rawParser := parser.NewDocumentParser(parser.Config{})
+		rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+		if err != nil {
+			t.Fatalf("parse raw pdf: %v", err)
+		}
+		found := false
+		for _, obj := range rawDoc.Objects {
+			stream, ok := obj.(*raw.StreamObj)
+			if !ok {
+				continue
+			}
+			if tObj, ok := stream.Dict.Get(raw.NameLiteral("Type")); ok {
+				if n, ok := tObj.(raw.NameObj); ok && n.Value() == "XRef" {
+					continue
+				}
+			}
+			filterObj, ok := stream.Dict.Get(raw.NameLiteral("Filter"))
+			if !ok {
+				continue
+			}
+			if name, ok := filterObj.(raw.NameObj); ok && name.Value() == expectedFilter {
+				found = true
+				decoded, err := decoder(stream.Data)
+				if err != nil {
+					t.Fatalf("decode stream (%s): %v", expectedFilter, err)
+				}
+				if !strings.Contains(string(decoded), text) {
+					t.Fatalf("decoded stream missing text (%s): %q", expectedFilter, decoded)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("content stream with filter %s not found", expectedFilter)
+		}
+	}
+
+	check(FilterASCIIHex, "ASCIIHexDecode", func(data []byte) ([]byte, error) {
+		trimmed := strings.TrimSpace(string(data))
+		if strings.HasSuffix(trimmed, ">") {
+			trimmed = trimmed[:len(trimmed)-1]
+		}
+		decoded, err := hex.DecodeString(trimmed)
+		if err != nil {
+			return nil, err
+		}
+		return decoded, nil
+	})
+	check(FilterASCII85, "ASCII85Decode", func(data []byte) ([]byte, error) {
+		s := string(data)
+		s = strings.TrimSpace(s)
+		s = strings.TrimPrefix(s, "<~")
+		s = strings.TrimSuffix(s, "~>")
+		decoded := make([]byte, len(data))
+		n, _, err := ascii85.Decode(decoded, []byte(s), true)
+		if err != nil {
+			return nil, err
+		}
+		return decoded[:n], nil
+	})
 }
 
 func TestSerializePrimitive_HexString(t *testing.T) {

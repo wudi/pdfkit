@@ -5,6 +5,7 @@ import (
 	"compress/flate"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/ascii85"
 	"encoding/hex"
 	"fmt"
 	"pdflib/ir/raw"
@@ -112,13 +113,20 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		streamData := contentData
 		contentRef := nextRef()
 		dict := raw.Dict()
-		if cfg.Compression > 0 {
+		switch filter := pickContentFilter(cfg); filter {
+		case FilterFlate:
 			data, err := flateEncode(streamData, cfg.Compression)
 			if err != nil {
 				return err
 			}
 			streamData = data
 			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("FlateDecode"))
+		case FilterASCIIHex:
+			streamData = asciiHexEncode(streamData)
+			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("ASCIIHexDecode"))
+		case FilterASCII85:
+			streamData = ascii85Encode(streamData)
+			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("ASCII85Decode"))
 		}
 		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(streamData))))
 		objects[contentRef] = raw.NewStream(dict, streamData)
@@ -554,6 +562,16 @@ func maxInt(a, b int) int {
 	return b
 }
 
+func pickContentFilter(cfg Config) ContentFilter {
+	if cfg.ContentFilter != FilterNone {
+		return cfg.ContentFilter
+	}
+	if cfg.Compression > 0 {
+		return FilterFlate
+	}
+	return FilterNone
+}
+
 func flateEncode(data []byte, level int) ([]byte, error) {
 	if level < flate.NoCompression || level > flate.BestCompression {
 		level = flate.DefaultCompression
@@ -570,6 +588,28 @@ func flateEncode(data []byte, level int) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func asciiHexEncode(data []byte) []byte {
+	dst := make([]byte, hex.EncodedLen(len(data))+1)
+	hex.Encode(dst[:len(dst)-1], data)
+	for i := 0; i < len(dst)-1; i++ {
+		if dst[i] >= 'a' && dst[i] <= 'f' {
+			dst[i] -= 32 // upper-case
+		}
+	}
+	dst[len(dst)-1] = '>'
+	return dst
+}
+
+func ascii85Encode(data []byte) []byte {
+	var buf bytes.Buffer
+	buf.WriteString("<~")
+	enc := make([]byte, ascii85.MaxEncodedLen(len(data)))
+	n := ascii85.Encode(enc, data)
+	buf.Write(enc[:n])
+	buf.WriteString("~>")
+	return buf.Bytes()
 }
 
 func rectArray(r semantic.Rectangle) *raw.ArrayObj {
