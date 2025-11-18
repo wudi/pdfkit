@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/flate"
 	"compress/lzw"
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/ascii85"
@@ -13,7 +12,6 @@ import (
 	"math"
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
-	"pdflib/observability"
 	"pdflib/security"
 	"regexp"
 	"sort"
@@ -50,23 +48,6 @@ func (w *impl) SerializeObject(ref raw.ObjectRef, obj raw.Object) ([]byte, error
 }
 
 func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Config) (err error) {
-	tracer := tracerFromConfig(cfg)
-	goctx, writeSpan := tracer.StartSpan(contextFrom(ctx), "writer.write")
-	writeSpan.SetTag("pages", len(doc.Pages))
-	writeSpan.SetTag("xref_streams", cfg.XRefStreams)
-	writeSpan.SetTag("incremental", cfg.Incremental)
-	logger := loggerFromConfig(cfg)
-	logger.Info("writer.write.start", observability.Int("pages", len(doc.Pages)))
-	defer func() {
-		if err != nil {
-			writeSpan.SetError(err)
-			logger.Error("writer.write.error", observability.Error("err", err))
-		} else {
-			logger.Info("writer.write.finish", observability.Int("pages", len(doc.Pages)))
-		}
-		writeSpan.Finish()
-	}()
-
 	version := pdfVersion(cfg)
 	incr := incrementalContext(doc, out, cfg)
 	idPair := fileID(doc, cfg)
@@ -78,8 +59,6 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		objNum++
 		return ref
 	}
-	_, buildSpan := tracer.StartSpan(goctx, "writer.build_objects")
-	defer buildSpan.Finish()
 	catalogRef := nextRef()
 	pagesRef := nextRef()
 	pageRefs := make([]raw.ObjectRef, 0, len(doc.Pages))
@@ -356,30 +335,21 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	var encryptRef *raw.ObjectRef
 	var encryptionHandler security.Handler
 	if doc.Encrypted {
-		_, encSpan := tracer.StartSpan(goctx, "writer.encrypt")
-		encSpan.SetTag("metadata_encrypted", doc.MetadataEncrypted)
 		ref := nextRef()
 		encryptRef = &ref
 		enc, _, err := security.BuildStandardEncryption(doc.UserPassword, doc.OwnerPassword, doc.Permissions, idPair[0], doc.MetadataEncrypted)
 		if err != nil {
-			encSpan.SetError(err)
-			encSpan.Finish()
 			return err
 		}
 		handler, err := (&security.HandlerBuilder{}).WithEncryptDict(enc).WithFileID(idPair[0]).Build()
 		if err != nil {
-			encSpan.SetError(err)
-			encSpan.Finish()
 			return err
 		}
 		if err := handler.Authenticate(doc.UserPassword); err != nil {
-			encSpan.SetError(err)
-			encSpan.Finish()
 			return err
 		}
 		encryptionHandler = handler
 		objects[ref] = enc
-		encSpan.Finish()
 	}
 
 	// OutputIntents
@@ -942,7 +912,6 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		offsets[k] = v
 	}
 
-	_, serializeSpan := tracer.StartSpan(goctx, "writer.serialize_objects")
 	ordered := make([]raw.ObjectRef, 0, len(objects))
 	for ref := range objects {
 		ordered = append(ordered, ref)
@@ -954,9 +923,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		buf.Write(serialized)
 		offsets[ref.Num] = offset
 	}
-	serializeSpan.Finish()
 	// XRef
-	_, xrefSpan := tracer.StartSpan(goctx, "writer.xref")
 	if cfg.XRefStreams {
 		xrefRef := nextRef()
 		maxObjNum := xrefRef.Num
@@ -1004,7 +971,6 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		buf.WriteString("\nstartxref\n")
 		buf.WriteString(fmt.Sprintf("%d\n%%EOF\n", xrefOffset))
 	}
-	xrefSpan.Finish()
 
 	_, err = out.Write(buf.Bytes())
 	return err
@@ -1064,30 +1030,6 @@ func xyzDestValue(v *float64) raw.Object {
 		return raw.NullObj{}
 	}
 	return raw.NumberFloat(*v)
-}
-
-func tracerFromConfig(cfg Config) observability.Tracer {
-	if cfg.Tracer != nil {
-		return cfg.Tracer
-	}
-	return observability.NopTracer()
-}
-
-func loggerFromConfig(cfg Config) observability.Logger {
-	if cfg.Logger != nil {
-		return cfg.Logger
-	}
-	return observability.NopLogger{}
-}
-
-func contextFrom(ctx Context) context.Context {
-	if c, ok := ctx.(context.Context); ok {
-		return c
-	}
-	if c, ok := ctx.(interface{ Context() context.Context }); ok {
-		return c.Context()
-	}
-	return context.Background()
 }
 
 func serializePrimitive(o raw.Object) []byte {

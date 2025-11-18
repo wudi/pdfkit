@@ -5,7 +5,7 @@
 - Ingestion: `scanner/` tokenizes, `parser/` orchestrates raw parsing, `xref/` resolves offsets, and `security/` handles encryption/decryption.
 - Streams: decoders in `filters/`, content operators in `contentstream/`, coordinate helpers in `coords/`, and resource resolution in `resources/`.
 - Output: `builder/` offers a high-level authoring API and feeds `writer/` for serialization; PDF/A and compliance features live in `pdfa/`.
-- Support: `extensions/` for plugins, `recovery/` for error handling, `observability/` for logging/metrics, with fixtures in `testdata/` and CLIs in `cmd/` (e.g., `cmd/scantest`).
+- Support: `extensions/` for plugins and `recovery/` for error handling, with fixtures in `testdata/` and CLIs in `cmd/` (e.g., `cmd/scantest`).
 
 ## Build, Test, and Development Commands
 - `go test ./...` — full suite across parser, filters, writer, and pipeline.

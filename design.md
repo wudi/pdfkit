@@ -13,7 +13,7 @@ The library is designed to support:
 * **Font subsetting and embedding** with complete pipeline specification
 * **PDF/A compliance** (1/2/3 variants) with validation and auto-correction
 * **Extensible plugin system** with defined execution phases and ordering
-* **Robust security, error recovery, and observability**
+* **Robust security and error recovery**
 
 The library provides both **high-level convenience APIs** for typical PDF tasks and **low-level control** for applications requiring fine-grained operations.
 
@@ -129,7 +129,6 @@ The library provides both **high-level convenience APIs** for typical PDF tasks 
 | `pdfa`           | PDF/A validation, XMP generation, ICC profiles, compliance fixes  |
 | `extensions`     | Plugin system with phased execution model                         |
 | `recovery`       | Error recovery strategies for malformed PDFs                      |
-| `observability`  | Logging, metrics, tracing integration                             |
 | `builder`        | High-level fluent API for PDF construction                        |
 
 ### 4.2 Module Dependencies
@@ -160,9 +159,6 @@ filters
   └─→ ir/raw (stream dictionaries)
 
 recovery
-  └─→ (injected into all layers)
-
-observability
   └─→ (injected into all layers)
 ```
 
@@ -502,7 +498,6 @@ type Pipeline struct {
     decoder        decoded.Decoder
     semanticBuilder semantic.Builder
     recovery       recovery.Strategy
-    logger         observability.Logger
 }
 
 func (p *Pipeline) Parse(ctx context.Context, r io.ReaderAt) (*semantic.Document, error) {
@@ -1461,13 +1456,11 @@ type ValidationWarning struct {
 // HubImpl implements phased execution
 type HubImpl struct {
     extensions map[Phase][]Extension
-    logger     observability.Logger
 }
 
-func NewHub(logger observability.Logger) *HubImpl {
+func NewHub() *HubImpl {
     return &HubImpl{
         extensions: make(map[Phase][]Extension),
-        logger:     logger,
     }
 }
 
@@ -1480,11 +1473,6 @@ func (h *HubImpl) Register(ext Extension) error {
         return h.extensions[phase][i].Priority() < h.extensions[phase][j].Priority()
     })
     
-    h.logger.Info("extension registered",
-        observability.String("name", ext.Name()),
-        observability.String("phase", phase.String()),
-        observability.Int("priority", ext.Priority()))
-    
     return nil
 }
 
@@ -1496,11 +1484,6 @@ func (h *HubImpl) Execute(ctx context.Context, doc *semantic.Document) error {
         if len(exts) == 0 {
             continue
         }
-        
-        h.logger.Debug("executing phase",
-            observability.String("phase", phase.String()),
-            observability.Int("extension_count", len(exts)))
-        
         for _, ext := range exts {
             if err := ext.Execute(ctx, doc); err != nil {
                 return fmt.Errorf("extension %s failed: %w", ext.Name(), err)
@@ -1591,8 +1574,6 @@ type Interceptor interface {
 // WriterBuilder configures writer
 type WriterBuilder struct {
     interceptors []Interceptor
-    logger       observability.Logger
-    metrics      observability.Metrics
 }
 
 func (b *WriterBuilder) WithInterceptor(i Interceptor) *WriterBuilder {
@@ -1600,16 +1581,9 @@ func (b *WriterBuilder) WithInterceptor(i Interceptor) *WriterBuilder {
     return b
 }
 
-func (b *WriterBuilder) WithLogger(l observability.Logger) *WriterBuilder {
-    b.logger = l
-    return b
-}
-
 func (b *WriterBuilder) Build() Writer {
     return &writerImpl{
         interceptors: b.interceptors,
-        logger:       b.logger,
-        metrics:      b.metrics,
     }
 }
 
@@ -1789,16 +1763,9 @@ func (s *StrictStrategy) OnError(ctx context.Context, err error, loc Location) A
     return ActionFail
 }
 
-type LenientStrategy struct {
-    logger observability.Logger
-}
+type LenientStrategy struct{}
 
 func (s *LenientStrategy) OnError(ctx context.Context, err error, loc Location) Action {
-    s.logger.Warn("recovery applied",
-        observability.Error("error", err),
-        observability.Int64("offset", loc.ByteOffset),
-        observability.String("component", loc.Component))
-    
     // Try to fix common issues
     if isFixable(err) {
         return ActionFix
@@ -1837,80 +1804,6 @@ func (a *ErrorAccumulator) HasErrors() bool {
     defer a.mu.Unlock()
     return len(a.errors) > 0
 }
-```
-
----
-
-## 16. Observability Architecture
-
-```go
-package observability
-
-// Logger provides structured logging
-type Logger interface {
-    Debug(msg string, fields ...Field)
-    Info(msg string, fields ...Field)
-    Warn(msg string, fields ...Field)
-    Error(msg string, fields ...Field)
-    
-    With(fields ...Field) Logger
-}
-
-// Field represents a structured log field
-type Field interface {
-    Key() string
-    Value() interface{}
-}
-
-func String(key, value string) Field {
-    return stringField{key, value}
-}
-
-func Int(key string, value int) Field {
-    return intField{key, value}
-}
-
-func Int64(key string, value int64) Field {
-    return int64Field{key, value}
-}
-
-func Error(key string, err error) Field {
-    return errorField{key, err}
-}
-
-// Metrics provides instrumentation
-type Metrics interface {
-    Counter(name string, value int64, tags ...Tag)
-    Histogram(name string, value float64, tags ...Tag)
-    Gauge(name string, value float64, tags ...Tag)
-}
-
-type Tag struct {
-    Key   string
-    Value string
-}
-
-// Tracer provides distributed tracing
-type Tracer interface {
-    StartSpan(ctx context.Context, name string) (context.Context, Span)
-}
-
-type Span interface {
-    SetTag(key string, value interface{})
-    SetError(err error)
-    Finish()
-}
-
-// Standard metrics emitted by library
-const (
-    MetricParseTime       = "pdf.parse.duration"
-    MetricObjectCount     = "pdf.objects.count"
-    MetricPageCount       = "pdf.pages.count"
-    MetricDecodedBytes    = "pdf.decoded.bytes"
-    MetricFilterTime      = "pdf.filter.duration"
-    MetricWriteTime       = "pdf.write.duration"
-    MetricSubsettingTime  = "pdf.subsetting.duration"
-)
 ```
 
 ---
@@ -2330,7 +2223,6 @@ func BenchmarkWrite(b *testing.B) {}
 - `builder`: Stable from v1.0
 - `filters`, `fonts`, `writer`: Stable from v1.0
 - `extensions`: Extension interface stable, implementations may evolve
-- `observability`: Pluggable, interface stable
 
 ### Deprecation Policy
 - Deprecated APIs supported for minimum 6 months
