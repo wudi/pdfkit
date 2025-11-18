@@ -1638,6 +1638,35 @@ func TestWriter_AcroFormFields(t *testing.T) {
 	}
 }
 
+func TestWriter_XRefStreamStartOffset(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 50, URY: 50}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true, XRefStreams: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	data := buf.Bytes()
+	off := startXRef(data)
+	if off <= 0 || int(off) >= len(data) {
+		t.Fatalf("invalid startxref: %d", off)
+	}
+	snippet := data[off:]
+	if !regexp.MustCompile(`^\d+\s+0\s+obj`).Match(snippet) {
+		t.Fatalf("startxref does not point to object header")
+	}
+	window := snippet
+	if len(window) > 200 {
+		window = window[:200]
+	}
+	if !bytes.Contains(window, []byte("/Type /XRef")) {
+		t.Fatalf("xref stream type missing near startxref")
+	}
+}
+
 func firstID(doc *raw.Document) string {
 	idObj, ok := doc.Trailer.Get(raw.NameLiteral("ID"))
 	if !ok {
