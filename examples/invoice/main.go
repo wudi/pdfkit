@@ -30,12 +30,21 @@ func main() {
 				DrawImage(logo, 480, 780, float64(logo.Width), float64(logo.Height), builder.ImageOptions{}).
 				DrawText("Bill To:", 50, 770, builder.TextOptions{FontSize: 12}).
 				DrawLine(50, 760, 545, 760, builder.LineOptions{StrokeColor: builder.Color{B: 0.5}, LineWidth: 1}).
-				DrawRectangle(50, 600, 495, 120, builder.RectOptions{Stroke: true, Fill: false, LineWidth: 1}).
+				DrawRectangle(50, 600, 495, 140, builder.RectOptions{Stroke: true, Fill: false, LineWidth: 1}).
 				DrawText("Item", 60, 700, builder.TextOptions{FontSize: 10}).
 				DrawText("Qty", 300, 700, builder.TextOptions{FontSize: 10}).
 				DrawText("Amount", 450, 700, builder.TextOptions{FontSize: 10}).
-				DrawText("Subtotal: $100.00", 400, 620, builder.TextOptions{FontSize: 12}).
-				DrawText("Total: $100.00", 400, 600, builder.TextOptions{FontSize: 14}).
+				DrawText("Consulting Services", 60, 680, builder.TextOptions{FontSize: 10}).
+				DrawText("10", 300, 680, builder.TextOptions{FontSize: 10}).
+				DrawText("$80.00/hr", 450, 680, builder.TextOptions{FontSize: 10}).
+				DrawText("API Integration", 60, 660, builder.TextOptions{FontSize: 10}).
+				DrawText("1", 300, 660, builder.TextOptions{FontSize: 10}).
+				DrawText("$200.00", 450, 660, builder.TextOptions{FontSize: 10}).
+				DrawText("Support Retainer", 60, 640, builder.TextOptions{FontSize: 10}).
+				DrawText("3", 300, 640, builder.TextOptions{FontSize: 10}).
+				DrawText("$100.00", 450, 640, builder.TextOptions{FontSize: 10}).
+				DrawText("Subtotal: $1,000.00", 400, 620, builder.TextOptions{FontSize: 12}).
+				DrawText("Total: $1,000.00", 400, 600, builder.TextOptions{FontSize: 14}).
 				Finish()
 
 	// Page 2 — notes and footer
