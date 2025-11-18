@@ -597,7 +597,25 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	if doc.AcroForm != nil {
 		formRef := nextRef()
 		formDict := raw.Dict()
-		formDict.Set(raw.NameLiteral("Fields"), raw.NewArray())
+		fieldsArr := raw.NewArray()
+		for _, f := range doc.AcroForm.Fields {
+			fieldRef := nextRef()
+			fd := raw.Dict()
+			if f.Type != "" {
+				fd.Set(raw.NameLiteral("FT"), raw.NameLiteral(f.Type))
+			} else {
+				fd.Set(raw.NameLiteral("FT"), raw.NameLiteral("Tx"))
+			}
+			if f.Name != "" {
+				fd.Set(raw.NameLiteral("T"), raw.Str([]byte(f.Name)))
+			}
+			if f.Value != "" {
+				fd.Set(raw.NameLiteral("V"), raw.Str([]byte(f.Value)))
+			}
+			objects[fieldRef] = fd
+			fieldsArr.Append(raw.Ref(fieldRef.Num, fieldRef.Gen))
+		}
+		formDict.Set(raw.NameLiteral("Fields"), fieldsArr)
 		if doc.AcroForm.NeedAppearances {
 			formDict.Set(raw.NameLiteral("NeedAppearances"), raw.Bool(true))
 		}

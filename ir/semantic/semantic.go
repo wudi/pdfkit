@@ -198,6 +198,14 @@ type OutlineItem struct {
 // AcroForm represents form-level information.
 type AcroForm struct {
 	NeedAppearances bool
+	Fields          []FormField
+}
+
+// FormField is a simplified representation of a form field.
+type FormField struct {
+	Name  string
+	Value string
+	Type  string // e.g., "Tx" for text
 }
 
 // Builder produces a Semantic document from Decoded IR.

@@ -1574,6 +1574,70 @@ func TestWriter_AcroFormNeedAppearances(t *testing.T) {
 	}
 }
 
+func TestWriter_AcroFormFields(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 20, URY: 20}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+		AcroForm: &semantic.AcroForm{
+			Fields: []semantic.FormField{
+				{Name: "Field1", Value: "hello", Type: "Tx"},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	var acro *raw.DictObj
+	for _, obj := range rawDoc.Objects {
+		if d, ok := obj.(*raw.DictObj); ok {
+			if fields, ok := d.Get(raw.NameLiteral("Fields")); ok {
+				if _, ok := fields.(*raw.ArrayObj); ok {
+					acro = d
+					break
+				}
+			}
+		}
+	}
+	if acro == nil {
+		t.Fatalf("acroform not found")
+	}
+	fieldsVal, _ := acro.Get(raw.NameLiteral("Fields"))
+	arr, _ := fieldsVal.(*raw.ArrayObj)
+	if arr.Len() != 1 {
+		t.Fatalf("expected one field, got %d", arr.Len())
+	}
+	ref, ok := arr.Items[0].(raw.RefObj)
+	if !ok {
+		t.Fatalf("field not ref: %#v", arr.Items[0])
+	}
+	fieldObj, ok := rawDoc.Objects[ref.Ref()]
+	if !ok {
+		t.Fatalf("field object missing")
+	}
+	fd, ok := fieldObj.(*raw.DictObj)
+	if !ok {
+		t.Fatalf("field not dict")
+	}
+	if ft, ok := fd.Get(raw.NameLiteral("FT")); !ok {
+		t.Fatalf("field type missing")
+	} else if n, ok := ft.(raw.NameObj); !ok || n.Value() != "Tx" {
+		t.Fatalf("field type mismatch: %#v", ft)
+	}
+	if val, ok := fd.Get(raw.NameLiteral("V")); !ok {
+		t.Fatalf("value missing")
+	} else if s, ok := val.(raw.StringObj); !ok || string(s.Value()) != "hello" {
+		t.Fatalf("value mismatch: %#v", val)
+	}
+}
+
 func firstID(doc *raw.Document) string {
 	idObj, ok := doc.Trailer.Get(raw.NameLiteral("ID"))
 	if !ok {
