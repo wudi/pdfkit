@@ -536,17 +536,19 @@ func TestWriter_EncryptDictionary(t *testing.T) {
 			Modify: true,
 		},
 	}
-	var buf bytes.Buffer
 	w := (&WriterBuilder{}).Build()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
-		t.Fatalf("write encrypted: %v", err)
-	}
-	data := buf.Bytes()
-	if !bytes.Contains(data, []byte("/Encrypt")) {
-		t.Fatalf("Encrypt missing from output")
-	}
-	if !bytes.Contains(data, []byte("/Filter /Standard")) || !bytes.Contains(data, []byte("/O ")) || !bytes.Contains(data, []byte("/U ")) {
-		t.Fatalf("Encrypt dictionary fields missing")
+	for _, cfg := range []Config{{Deterministic: true}, {Deterministic: true, XRefStreams: true}} {
+		var buf bytes.Buffer
+		if err := w.Write(staticCtx{}, doc, &buf, cfg); err != nil {
+			t.Fatalf("write encrypted (streams=%v): %v", cfg.XRefStreams, err)
+		}
+		data := buf.Bytes()
+		if !bytes.Contains(data, []byte("/Encrypt")) {
+			t.Fatalf("Encrypt missing from output (streams=%v)", cfg.XRefStreams)
+		}
+		if !bytes.Contains(data, []byte("/Filter /Standard")) || !bytes.Contains(data, []byte("/O ")) || !bytes.Contains(data, []byte("/U ")) {
+			t.Fatalf("Encrypt dictionary fields missing (streams=%v)", cfg.XRefStreams)
+		}
 	}
 }
 
