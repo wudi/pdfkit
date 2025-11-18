@@ -2,7 +2,9 @@ package writer
 
 import (
 	"bytes"
+	"compress/flate"
 	"context"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -277,6 +279,58 @@ func TestWriter_StringEscaping(t *testing.T) {
 	}
 	if !strings.Contains(out, `\(world\)`) {
 		t.Fatalf("escaped parentheses missing")
+	}
+}
+
+func TestWriter_ContentStreamCompression(t *testing.T) {
+	b := builder.NewBuilder()
+	b.NewPage(200, 200).DrawText("compress me", 10, 20, builder.TextOptions{FontSize: 8}).Finish()
+	doc, err := b.Build()
+	if err != nil {
+		t.Fatalf("build doc: %v", err)
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true, Compression: flate.BestSpeed}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw pdf: %v", err)
+	}
+	found := false
+	for _, obj := range rawDoc.Objects {
+		stream, ok := obj.(*raw.StreamObj)
+		if !ok {
+			continue
+		}
+		if tObj, ok := stream.Dict.Get(raw.NameLiteral("Type")); ok {
+			if n, ok := tObj.(raw.NameObj); ok && n.Value() == "XRef" {
+				continue
+			}
+		}
+		filterObj, ok := stream.Dict.Get(raw.NameLiteral("Filter"))
+		if !ok {
+			continue
+		}
+		nameObj, ok := filterObj.(raw.NameObj)
+		if !ok || nameObj.Value() != "FlateDecode" {
+			continue
+		}
+		found = true
+		r := flate.NewReader(bytes.NewReader(stream.Data))
+		defer r.Close()
+		decoded, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatalf("read flate: %v", err)
+		}
+		if !strings.Contains(string(decoded), "compress me") {
+			t.Fatalf("decoded stream missing text: %q", decoded)
+		}
+	}
+	if !found {
+		t.Fatalf("compressed content stream not found")
 	}
 }
 

@@ -2,6 +2,7 @@ package writer
 
 import (
 	"bytes"
+	"compress/flate"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -108,10 +109,19 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		for _, cs := range p.Contents {
 			contentData = append(contentData, cs.RawBytes...)
 		}
+		streamData := contentData
 		contentRef := nextRef()
 		dict := raw.Dict()
-		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(contentData))))
-		objects[contentRef] = raw.NewStream(dict, contentData)
+		if cfg.Compression > 0 {
+			data, err := flateEncode(streamData, cfg.Compression)
+			if err != nil {
+				return err
+			}
+			streamData = data
+			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("FlateDecode"))
+		}
+		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(streamData))))
+		objects[contentRef] = raw.NewStream(dict, streamData)
 		contentRefs = append(contentRefs, contentRef)
 	}
 	// Pages
@@ -542,6 +552,24 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func flateEncode(data []byte, level int) ([]byte, error) {
+	if level < flate.NoCompression || level > flate.BestCompression {
+		level = flate.DefaultCompression
+	}
+	var buf bytes.Buffer
+	w, err := flate.NewWriter(&buf, level)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := w.Write(data); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func rectArray(r semantic.Rectangle) *raw.ArrayObj {
