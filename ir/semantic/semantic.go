@@ -92,6 +92,7 @@ type Resources struct {
 	ColorSpaces map[string]ColorSpace
 	XObjects    map[string]XObject
 	Patterns    map[string]Pattern
+	Shadings    map[string]Shading
 }
 
 // Font represents a font resource.
@@ -131,6 +132,15 @@ type Pattern struct {
 	XStep       float64
 	YStep       float64
 	Content     []byte
+}
+
+// Shading describes a simple axial or radial shading dictionary.
+type Shading struct {
+	ShadingType int // 2 for axial, 3 for radial
+	ColorSpace  ColorSpace
+	Coords      []float64 // specific to type (x0 y0 x1 y1 ...)
+	Function    []byte
+	Domain      []float64
 }
 
 // Rectangle represents a PDF rectangle.

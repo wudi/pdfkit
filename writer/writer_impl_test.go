@@ -843,6 +843,59 @@ func TestWriter_PatternResources(t *testing.T) {
 	}
 }
 
+func TestWriter_ShadingResources(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 10, URY: 10},
+				Resources: &semantic.Resources{
+					Shadings: map[string]semantic.Shading{
+						"S1": {
+							ShadingType: 2,
+							ColorSpace:  semantic.ColorSpace{Name: "DeviceRGB"},
+							Coords:      []float64{0, 0, 10, 0},
+							Domain:      []float64{0, 1},
+						},
+					},
+				},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	pageHas := false
+	pagesHas := false
+	for _, obj := range rawDoc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		typ, _ := dict.Get(raw.NameLiteral("Type"))
+		if name, ok := typ.(raw.NameObj); ok && name.Value() == "Page" {
+			if hasShadingResource(rawDoc, dict, "S1") {
+				pageHas = true
+			}
+		}
+		if name, ok := typ.(raw.NameObj); ok && name.Value() == "Pages" {
+			if hasShadingResource(rawDoc, dict, "S1") {
+				pagesHas = true
+			}
+		}
+	}
+	if !pageHas || !pagesHas {
+		t.Fatalf("shading missing (page=%v pages=%v)", pageHas, pagesHas)
+	}
+}
+
 func TestWriter_SerializeOperations(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{
@@ -1498,4 +1551,44 @@ func hasPatternResource(doc *raw.Document, dict *raw.DictObj, name string) bool 
 		}
 	}
 	return true
+}
+
+func hasShadingResource(doc *raw.Document, dict *raw.DictObj, name string) bool {
+	res, ok := dict.Get(raw.NameLiteral("Resources"))
+	if !ok {
+		return false
+	}
+	resDict, ok := res.(*raw.DictObj)
+	if !ok {
+		return false
+	}
+	sh, ok := resDict.Get(raw.NameLiteral("Shading"))
+	if !ok {
+		return false
+	}
+	shDict, ok := sh.(*raw.DictObj)
+	if !ok {
+		return false
+	}
+	entry, ok := shDict.Get(raw.NameLiteral(name))
+	if !ok {
+		return false
+	}
+	ref, ok := entry.(raw.RefObj)
+	if !ok {
+		return false
+	}
+	obj, ok := doc.Objects[ref.Ref()]
+	if !ok {
+		return false
+	}
+	if sDict, ok := obj.(*raw.DictObj); ok {
+		if typ, ok := sDict.Get(raw.NameLiteral("ShadingType")); ok {
+			if num, ok := typ.(raw.NumberObj); !ok || num.Int() != 2 {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }

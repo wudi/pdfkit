@@ -67,6 +67,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	fontRefs := map[string]raw.ObjectRef{}
 	xobjectRefs := map[string]raw.ObjectRef{}
 	patternRefs := map[string]raw.ObjectRef{}
+	shadingRefs := map[string]raw.ObjectRef{}
 	ensureFont := func(base string) raw.ObjectRef {
 		if base == "" {
 			base = "Helvetica"
@@ -151,6 +152,47 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(content))))
 		objects[ref] = raw.NewStream(dict, content)
 		patternRefs[key] = ref
+		return ref
+	}
+	ensureShading := func(name string, s semantic.Shading) raw.ObjectRef {
+		key := shadingKey(name, s)
+		if ref, ok := shadingRefs[key]; ok {
+			return ref
+		}
+		ref := nextRef()
+		dict := raw.Dict()
+		stype := s.ShadingType
+		if stype == 0 {
+			stype = 2
+		}
+		dict.Set(raw.NameLiteral("ShadingType"), raw.NumberInt(int64(stype)))
+		cs := s.ColorSpace.Name
+		if cs == "" {
+			cs = "DeviceRGB"
+		}
+		dict.Set(raw.NameLiteral("ColorSpace"), raw.NameLiteral(cs))
+		if len(s.Coords) > 0 {
+			arr := raw.NewArray()
+			for _, c := range s.Coords {
+				arr.Append(raw.NumberFloat(c))
+			}
+			dict.Set(raw.NameLiteral("Coords"), arr)
+		}
+		if len(s.Domain) > 0 {
+			arr := raw.NewArray()
+			for _, d := range s.Domain {
+				arr.Append(raw.NumberFloat(d))
+			}
+			dict.Set(raw.NameLiteral("Domain"), arr)
+		}
+		content := s.Function
+		if len(content) > 0 {
+			dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(content))))
+			objects[ref] = raw.NewStream(dict, content)
+		} else {
+			objects[ref] = dict
+		}
+		shadingRefs[key] = ref
 		return ref
 	}
 
@@ -241,6 +283,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	unionColorSpaces := raw.Dict()
 	unionXObjects := raw.Dict()
 	unionPatterns := raw.Dict()
+	unionShadings := raw.Dict()
 	procSet := raw.NewArray(raw.NameLiteral("PDF"), raw.NameLiteral("Text"))
 	for i, p := range doc.Pages {
 		ref := nextRef()
@@ -352,6 +395,19 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 				resDict.Set(raw.NameLiteral("Pattern"), patDict)
 			}
 		}
+		if p.Resources != nil && len(p.Resources.Shadings) > 0 {
+			shDict := raw.Dict()
+			for name, sh := range p.Resources.Shadings {
+				shRef := ensureShading(name, sh)
+				shDict.Set(raw.NameLiteral(name), raw.Ref(shRef.Num, shRef.Gen))
+				if _, ok := unionShadings.KV[name]; !ok {
+					unionShadings.Set(raw.NameLiteral(name), raw.Ref(shRef.Num, shRef.Gen))
+				}
+			}
+			if shDict.Len() > 0 {
+				resDict.Set(raw.NameLiteral("Shading"), shDict)
+			}
+		}
 		if procSet.Len() > 0 {
 			resDict.Set(raw.NameLiteral("ProcSet"), procSet)
 		}
@@ -422,6 +478,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		}
 		if unionPatterns.Len() > 0 {
 			pagesRes.Set(raw.NameLiteral("Pattern"), unionPatterns)
+		}
+		if unionShadings.Len() > 0 {
+			pagesRes.Set(raw.NameLiteral("Shading"), unionShadings)
 		}
 		if procSet.Len() > 0 {
 			pagesRes.Set(raw.NameLiteral("ProcSet"), procSet)
@@ -924,6 +983,20 @@ func patternKey(name string, p semantic.Pattern) string {
 	h.Write([]byte(fmt.Sprintf("%d-%d-%d", p.PatternType, p.PaintType, p.TilingType)))
 	h.Write([]byte(fmt.Sprintf("%f-%f-%f-%f-%f-%f", p.BBox.LLX, p.BBox.LLY, p.BBox.URX, p.BBox.URY, p.XStep, p.YStep)))
 	h.Write(p.Content)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func shadingKey(name string, s semantic.Shading) string {
+	h := sha256.New()
+	h.Write([]byte(name))
+	h.Write([]byte(fmt.Sprintf("%d-%s", s.ShadingType, s.ColorSpace.Name)))
+	for _, c := range s.Coords {
+		h.Write([]byte(fmt.Sprintf("%f", c)))
+	}
+	for _, d := range s.Domain {
+		h.Write([]byte(fmt.Sprintf("%f", d)))
+	}
+	h.Write(s.Function)
 	return hex.EncodeToString(h.Sum(nil))
 }
 
