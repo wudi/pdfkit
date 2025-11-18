@@ -2,7 +2,6 @@ package security
 
 import (
 	"crypto/aes"
-	"crypto/sha256"
 	"encoding/binary"
 	"testing"
 
@@ -177,8 +176,8 @@ func TestAES256Authentication(t *testing.T) {
 func buildUserEntries(pwd []byte, fileID []byte, fileKey []byte) ([]byte, []byte) {
 	uSalt := []byte("usersalt")
 	ukSalt := []byte("ukeysalt")
-	hashVal := sha256.Sum256(append(append(padPasswordRev6(pwd), uSalt...), fileID...))
-	keyHash := sha256.Sum256(append(append(padPasswordRev6(pwd), ukSalt...), fileID...))
+	hashVal := rev6Hash(pwd, uSalt, fileID)
+	keyHash := rev6Hash(pwd, ukSalt, fileID)
 	ue, _ := aesCBCNoIV(keyHash[:32], fileKey, true)
 	entry := make([]byte, 0, 48)
 	entry = append(entry, hashVal[:]...)
@@ -190,8 +189,8 @@ func buildUserEntries(pwd []byte, fileID []byte, fileKey []byte) ([]byte, []byte
 func buildOwnerEntries(pwd []byte, uEntry []byte, fileKey []byte) ([]byte, []byte) {
 	oSalt := []byte("ownerslt")
 	okSalt := []byte("okeysalt")
-	hashVal := sha256.Sum256(append(append(padPasswordRev6(pwd), oSalt...), uEntry[:48]...))
-	keyHash := sha256.Sum256(append(append(padPasswordRev6(pwd), okSalt...), uEntry[:48]...))
+	hashVal := rev6Hash(pwd, oSalt, uEntry[:48])
+	keyHash := rev6Hash(pwd, okSalt, uEntry[:48])
 	oe, _ := aesCBCNoIV(keyHash[:32], fileKey, true)
 	entry := make([]byte, 0, 48)
 	entry = append(entry, hashVal[:]...)

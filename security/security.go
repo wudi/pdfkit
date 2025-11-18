@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/rc4"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -357,6 +358,43 @@ func padPasswordRev6(pwd []byte) []byte {
 	return out
 }
 
+// rev6Hash implements the iterative hash used by V=5/6 (R=5/6) authentication.
+func rev6Hash(pwd []byte, salt []byte, extra []byte) []byte {
+	pwd = padPasswordRev6(pwd)
+	data := append(append(append([]byte{}, pwd...), salt...), extra...)
+	hash := sha256.Sum256(data)
+	h := hash[:]
+	for i := 0; i < 64; i++ {
+		block := make([]byte, 0, 64)
+		for len(block) < 64 {
+			block = append(block, pwd...)
+			block = append(block, h...)
+			block = append(block, salt...)
+			block = append(block, extra...)
+		}
+		block = block[:64]
+		key := h[:16]
+		iv := h[16:32]
+		enc, err := aesCBCWithIV(key, iv, block, true)
+		if err != nil {
+			return h
+		}
+		last := enc[len(enc)-1]
+		switch last % 3 {
+		case 0:
+			sum := sha256.Sum256(enc)
+			h = sum[:]
+		case 1:
+			sum := sha512.Sum384(enc)
+			h = sum[:]
+		default:
+			sum := sha512.Sum512(enc)
+			h = sum[:]
+		}
+	}
+	return h
+}
+
 func deriveKey(pwd, owner []byte, pVal int32, fileID []byte, keyLenBytes int, r int) ([]byte, error) {
 	if keyLenBytes <= 0 {
 		keyLenBytes = 5
@@ -415,11 +453,11 @@ func deriveAES256User(pwd []byte, uEntry []byte, ue []byte, fileID []byte) ([]by
 	}
 	validationSalt := uEntry[32:40]
 	keySalt := uEntry[40:48]
-	hashVal := sha256.Sum256(append(append(padPasswordRev6(pwd), validationSalt...), fileID...))
-	if !comparePrefix(hashVal[:], uEntry[:32]) {
+	hashVal := rev6Hash(pwd, validationSalt, fileID)
+	if !comparePrefix(hashVal[:32], uEntry[:32]) {
 		return nil, false, nil
 	}
-	keyHash := sha256.Sum256(append(append(padPasswordRev6(pwd), keySalt...), fileID...))
+	keyHash := rev6Hash(pwd, keySalt, fileID)
 	fileKey, err := aesCBCNoIV(keyHash[:32], ue, false)
 	if err != nil {
 		return nil, false, err
@@ -434,11 +472,11 @@ func deriveAES256Owner(pwd []byte, oEntry []byte, oe []byte, uEntry []byte) ([]b
 	}
 	validationSalt := oEntry[32:40]
 	keySalt := oEntry[40:48]
-	hashVal := sha256.Sum256(append(append(padPasswordRev6(pwd), validationSalt...), uEntry[:48]...))
-	if !comparePrefix(hashVal[:], oEntry[:32]) {
+	hashVal := rev6Hash(pwd, validationSalt, uEntry[:48])
+	if !comparePrefix(hashVal[:32], oEntry[:32]) {
 		return nil, false, nil
 	}
-	keyHash := sha256.Sum256(append(append(padPasswordRev6(pwd), keySalt...), uEntry[:48]...))
+	keyHash := rev6Hash(pwd, keySalt, uEntry[:48])
 	fileKey, err := aesCBCNoIV(keyHash[:32], oe, false)
 	if err != nil {
 		return nil, false, err
@@ -594,11 +632,18 @@ func aesCrypt(key []byte, data []byte, encrypt bool) ([]byte, error) {
 }
 
 func aesCBCNoIV(key []byte, data []byte, encrypt bool) ([]byte, error) {
+	iv := make([]byte, aes.BlockSize)
+	return aesCBCWithIV(key, iv, data, encrypt)
+}
+
+func aesCBCWithIV(key []byte, iv []byte, data []byte, encrypt bool) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
-	iv := make([]byte, aes.BlockSize)
+	if len(iv) != aes.BlockSize {
+		return nil, errors.New("invalid iv size")
+	}
 	if encrypt {
 		padLen := aes.BlockSize - (len(data) % aes.BlockSize)
 		if padLen == 0 {
