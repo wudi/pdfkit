@@ -214,6 +214,22 @@ type XMPMetadata struct{ Raw []byte }
 
 type StructureTree struct {
 	RoleMap RoleMap
+	Kids    []*StructureElement
+}
+
+// StructureElement captures a tagged PDF structure element with children or marked content references.
+type StructureElement struct {
+	Type      string
+	Title     string
+	PageIndex *int
+	Kids      []StructureItem
+}
+
+// StructureItem represents either a child element or a marked-content reference (MCID) on a page.
+type StructureItem struct {
+	Element   *StructureElement
+	MCID      *int
+	PageIndex *int
 }
 
 // OutputIntent models color output intent metadata.

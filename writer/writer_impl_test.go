@@ -1782,6 +1782,99 @@ func TestWriter_OutlinesXYZDest(t *testing.T) {
 	}
 }
 
+func TestWriter_TableTaggingAndParentTree(t *testing.T) {
+	bld := builder.NewBuilder()
+	rows := []builder.TableRow{
+		{Cells: []builder.TableCell{{Text: "Header 1"}, {Text: "Header 2"}}},
+	}
+	for i := 0; i < 10; i++ {
+		rows = append(rows, builder.TableRow{
+			Cells: []builder.TableCell{
+				{Text: fmt.Sprintf("R%dC1", i)},
+				{Text: fmt.Sprintf("R%dC2", i)},
+			},
+		})
+	}
+	table := builder.Table{
+		Columns:    []float64{80, 80},
+		Rows:       rows,
+		HeaderRows: 1,
+	}
+	bld.NewPage(160, 170).DrawTable(table, builder.TableOptions{
+		X:             20,
+		Y:             150,
+		Tagged:        true,
+		RepeatHeaders: true,
+		BorderWidth:   0.5,
+		CellPadding:   3,
+		DefaultSize:   10,
+		HeaderFill:    builder.Color{R: 0.9, G: 0.9, B: 0.9},
+	}).Finish()
+	doc, err := bld.Build()
+	if err != nil {
+		t.Fatalf("build doc: %v", err)
+	}
+	if len(doc.Pages) < 2 {
+		t.Fatalf("expected pagination from table, got %d pages", len(doc.Pages))
+	}
+	var buf bytes.Buffer
+	if err := (&WriterBuilder{}).Build().Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write doc: %v", err)
+	}
+	rawDoc, err := parser.NewDocumentParser(parser.Config{}).Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse written doc: %v", err)
+	}
+	foundStructRoot := false
+	foundParentTree := false
+	structParentPages := 0
+	foundTableElem := false
+	mcidTagged := false
+
+	for _, obj := range rawDoc.Objects {
+		switch v := obj.(type) {
+		case *raw.DictObj:
+			if typ, ok := v.Get(raw.NameLiteral("Type")); ok {
+				if name, ok := typ.(raw.NameObj); ok {
+					switch name.Value() {
+					case "StructTreeRoot":
+						foundStructRoot = true
+						if _, ok := v.Get(raw.NameLiteral("ParentTree")); ok {
+							foundParentTree = true
+						}
+					case "StructElem":
+						if s, ok := v.Get(raw.NameLiteral("S")); ok {
+							if n, ok := s.(raw.NameObj); ok && n.Value() == "Table" {
+								foundTableElem = true
+							}
+						}
+					case "Page":
+						if _, ok := v.Get(raw.NameLiteral("StructParents")); ok {
+							structParentPages++
+						}
+					}
+				}
+			}
+		case *raw.StreamObj:
+			if bytes.Contains(v.Data, []byte("MCID")) && bytes.Contains(v.Data, []byte("BDC")) {
+				mcidTagged = true
+			}
+		}
+	}
+	if !foundStructRoot || !foundParentTree {
+		t.Fatalf("structure tree missing: root=%v parentTree=%v", foundStructRoot, foundParentTree)
+	}
+	if structParentPages < 2 {
+		t.Fatalf("expected StructParents on paginated pages, got %d", structParentPages)
+	}
+	if !foundTableElem {
+		t.Fatalf("table struct element not found")
+	}
+	if !mcidTagged {
+		t.Fatalf("expected tagged content with MCIDs")
+	}
+}
+
 func TestWriter_ComplianceFlags(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{

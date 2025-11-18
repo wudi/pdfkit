@@ -60,3 +60,11 @@ Status key: Not started / In progress / Done.
 - [ ] Full JPX/JBIG2 native decoding: evaluate and integrate a maintained Go or cgo-backed decoder (e.g., OpenJPEG or libjbig2dec wrappers) to avoid external tool dependency and handle alpha, palettes, and symbol dictionaries with deterministic limits/tests. Status: Not started.
 - [x] Expand streaming events: emit per-operator/resource/annotation events in streaming.Parser to match the design, with backpressure handling tests. Status: Done (streaming parser now emits ContentOperation/ResourceRef/Annotation/Metadata events with context-aware delivery; test updated to assert per-operator flow).
 - [x] Add integration tests: cover image decoding via new filters, PDF/A enforce/validate round-trips, and streaming per-operator consumption/backpressure. Status: Done (pipeline DCT decode test added, PDF/A level/enforcer interoperability test added, and streaming backpressure/per-operator test added).
+
+# Table layout and tagging plan
+
+Status key: Not started / In progress / Done.
+
+- [x] Builder table helper: add a table drawing API (borders, padding, per-column widths) that supports repeating header rows and automatic pagination. Status: Done (table API renders backgrounds/borders/padding, paginates when space runs out, and repeats header rows on new pages).
+- [x] Tagging support for tables: emit tagged PDF structure (Table/TR/TH/TD) with MCIDs, parent tree entries, and marked-content wrappers when table helper is used. Status: Done (builder assigns MCIDs per page, builds StructTree with Table/row/cell elements, and writer serializes StructParents/ParentTree with MCR entries).
+- [x] Table coverage tests: render tables with borders/padding/header repeat across page breaks and assert tagged structure/MCIDs in output. Status: Done (writer test exercises pagination, header repeat tagging, StructTreeRoot/ParentTree presence, and MCID-marked content).

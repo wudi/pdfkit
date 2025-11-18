@@ -32,6 +32,7 @@ type PageBuilder interface {
 	DrawImage(img *semantic.Image, x, y, width, height float64, opts ImageOptions) PageBuilder
 	DrawRectangle(x, y, width, height float64, opts RectOptions) PageBuilder
 	DrawLine(x1, y1, x2, y2 float64, opts LineOptions) PageBuilder
+	DrawTable(table Table, opts TableOptions) PageBuilder
 	AddAnnotation(ann *semantic.Annotation) PageBuilder
 	SetMediaBox(box semantic.Rectangle) PageBuilder
 	SetCropBox(box semantic.Rectangle) PageBuilder
@@ -49,6 +50,8 @@ type TextOptions struct {
 	WordSpacing  float64
 	HorizScaling float64
 	Rise         float64
+	Tag          string
+	MCID         *int
 }
 
 // PathOptions configures path drawing.
@@ -100,6 +103,75 @@ type Outline struct {
 	Children  []Outline
 }
 
+// Table defines a matrix of cells to draw.
+type Table struct {
+	Columns    []float64
+	Rows       []TableRow
+	HeaderRows int
+}
+
+// TableRow wraps a slice of cells.
+type TableRow struct {
+	Cells []TableCell
+}
+
+// TableCell configures individual table cell rendering.
+type TableCell struct {
+	Text            string
+	Font            string
+	FontSize        float64
+	Padding         *CellPadding
+	BackgroundColor Color
+	TextColor       Color
+	BorderColor     Color
+	BorderWidth     float64
+	ColSpan         int
+	HAlign          HAlign
+	VAlign          VAlign
+	Tag             string
+}
+
+// CellPadding defines per-side padding.
+type CellPadding struct {
+	Top, Right, Bottom, Left float64
+}
+
+// TableOptions configures table rendering.
+type TableOptions struct {
+	X             float64
+	Y             float64
+	RowHeight     float64
+	CellPadding   float64
+	BorderColor   Color
+	BorderWidth   float64
+	HeaderFill    Color
+	RepeatHeaders bool
+	Tagged        bool
+	BottomMargin  float64
+	DefaultFont   string
+	DefaultSize   float64
+	TopMargin     float64
+	LeftMargin    float64
+}
+
+// HAlign controls horizontal text alignment within a cell.
+type HAlign string
+
+const (
+	HAlignLeft   HAlign = "left"
+	HAlignCenter HAlign = "center"
+	HAlignRight  HAlign = "right"
+)
+
+// VAlign controls vertical text alignment within a cell.
+type VAlign string
+
+const (
+	VAlignTop    VAlign = "top"
+	VAlignMiddle VAlign = "middle"
+	VAlignBottom VAlign = "bottom"
+)
+
 type fontResource struct {
 	font      *semantic.Font
 	runeToCID map[rune]int
@@ -123,6 +195,8 @@ type builderImpl struct {
 	xobjectCount  int
 	xobjectNames  map[*semantic.Image]string
 	fontErr       error
+	structTree    *semantic.StructureTree
+	mcidCounters  map[*semantic.Page]int
 }
 
 type pageBuilderImpl struct {
@@ -231,7 +305,7 @@ func (b *builderImpl) Build() (*semantic.Document, error) {
 		Pages:  b.pages,
 		Info:   b.info,
 		Lang:   b.lang,
-		Marked: b.marked,
+		Marked: b.marked || b.structTree != nil,
 	}
 	if len(b.pageLabels) > 0 {
 		doc.PageLabels = b.pageLabels
@@ -244,6 +318,9 @@ func (b *builderImpl) Build() (*semantic.Document, error) {
 	}
 	if len(b.metadata) > 0 {
 		doc.Metadata = &semantic.XMPMetadata{Raw: b.metadata}
+	}
+	if b.structTree != nil {
+		doc.StructTree = b.structTree
 	}
 	if b.encrypted {
 		doc.OwnerPassword = b.ownerPassword
@@ -271,6 +348,23 @@ func (p *pageBuilderImpl) DrawText(text string, x, y float64, opts TextOptions) 
 		size = 12
 	}
 
+	tagged := false
+	if opts.MCID != nil {
+		tag := opts.Tag
+		if tag == "" {
+			tag = "Span"
+		}
+		tagged = true
+		*ops = append(*ops, semantic.Operation{
+			Operator: "BDC",
+			Operands: []semantic.Operand{
+				semantic.NameOperand{Value: tag},
+				semantic.DictOperand{Values: map[string]semantic.Operand{
+					"MCID": semantic.NumberOperand{Value: float64(*opts.MCID)},
+				}},
+			},
+		})
+	}
 	*ops = append(*ops, semantic.Operation{Operator: "BT"})
 	*ops = append(*ops, semantic.Operation{
 		Operator: "Tf",
@@ -313,6 +407,9 @@ func (p *pageBuilderImpl) DrawText(text string, x, y float64, opts TextOptions) 
 		Operands: []semantic.Operand{semantic.StringOperand{Value: encodeText(text, font, cmap)}},
 	})
 	*ops = append(*ops, semantic.Operation{Operator: "ET"})
+	if tagged {
+		*ops = append(*ops, semantic.Operation{Operator: "EMC"})
+	}
 	return p
 }
 
@@ -427,6 +524,254 @@ func (p *pageBuilderImpl) DrawLine(x1, y1, x2, y2 float64, opts LineOptions) Pag
 	return p
 }
 
+func (p *pageBuilderImpl) DrawTable(table Table, opts TableOptions) PageBuilder {
+	if len(table.Columns) == 0 || len(table.Rows) == 0 {
+		return p
+	}
+	cur := p
+	borderColor := opts.BorderColor
+	if isZeroColor(borderColor) {
+		borderColor = Color{}
+	}
+	borderWidth := opts.BorderWidth
+	if borderWidth == 0 {
+		borderWidth = 0.5
+	}
+	cellPad := opts.CellPadding
+	if cellPad == 0 {
+		cellPad = 4
+	}
+	defaultSize := opts.DefaultSize
+	if defaultSize == 0 {
+		defaultSize = 12
+	}
+	if opts.X == 0 && opts.LeftMargin > 0 {
+		opts.X = opts.LeftMargin
+	}
+	repeatHeaders := opts.RepeatHeaders
+	headerCount := table.HeaderRows
+	if headerCount > len(table.Rows) {
+		headerCount = len(table.Rows)
+	}
+	if headerCount > 0 && !opts.RepeatHeaders {
+		repeatHeaders = true
+	}
+	bottomMargin := opts.BottomMargin
+	pageHeight := cur.page.MediaBox.URY - cur.page.MediaBox.LLY
+	if opts.Y == 0 {
+		opts.Y = cur.page.MediaBox.URY
+		if opts.TopMargin > 0 {
+			opts.Y -= opts.TopMargin
+		}
+	}
+	rowHeights := make([]float64, len(table.Rows))
+	resolvePadding := func(pad *CellPadding) CellPadding {
+		if pad != nil {
+			return *pad
+		}
+		return CellPadding{Top: cellPad, Right: cellPad, Bottom: cellPad, Left: cellPad}
+	}
+	for i, row := range table.Rows {
+		var h float64
+		for _, cell := range row.Cells {
+			size := cell.FontSize
+			if size == 0 {
+				size = defaultSize
+			}
+			pad := resolvePadding(cell.Padding)
+			cellH := size*1.2 + pad.Top + pad.Bottom
+			if cellH > h {
+				h = cellH
+			}
+		}
+		if opts.RowHeight > h {
+			h = opts.RowHeight
+		}
+		if h == 0 {
+			h = defaultSize*1.2 + 2*cellPad
+		}
+		rowHeights[i] = h
+	}
+	spanWidth := func(startCol, span int) float64 {
+		if span <= 0 {
+			span = 1
+		}
+		end := startCol + span
+		if end > len(table.Columns) {
+			end = len(table.Columns)
+		}
+		width := 0.0
+		for i := startCol; i < end; i++ {
+			width += table.Columns[i]
+		}
+		return width
+	}
+	pageIndex := func(pb *pageBuilderImpl) int {
+		for i, page := range pb.parent.pages {
+			if page == pb.page {
+				return i
+			}
+		}
+		return pb.page.Index
+	}
+	clonePage := func() *pageBuilderImpl {
+		next := pbFromBuilder(cur.parent.NewPage(cur.page.MediaBox.URX, cur.page.MediaBox.URY))
+		if next == nil {
+			return cur
+		}
+		next.page.CropBox = cur.page.CropBox
+		next.page.TrimBox = cur.page.TrimBox
+		next.page.BleedBox = cur.page.BleedBox
+		next.page.ArtBox = cur.page.ArtBox
+		next.page.Rotate = cur.page.Rotate
+		next.page.UserUnit = cur.page.UserUnit
+		return next
+	}
+
+	curY := opts.Y
+	var tableElem *semantic.StructureElement
+	if opts.Tagged {
+		cur.parent.marked = true
+		tableElem = &semantic.StructureElement{Type: "Table"}
+		cur.parent.ensureStructTree().Kids = append(cur.parent.ensureStructTree().Kids, tableElem)
+	}
+	var renderRow func(row TableRow, height float64, isHeader bool, allowBreak bool)
+	var renderHeaders func()
+	renderHeaders = func() {
+		if !repeatHeaders || headerCount == 0 {
+			return
+		}
+		for i := 0; i < headerCount; i++ {
+			renderRow(table.Rows[i], rowHeights[i], true, false)
+		}
+	}
+	renderRow = func(row TableRow, height float64, isHeader bool, allowBreak bool) {
+		if allowBreak && curY-height < bottomMargin {
+			cur = clonePage()
+			curY = opts.Y
+			renderHeaders()
+			if curY-height < bottomMargin && pageHeight > 0 {
+				curY = bottomMargin + height
+			}
+		}
+		rowElem := (*semantic.StructureElement)(nil)
+		pageIdx := pageIndex(cur)
+		if tableElem != nil {
+			pageCopy := pageIdx
+			rowElem = &semantic.StructureElement{Type: "TR", PageIndex: &pageCopy}
+			tableElem.Kids = append(tableElem.Kids, semantic.StructureItem{Element: rowElem})
+		}
+		x := opts.X
+		for col := 0; col < len(table.Columns) && col < len(row.Cells); col++ {
+			cell := row.Cells[col]
+			span := cell.ColSpan
+			if span <= 0 {
+				span = 1
+			}
+			width := spanWidth(col, span)
+			pad := resolvePadding(cell.Padding)
+			fill := cell.BackgroundColor
+			if isHeader && isZeroColor(fill) && !isZeroColor(opts.HeaderFill) {
+				fill = opts.HeaderFill
+			}
+			if !isZeroColor(fill) {
+				cur.DrawRectangle(x, curY-height, width, height, RectOptions{
+					Fill:      true,
+					FillColor: fill,
+				})
+			}
+			bw := cell.BorderWidth
+			if bw == 0 {
+				bw = borderWidth
+			}
+			bc := cell.BorderColor
+			if isZeroColor(bc) {
+				bc = borderColor
+			}
+			if bw > 0 {
+				cur.DrawRectangle(x, curY-height, width, height, RectOptions{
+					Stroke:      true,
+					StrokeColor: bc,
+					LineWidth:   bw,
+				})
+			}
+			tag := cell.Tag
+			if tag == "" {
+				if isHeader {
+					tag = "TH"
+				} else {
+					tag = "TD"
+				}
+			}
+			mcidPtr := (*int)(nil)
+			if tableElem != nil {
+				mcid := cur.parent.nextMCID(cur.page)
+				mcidPtr = &mcid
+			}
+			textColor := cell.TextColor
+			if isZeroColor(textColor) {
+				textColor = Color{}
+			}
+			size := cell.FontSize
+			if size == 0 {
+				size = defaultSize
+			}
+			hAlign := cell.HAlign
+			if hAlign == "" {
+				hAlign = HAlignLeft
+			}
+			vAlign := cell.VAlign
+			if vAlign == "" {
+				vAlign = VAlignTop
+			}
+			textX := x + pad.Left
+			textY := curY - pad.Top - size
+			if hAlign != HAlignLeft {
+				txtWidth := measureTextWidth(cur.parent, cell.Text, size, cell.Font)
+				available := width - pad.Left - pad.Right
+				switch hAlign {
+				case HAlignCenter:
+					textX = x + pad.Left + (available-txtWidth)/2
+				case HAlignRight:
+					textX = x + width - pad.Right - txtWidth
+				}
+			}
+			if vAlign != VAlignTop {
+				switch vAlign {
+				case VAlignMiddle:
+					textY = curY - (height / 2) - (size / 2)
+				case VAlignBottom:
+					textY = curY - height + pad.Bottom
+				}
+			}
+			cur.DrawText(cell.Text, textX, textY, TextOptions{
+				Font:     cell.Font,
+				FontSize: size,
+				Color:    textColor,
+				Tag:      tag,
+				MCID:     mcidPtr,
+			})
+			if rowElem != nil && mcidPtr != nil {
+				cellPage := pageIdx
+				cellElem := &semantic.StructureElement{Type: tag, PageIndex: &cellPage}
+				cellElem.Kids = append(cellElem.Kids, semantic.StructureItem{
+					MCID:      mcidPtr,
+					PageIndex: &cellPage,
+				})
+				rowElem.Kids = append(rowElem.Kids, semantic.StructureItem{Element: cellElem})
+			}
+			x += width
+			col += span - 1
+		}
+		curY -= height
+	}
+
+	for i, row := range table.Rows {
+		renderRow(row, rowHeights[i], i < headerCount, true)
+	}
+	return cur
+}
+
 func (p *pageBuilderImpl) AddAnnotation(ann *semantic.Annotation) PageBuilder {
 	if ann != nil {
 		p.page.Annotations = append(p.page.Annotations, *ann)
@@ -481,6 +826,22 @@ func (b *builderImpl) imageName(img *semantic.Image) string {
 	name := fmt.Sprintf("Im%d", b.xobjectCount)
 	b.xobjectNames[img] = name
 	return name
+}
+
+func (b *builderImpl) ensureStructTree() *semantic.StructureTree {
+	if b.structTree == nil {
+		b.structTree = &semantic.StructureTree{}
+	}
+	return b.structTree
+}
+
+func (b *builderImpl) nextMCID(page *semantic.Page) int {
+	if b.mcidCounters == nil {
+		b.mcidCounters = make(map[*semantic.Page]int)
+	}
+	id := b.mcidCounters[page]
+	b.mcidCounters[page] = id + 1
+	return id
 }
 
 func runeToCID(font *semantic.Font) map[rune]int {
@@ -682,4 +1043,43 @@ func normalizeRotation(deg int) int {
 		deg += 360
 	}
 	return deg
+}
+
+func pbFromBuilder(pb PageBuilder) *pageBuilderImpl {
+	if v, ok := pb.(*pageBuilderImpl); ok {
+		return v
+	}
+	return nil
+}
+
+// measureTextWidth approximates text width in user units.
+func measureTextWidth(b *builderImpl, text string, fontSize float64, fontName string) float64 {
+	font, _, _ := b.fontForName(fontName)
+	if font == nil || len(font.Widths) == 0 {
+		if fontSize == 0 {
+			fontSize = 12
+		}
+		return float64(len(text)) * fontSize * 0.5
+	}
+	widthSum := 0.0
+	for _, r := range text {
+		code := int(r)
+		if font.Subtype == "Type0" && font.Encoding == "Identity-H" {
+			// For CID fonts, widths are keyed by CID, which we derive from ToUnicode.
+			if cmap := b.fonts[fontName].runeToCID; cmap != nil {
+				if cid, ok := cmap[r]; ok {
+					code = cid
+				}
+			}
+		}
+		if w, ok := font.Widths[code]; ok {
+			widthSum += float64(w)
+		} else {
+			widthSum += 500 // default width in glyph space
+		}
+	}
+	if fontSize == 0 {
+		fontSize = 12
+	}
+	return (widthSum / 1000) * fontSize
 }

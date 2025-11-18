@@ -57,7 +57,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 			return nil
 		}
 	}
-	if err := checkCancelled(); err != nil { return err }
+	if err := checkCancelled(); err != nil {
+		return err
+	}
 	version := pdfVersion(cfg)
 	incr := incrementalContext(doc, out, cfg)
 	idPair := fileID(doc, cfg)
@@ -72,6 +74,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	catalogRef := nextRef()
 	pagesRef := nextRef()
 	pageRefs := make([]raw.ObjectRef, 0, len(doc.Pages))
+	pageDicts := make([]*raw.DictObj, len(doc.Pages))
 
 	// Fonts (shared across pages by BaseFont)
 	fontRefs := map[string]raw.ObjectRef{}
@@ -533,6 +536,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		pageDict := raw.Dict()
 		pageDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Page"))
 		pageDict.Set(raw.NameLiteral("Parent"), raw.Ref(pagesRef.Num, pagesRef.Gen))
+		pageDicts[i] = pageDict
 		// MediaBox
 		pageDict.Set(raw.NameLiteral("MediaBox"), rectArray(p.MediaBox))
 		if cropSet(p.CropBox) {
@@ -761,23 +765,26 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		pagesDict.Set(raw.NameLiteral("Resources"), pagesRes)
 	}
 	objects[pagesRef] = pagesDict
+	var structRootRef *raw.ObjectRef
+	var parentTreeRef *raw.ObjectRef
+	var parentTree map[int]map[int]raw.ObjectRef
+	if doc.StructTree != nil {
+		structRootRef, parentTreeRef, parentTree = buildStructureTree(doc.StructTree, pageRefs, nextRef, objects)
+		for idx := range parentTree {
+			if idx >= 0 && idx < len(pageDicts) {
+				pageDicts[idx].Set(raw.NameLiteral("StructParents"), raw.NumberInt(int64(idx)))
+			}
+		}
+	}
 	// Catalog
 	catalogDict := raw.Dict()
 	catalogDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Catalog"))
 	catalogDict.Set(raw.NameLiteral("Pages"), raw.Ref(pagesRef.Num, pagesRef.Gen))
-	if doc.StructTree != nil {
-		structRef := nextRef()
-		structDict := raw.Dict()
-		structDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("StructTreeRoot"))
-		if len(doc.StructTree.RoleMap) > 0 {
-			roleDict := raw.Dict()
-			for k, v := range doc.StructTree.RoleMap {
-				roleDict.Set(raw.NameLiteral(k), raw.NameLiteral(v))
-			}
-			structDict.Set(raw.NameLiteral("RoleMap"), roleDict)
-		}
-		objects[structRef] = structDict
-		catalogDict.Set(raw.NameLiteral("StructTreeRoot"), raw.Ref(structRef.Num, structRef.Gen))
+	if structRootRef != nil {
+		catalogDict.Set(raw.NameLiteral("StructTreeRoot"), raw.Ref(structRootRef.Num, structRootRef.Gen))
+	}
+	if parentTreeRef != nil {
+		catalogDict.Set(raw.NameLiteral("ParentTree"), raw.Ref(parentTreeRef.Num, parentTreeRef.Gen))
 	}
 	if doc.Lang != "" {
 		catalogDict.Set(raw.NameLiteral("Lang"), raw.Str([]byte(doc.Lang)))
@@ -966,7 +973,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 
 	if encryptionHandler != nil {
 		for ref, obj := range objects {
-			if err := checkCancelled(); err != nil { return err }
+			if err := checkCancelled(); err != nil {
+				return err
+			}
 			if encryptRef != nil && ref == *encryptRef {
 				continue
 			}
@@ -999,7 +1008,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	}
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Num < ordered[j].Num })
 	for _, ref := range ordered {
-		if err := checkCancelled(); err != nil { return err }
+		if err := checkCancelled(); err != nil {
+			return err
+		}
 		offset := initialOffset + int64(buf.Len())
 		serialized, _ := w.SerializeObject(ref, objects[ref])
 		buf.Write(serialized)
@@ -1723,6 +1734,135 @@ func scanObjectOffsets(data []byte) map[int]int64 {
 		offsets[num] = int64(m[0])
 	}
 	return offsets
+}
+
+func buildStructureTree(tree *semantic.StructureTree, pageRefs []raw.ObjectRef, nextRef func() raw.ObjectRef, objects map[raw.ObjectRef]raw.Object) (*raw.ObjectRef, *raw.ObjectRef, map[int]map[int]raw.ObjectRef) {
+	if tree == nil {
+		return nil, nil, nil
+	}
+	parentTree := make(map[int]map[int]raw.ObjectRef)
+	var buildElem func(elem *semantic.StructureElement, parent raw.ObjectRef) *raw.ObjectRef
+	buildElem = func(elem *semantic.StructureElement, parent raw.ObjectRef) *raw.ObjectRef {
+		if elem == nil {
+			return nil
+		}
+		ref := nextRef()
+		dict := raw.Dict()
+		dict.Set(raw.NameLiteral("Type"), raw.NameLiteral("StructElem"))
+		if elem.Type != "" {
+			dict.Set(raw.NameLiteral("S"), raw.NameLiteral(elem.Type))
+		}
+		if elem.Title != "" {
+			dict.Set(raw.NameLiteral("T"), raw.Str([]byte(elem.Title)))
+		}
+		if elem.PageIndex != nil {
+			if pg := pageRefAt(pageRefs, *elem.PageIndex); pg != nil {
+				dict.Set(raw.NameLiteral("Pg"), raw.Ref(pg.Num, pg.Gen))
+			}
+		}
+		if parent.Num != 0 || parent.Gen != 0 {
+			dict.Set(raw.NameLiteral("P"), raw.Ref(parent.Num, parent.Gen))
+		}
+		kArr := raw.NewArray()
+		for _, kid := range elem.Kids {
+			if kid.Element != nil {
+				childRef := buildElem(kid.Element, ref)
+				if childRef != nil {
+					kArr.Append(raw.Ref(childRef.Num, childRef.Gen))
+				}
+				continue
+			}
+			if kid.MCID != nil {
+				pageIdx := kid.PageIndex
+				if pageIdx == nil {
+					pageIdx = elem.PageIndex
+				}
+				if pageIdx != nil {
+					if pg := pageRefAt(pageRefs, *pageIdx); pg != nil {
+						mcr := raw.Dict()
+						mcr.Set(raw.NameLiteral("Type"), raw.NameLiteral("MCR"))
+						mcr.Set(raw.NameLiteral("Pg"), raw.Ref(pg.Num, pg.Gen))
+						mcr.Set(raw.NameLiteral("MCID"), raw.NumberInt(int64(*kid.MCID)))
+						kArr.Append(mcr)
+						if _, ok := parentTree[*pageIdx]; !ok {
+							parentTree[*pageIdx] = make(map[int]raw.ObjectRef)
+						}
+						parentTree[*pageIdx][*kid.MCID] = ref
+					}
+				}
+			}
+		}
+		if kArr.Len() > 0 {
+			dict.Set(raw.NameLiteral("K"), kArr)
+		}
+		objects[ref] = dict
+		return &ref
+	}
+	kids := raw.NewArray()
+	for _, kid := range tree.Kids {
+		ref := buildElem(kid, raw.ObjectRef{})
+		if ref != nil {
+			kids.Append(raw.Ref(ref.Num, ref.Gen))
+		}
+	}
+	if kids.Len() == 0 && len(tree.RoleMap) == 0 {
+		return nil, nil, nil
+	}
+	rootRef := nextRef()
+	rootDict := raw.Dict()
+	rootDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("StructTreeRoot"))
+	if kids.Len() > 0 {
+		rootDict.Set(raw.NameLiteral("K"), kids)
+	}
+	if len(tree.RoleMap) > 0 {
+		roleDict := raw.Dict()
+		for k, v := range tree.RoleMap {
+			roleDict.Set(raw.NameLiteral(k), raw.NameLiteral(v))
+		}
+		rootDict.Set(raw.NameLiteral("RoleMap"), roleDict)
+	}
+	var parentTreeRef *raw.ObjectRef
+	if len(parentTree) > 0 {
+		nums := raw.NewArray()
+		indices := make([]int, 0, len(parentTree))
+		for k := range parentTree {
+			indices = append(indices, k)
+		}
+		sort.Ints(indices)
+		for _, idx := range indices {
+			nums.Append(raw.NumberInt(int64(idx)))
+			arr := raw.NewArray()
+			maxMCID := -1
+			for mcid := range parentTree[idx] {
+				if mcid > maxMCID {
+					maxMCID = mcid
+				}
+			}
+			for i := 0; i <= maxMCID; i++ {
+				if ref, ok := parentTree[idx][i]; ok {
+					arr.Append(raw.Ref(ref.Num, ref.Gen))
+				} else {
+					arr.Append(raw.NullObj{})
+				}
+			}
+			nums.Append(arr)
+		}
+		ptDict := raw.Dict()
+		ptDict.Set(raw.NameLiteral("Nums"), nums)
+		ref := nextRef()
+		parentTreeRef = &ref
+		objects[ref] = ptDict
+		rootDict.Set(raw.NameLiteral("ParentTree"), raw.Ref(ref.Num, ref.Gen))
+	}
+	objects[rootRef] = rootDict
+	return &rootRef, parentTreeRef, parentTree
+}
+
+func pageRefAt(pageRefs []raw.ObjectRef, idx int) *raw.ObjectRef {
+	if idx < 0 || idx >= len(pageRefs) {
+		return nil
+	}
+	return &pageRefs[idx]
 }
 
 func serializeContentStream(cs semantic.ContentStream) []byte {
