@@ -25,17 +25,18 @@ func (d *Document) Decoded() *decoded.DecodedDocument { return d.decoded }
 
 // Page models a single PDF page.
 type Page struct {
-	Index     int
-	MediaBox  Rectangle
-	CropBox   Rectangle
-	TrimBox   Rectangle
-	BleedBox  Rectangle
-	ArtBox    Rectangle
-	Rotate    int // degrees: 0/90/180/270
-	Resources *Resources
-	Contents  []ContentStream
-	UserUnit  float64
-	ref       raw.ObjectRef
+	Index       int
+	MediaBox    Rectangle
+	CropBox     Rectangle
+	TrimBox     Rectangle
+	BleedBox    Rectangle
+	ArtBox      Rectangle
+	Rotate      int // degrees: 0/90/180/270
+	Resources   *Resources
+	Contents    []ContentStream
+	Annotations []Annotation
+	UserUnit    float64
+	ref         raw.ObjectRef
 }
 
 // ContentStream is a sequence of operations on a page.
@@ -112,6 +113,13 @@ type DocumentInfo struct {
 type XMPMetadata struct{ Raw []byte }
 
 type StructureTree struct{}
+
+// Annotation represents a simple page annotation.
+type Annotation struct {
+	Subtype string
+	Rect    Rectangle
+	URI     string // used for Link annotations
+}
 
 // Builder produces a Semantic document from Decoded IR.
 type Builder interface {

@@ -125,6 +125,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 
 	// Page content streams
 	contentRefs := []raw.ObjectRef{}
+	annotationRefs := make([][]raw.ObjectRef, len(doc.Pages))
 	for _, p := range doc.Pages {
 		contentData := []byte{}
 		for _, cs := range p.Contents {
@@ -218,6 +219,42 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		// Contents
 		contentRef := contentRefs[i]
 		pageDict.Set(raw.NameLiteral("Contents"), raw.Ref(contentRef.Num, contentRef.Gen))
+
+		// Annotations
+		if len(p.Annotations) > 0 {
+			annotArr := raw.NewArray()
+			for _, a := range p.Annotations {
+				aRef := nextRef()
+				aDict := raw.Dict()
+				aDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Annot"))
+				subtype := a.Subtype
+				if subtype == "" {
+					subtype = "Link"
+				}
+				aDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral(subtype))
+				rect := a.Rect
+				if !cropSet(rect) {
+					// fall back to crop/media box coordinates
+					if cropSet(p.CropBox) {
+						rect = p.CropBox
+					} else {
+						rect = p.MediaBox
+					}
+				}
+				aDict.Set(raw.NameLiteral("Rect"), rectArray(rect))
+				if a.URI != "" {
+					action := raw.Dict()
+					action.Set(raw.NameLiteral("S"), raw.NameLiteral("URI"))
+					action.Set(raw.NameLiteral("URI"), raw.Str([]byte(a.URI)))
+					aDict.Set(raw.NameLiteral("A"), action)
+				}
+				aDict.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberInt(0), raw.NumberInt(0), raw.NumberInt(0)))
+				objects[aRef] = aDict
+				annotArr.Append(raw.Ref(aRef.Num, aRef.Gen))
+				annotationRefs[i] = append(annotationRefs[i], aRef)
+			}
+			pageDict.Set(raw.NameLiteral("Annots"), annotArr)
+		}
 		objects[ref] = pageDict
 	}
 	// Pages tree

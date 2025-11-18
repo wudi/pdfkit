@@ -725,6 +725,65 @@ func TestWriter_IDChangesWithInfo(t *testing.T) {
 	}
 }
 
+func TestWriter_LinkAnnotation(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 100, URY: 100},
+				Annotations: []semantic.Annotation{
+					{
+						Subtype: "Link",
+						Rect:    semantic.Rectangle{LLX: 5, LLY: 5, URX: 50, URY: 50},
+						URI:     "https://example.com",
+					},
+				},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	var annotObj *raw.DictObj
+	for _, obj := range rawDoc.Objects {
+		if d, ok := obj.(*raw.DictObj); ok {
+			typ, _ := d.Get(raw.NameLiteral("Type"))
+			if n, ok := typ.(raw.NameObj); ok && n.Value() == "Annot" {
+				annotObj = d
+				break
+			}
+		}
+	}
+	if annotObj == nil {
+		t.Fatalf("annotation object not found")
+	}
+	if sub, ok := annotObj.Get(raw.NameLiteral("Subtype")); !ok {
+		t.Fatalf("annotation subtype missing")
+	} else if n, ok := sub.(raw.NameObj); !ok || n.Value() != "Link" {
+		t.Fatalf("unexpected subtype: %#v", sub)
+	}
+	action, ok := annotObj.Get(raw.NameLiteral("A"))
+	if !ok {
+		t.Fatalf("annotation action missing")
+	}
+	if ad, ok := action.(*raw.DictObj); ok {
+		if uri, ok := ad.Get(raw.NameLiteral("URI")); !ok {
+			t.Fatalf("URI missing")
+		} else if s, ok := uri.(raw.StringObj); !ok || string(s.Value()) != "https://example.com" {
+			t.Fatalf("unexpected URI: %#v", uri)
+		}
+	} else {
+		t.Fatalf("action not dict: %#v", action)
+	}
+}
+
 func firstID(doc *raw.Document) string {
 	idObj, ok := doc.Trailer.Get(raw.NameLiteral("ID"))
 	if !ok {
