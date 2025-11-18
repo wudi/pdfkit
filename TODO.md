@@ -12,3 +12,11 @@ Status key: Not started / In progress / Done.
 - [x] Encryption/security: Encrypt dictionary with Standard handler (keys/permissions); embedded file specs if needed. Status: Done (Standard handler entries generated from user/owner passwords and permissions; objects/streams encrypted via handler; IDs stored in trailer; metadata encryption configurable).
 - [x] Compliance: PDF/A tagging (StructTreeRoot), role maps, font consistency, OutputIntents, downgrade/clip to target level. Status: Done (StructTreeRoot emitted with RoleMap when provided; OutputIntents serialized with ICC profile streams; Catalog now carries Lang and MarkInfo/Marked for tagged PDF).
 - [x] Validation/robustness: length bounds, offset consistency, deterministic ordering, malformed stream avoidance, readback tests. Status: Done (xref table and xref stream startxref offsets validated; deterministic ordering for dict keys and IDs in place; xref table offsets cross-checked against actual object positions and decrypt/metadata paths covered by tests).
+
+# Builder completeness plan
+
+Status key: Not started / In progress / Done.
+
+- [ ] Builder metadata helpers: expose document-level language (Lang), tagged flag (Marked), and page labels to align builder with semantic.Document fields from design.md.
+- [ ] Builder outlines: fluent helpers to add outline/bookmark entries that target builder-created pages with XYZ destinations.
+- [ ] Builder encryption: convenience setter for owner/user passwords, permissions, and metadata encryption flag to populate semantic.Document encryption fields.
