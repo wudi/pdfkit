@@ -668,6 +668,74 @@ func TestWriter_ExtGStateResources(t *testing.T) {
 	}
 }
 
+func TestWriter_ColorSpaceResources(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 10, URY: 10},
+				Resources: &semantic.Resources{
+					ColorSpaces: map[string]semantic.ColorSpace{
+						"CS1": {Name: "DeviceRGB"},
+					},
+				},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	pageHas := false
+	pagesHas := false
+	for _, obj := range rawDoc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		typ, _ := dict.Get(raw.NameLiteral("Type"))
+		if name, ok := typ.(raw.NameObj); ok && name.Value() == "Page" {
+			if res, ok := dict.Get(raw.NameLiteral("Resources")); ok {
+				if resDict, ok := res.(*raw.DictObj); ok {
+					if cs, ok := resDict.Get(raw.NameLiteral("ColorSpace")); ok {
+						if csDict, ok := cs.(*raw.DictObj); ok {
+							if v, ok := csDict.Get(raw.NameLiteral("CS1")); ok {
+								if name, ok := v.(raw.NameObj); ok && name.Value() == "DeviceRGB" {
+									pageHas = true
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		if name, ok := typ.(raw.NameObj); ok && name.Value() == "Pages" {
+			if res, ok := dict.Get(raw.NameLiteral("Resources")); ok {
+				if resDict, ok := res.(*raw.DictObj); ok {
+					if cs, ok := resDict.Get(raw.NameLiteral("ColorSpace")); ok {
+						if csDict, ok := cs.(*raw.DictObj); ok {
+							if v, ok := csDict.Get(raw.NameLiteral("CS1")); ok {
+								if name, ok := v.(raw.NameObj); ok && name.Value() == "DeviceRGB" {
+									pagesHas = true
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if !pageHas || !pagesHas {
+		t.Fatalf("color space missing (page=%v pages=%v)", pageHas, pagesHas)
+	}
+}
+
 func TestWriter_SerializeOperations(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{
