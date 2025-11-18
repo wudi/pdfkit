@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"pdflib/contentstream"
+	"pdflib/fonts"
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
 )
@@ -20,6 +21,7 @@ type PDFBuilder interface {
 	AddOutline(out Outline) PDFBuilder
 	SetEncryption(ownerPassword, userPassword string, perms raw.Permissions, encryptMetadata bool) PDFBuilder
 	RegisterFont(name string, font *semantic.Font) PDFBuilder
+	RegisterTrueTypeFont(name string, data []byte) PDFBuilder
 	Build() (*semantic.Document, error)
 }
 
@@ -98,6 +100,11 @@ type Outline struct {
 	Children  []Outline
 }
 
+type fontResource struct {
+	font      *semantic.Font
+	runeToCID map[rune]int
+}
+
 type builderImpl struct {
 	pages         []*semantic.Page
 	info          *semantic.DocumentInfo
@@ -111,10 +118,11 @@ type builderImpl struct {
 	permissions   raw.Permissions
 	encrypted     bool
 	encryptMeta   bool
-	fonts         map[string]*semantic.Font
+	fonts         map[string]fontResource
 	defaultFont   string
 	xobjectCount  int
 	xobjectNames  map[*semantic.Image]string
+	fontErr       error
 }
 
 type pageBuilderImpl struct {
@@ -184,10 +192,26 @@ func (b *builderImpl) SetEncryption(ownerPassword, userPassword string, perms ra
 }
 
 func (b *builderImpl) RegisterFont(name string, font *semantic.Font) PDFBuilder {
-	if b.fonts == nil {
-		b.fonts = make(map[string]*semantic.Font)
+	return b.addFont(name, font)
+}
+
+func (b *builderImpl) RegisterTrueTypeFont(name string, data []byte) PDFBuilder {
+	font, err := fonts.LoadTrueType(name, data)
+	if err != nil {
+		b.fontErr = err
+		return b
 	}
-	b.fonts[name] = font
+	return b.addFont(name, font)
+}
+
+func (b *builderImpl) addFont(name string, font *semantic.Font) PDFBuilder {
+	if b.fonts == nil {
+		b.fonts = make(map[string]fontResource)
+	}
+	if font == nil {
+		return b
+	}
+	b.fonts[name] = fontResource{font: font, runeToCID: runeToCID(font)}
 	if b.defaultFont == "" {
 		b.defaultFont = name
 	}
@@ -195,6 +219,9 @@ func (b *builderImpl) RegisterFont(name string, font *semantic.Font) PDFBuilder 
 }
 
 func (b *builderImpl) Build() (*semantic.Document, error) {
+	if b.fontErr != nil {
+		return nil, b.fontErr
+	}
 	pageIndexByPtr := make(map[*semantic.Page]int, len(b.pages))
 	for i, p := range b.pages {
 		p.Index = i
@@ -232,7 +259,7 @@ func (p *pageBuilderImpl) DrawText(text string, x, y float64, opts TextOptions) 
 	ops := p.ensureContentOps()
 	res := p.ensureResources()
 
-	font, fontName := p.parent.fontForName(opts.Font)
+	font, fontName, cmap := p.parent.fontForName(opts.Font)
 	if res.Fonts == nil {
 		res.Fonts = make(map[string]*semantic.Font)
 	}
@@ -283,7 +310,7 @@ func (p *pageBuilderImpl) DrawText(text string, x, y float64, opts TextOptions) 
 	}
 	*ops = append(*ops, semantic.Operation{
 		Operator: "Tj",
-		Operands: []semantic.Operand{semantic.StringOperand{Value: []byte(text)}},
+		Operands: []semantic.Operand{semantic.StringOperand{Value: encodeText(text, font, cmap)}},
 	})
 	*ops = append(*ops, semantic.Operation{Operator: "ET"})
 	return p
@@ -424,7 +451,7 @@ func (p *pageBuilderImpl) SetRotation(degrees int) PageBuilder {
 
 func (p *pageBuilderImpl) Finish() PDFBuilder { return p.parent }
 
-func (b *builderImpl) fontForName(name string) (*semantic.Font, string) {
+func (b *builderImpl) fontForName(name string) (*semantic.Font, string, map[rune]int) {
 	if name == "" {
 		name = b.defaultFont
 		if name == "" {
@@ -432,14 +459,15 @@ func (b *builderImpl) fontForName(name string) (*semantic.Font, string) {
 		}
 	}
 	if b.fonts == nil {
-		b.fonts = make(map[string]*semantic.Font)
+		b.fonts = make(map[string]fontResource)
 	}
 	if f, ok := b.fonts[name]; ok {
-		return f, name
+		return f.font, name, f.runeToCID
 	}
 	font := &semantic.Font{BaseFont: defaultBaseFont}
-	b.fonts[name] = font
-	return font, name
+	res := fontResource{font: font}
+	b.fonts[name] = res
+	return font, name, res.runeToCID
 }
 
 func (b *builderImpl) imageName(img *semantic.Image) string {
@@ -453,6 +481,36 @@ func (b *builderImpl) imageName(img *semantic.Image) string {
 	name := fmt.Sprintf("Im%d", b.xobjectCount)
 	b.xobjectNames[img] = name
 	return name
+}
+
+func runeToCID(font *semantic.Font) map[rune]int {
+	if font == nil || len(font.ToUnicode) == 0 {
+		return nil
+	}
+	m := make(map[rune]int)
+	for cid, runes := range font.ToUnicode {
+		for _, r := range runes {
+			if _, exists := m[r]; !exists {
+				m[r] = cid
+			}
+		}
+	}
+	return m
+}
+
+func encodeText(text string, font *semantic.Font, cmap map[rune]int) []byte {
+	if font != nil && font.Subtype == "Type0" && font.Encoding == "Identity-H" && len(cmap) > 0 {
+		buf := make([]byte, 0, len(text)*2)
+		for _, r := range text {
+			cid, ok := cmap[r]
+			if !ok {
+				cid = 0
+			}
+			buf = append(buf, byte(cid>>8), byte(cid))
+		}
+		return buf
+	}
+	return []byte(text)
 }
 
 func (p *pageBuilderImpl) ensureResources() *semantic.Resources {

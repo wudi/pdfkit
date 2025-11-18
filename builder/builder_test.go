@@ -4,8 +4,11 @@ import (
 	"testing"
 
 	"pdflib/contentstream"
+	"pdflib/fonts"
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
+
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 func TestBuilder_DrawTextPopulatesResourcesAndOps(t *testing.T) {
@@ -125,6 +128,61 @@ func TestBuilder_DrawShapesAndImages(t *testing.T) {
 			t.Fatalf("xobject %s missing expected image attributes", name)
 		}
 	}
+}
+
+func TestBuilder_RegisterTrueTypeFont(t *testing.T) {
+	b := NewBuilder()
+	b.RegisterTrueTypeFont("Go", goregular.TTF)
+
+	text := "hé"
+	b.NewPage(50, 50).DrawText(text, 5, 5, TextOptions{Font: "Go", FontSize: 9}).Finish()
+	doc, err := b.Build()
+	if err != nil {
+		t.Fatalf("build doc: %v", err)
+	}
+	page := doc.Pages[0]
+	font := page.Resources.Fonts["Go"]
+	if font == nil || font.Subtype != "Type0" || font.Encoding != "Identity-H" {
+		t.Fatalf("expected embedded Type0 Identity-H font, got %+v", font)
+	}
+	if len(font.ToUnicode) == 0 {
+		t.Fatalf("expected ToUnicode mapping on font")
+	}
+	if len(page.Contents) != 1 {
+		t.Fatalf("content stream missing")
+	}
+	ops := page.Contents[0].Operations
+	if len(ops) == 0 {
+		t.Fatalf("no operations found")
+	}
+	tjOp := ops[len(ops)-2] // Tj before ET
+	if tjOp.Operator != "Tj" {
+		t.Fatalf("expected Tj operator, got %s", tjOp.Operator)
+	}
+	encoded := tjOp.Operands[0].(semantic.StringOperand).Value
+	refFont, err := fonts.LoadTrueType("Go", goregular.TTF)
+	if err != nil {
+		t.Fatalf("load reference font: %v", err)
+	}
+	expected := encodeWithMap(text, runeToCID(refFont))
+	if string(encoded) == text {
+		t.Fatalf("text was not encoded as CID string")
+	}
+	if string(encoded) != string(expected) {
+		t.Fatalf("encoded text mismatch, got %x want %x", encoded, expected)
+	}
+}
+
+func encodeWithMap(text string, cmap map[rune]int) []byte {
+	if len(cmap) == 0 {
+		return []byte(text)
+	}
+	buf := make([]byte, 0, len(text)*2)
+	for _, r := range text {
+		cid := cmap[r]
+		buf = append(buf, byte(cid>>8), byte(cid))
+	}
+	return buf
 }
 
 func TestBuilder_PageBoxesAnnotations(t *testing.T) {
