@@ -284,6 +284,11 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	if metadataRef != nil {
 		catalogDict.Set(raw.NameLiteral("Metadata"), raw.Ref(metadataRef.Num, metadataRef.Gen))
 	}
+	if doc.Info != nil && doc.Info.Title != "" {
+		vp := raw.Dict()
+		vp.Set(raw.NameLiteral("DisplayDocTitle"), raw.Bool(true))
+		catalogDict.Set(raw.NameLiteral("ViewerPreferences"), vp)
+	}
 	objects[catalogRef] = catalogDict
 
 	// Serialize

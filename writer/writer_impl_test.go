@@ -725,6 +725,52 @@ func TestWriter_IDChangesWithInfo(t *testing.T) {
 	}
 }
 
+func TestWriter_ViewerPreferences(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+		Info: &semantic.DocumentInfo{Title: "Show Title"},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	for _, obj := range rawDoc.Objects {
+		d, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		if typ, ok := d.Get(raw.NameLiteral("Type")); ok {
+			if n, ok := typ.(raw.NameObj); ok && n.Value() == "Catalog" {
+				vp, ok := d.Get(raw.NameLiteral("ViewerPreferences"))
+				if !ok {
+					t.Fatalf("viewer preferences missing")
+				}
+				vpd, ok := vp.(*raw.DictObj)
+				if !ok {
+					t.Fatalf("viewer preferences not a dict: %#v", vp)
+				}
+				ddt, ok := vpd.Get(raw.NameLiteral("DisplayDocTitle"))
+				if !ok {
+					t.Fatalf("DisplayDocTitle missing")
+				}
+				if b, ok := ddt.(raw.BoolObj); !ok || !b.Value() {
+					t.Fatalf("DisplayDocTitle not true: %#v", ddt)
+				}
+				return
+			}
+		}
+	}
+	t.Fatalf("catalog not found")
+}
+
 func TestWriter_LinkAnnotation(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{
