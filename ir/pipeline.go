@@ -22,6 +22,7 @@ type Pipeline struct {
 	semanticBuilder  semantic.Builder
 	recovery         recovery.Strategy
 	logger           observability.Logger
+	password         string
 }
 
 // NewDefault constructs a pipeline with basic components (raw parser, filter decoder, no-op security, minimal semantic builder).
@@ -43,8 +44,17 @@ func NewDefault() *Pipeline {
 	}
 }
 
+// WithPassword sets the password used to open encrypted PDFs.
+func (p *Pipeline) WithPassword(pwd string) *Pipeline {
+	p.password = pwd
+	return p
+}
+
 // Parse orchestrates Raw -> Decoded -> Semantic pipeline.
 func (p *Pipeline) Parse(ctx context.Context, r io.ReaderAt) (*semantic.Document, error) {
+	if dp, ok := p.rawParser.(*parser.DocumentParser); ok {
+		dp.SetPassword(p.password)
+	}
 	rawDoc, err := p.rawParser.Parse(ctx, r)
 	if err != nil {
 		return nil, fmt.Errorf("raw parsing failed: %w", err)

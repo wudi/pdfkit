@@ -35,6 +35,11 @@ func NewDocumentParser(cfg Config) *DocumentParser {
 	return &DocumentParser{cfg: cfg}
 }
 
+// SetPassword updates the password for decryption when parsing encrypted PDFs.
+func (p *DocumentParser) SetPassword(pwd string) {
+	p.cfg.Password = pwd
+}
+
 func (p *DocumentParser) Parse(ctx context.Context, r io.ReaderAt) (*raw.Document, error) {
 	resolver := xref.NewResolver(p.cfg.XRef)
 	table, err := resolver.Resolve(ctx, r)
