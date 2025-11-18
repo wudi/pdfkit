@@ -786,6 +786,63 @@ func TestWriter_XObjectResources(t *testing.T) {
 	}
 }
 
+func TestWriter_PatternResources(t *testing.T) {
+	patContent := []byte("0 0 m 1 0 l 1 1 l h f")
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 10, URY: 10},
+				Resources: &semantic.Resources{
+					Patterns: map[string]semantic.Pattern{
+						"P1": {
+							PatternType: 1,
+							PaintType:   1,
+							TilingType:  1,
+							BBox:        semantic.Rectangle{LLX: 0, LLY: 0, URX: 2, URY: 2},
+							XStep:       2,
+							YStep:       2,
+							Content:     patContent,
+						},
+					},
+				},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	pageHas := false
+	pagesHas := false
+	for _, obj := range rawDoc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		typ, _ := dict.Get(raw.NameLiteral("Type"))
+		if name, ok := typ.(raw.NameObj); ok && name.Value() == "Page" {
+			if hasPatternResource(rawDoc, dict, "P1") {
+				pageHas = true
+			}
+		}
+		if name, ok := typ.(raw.NameObj); ok && name.Value() == "Pages" {
+			if hasPatternResource(rawDoc, dict, "P1") {
+				pagesHas = true
+			}
+		}
+	}
+	if !pageHas || !pagesHas {
+		t.Fatalf("pattern missing (page=%v pages=%v)", pageHas, pagesHas)
+	}
+}
+
 func TestWriter_SerializeOperations(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{
@@ -1391,6 +1448,52 @@ func hasXObjectResource(doc *raw.Document, dict *raw.DictObj, name string) bool 
 	}
 	if sub, ok := s.Dict.Get(raw.NameLiteral("Subtype")); ok {
 		if n, ok := sub.(raw.NameObj); !ok || n.Value() != "Image" {
+			return false
+		}
+	}
+	return true
+}
+
+func hasPatternResource(doc *raw.Document, dict *raw.DictObj, name string) bool {
+	res, ok := dict.Get(raw.NameLiteral("Resources"))
+	if !ok {
+		return false
+	}
+	resDict, ok := res.(*raw.DictObj)
+	if !ok {
+		return false
+	}
+	pat, ok := resDict.Get(raw.NameLiteral("Pattern"))
+	if !ok {
+		return false
+	}
+	patDict, ok := pat.(*raw.DictObj)
+	if !ok {
+		return false
+	}
+	entry, ok := patDict.Get(raw.NameLiteral(name))
+	if !ok {
+		return false
+	}
+	ref, ok := entry.(raw.RefObj)
+	if !ok {
+		return false
+	}
+	stream, ok := doc.Objects[ref.Ref()]
+	if !ok {
+		return false
+	}
+	s, ok := stream.(*raw.StreamObj)
+	if !ok {
+		return false
+	}
+	if typ, ok := s.Dict.Get(raw.NameLiteral("Type")); !ok {
+		return false
+	} else if n, ok := typ.(raw.NameObj); !ok || n.Value() != "Pattern" {
+		return false
+	}
+	if pt, ok := s.Dict.Get(raw.NameLiteral("PatternType")); ok {
+		if n, ok := pt.(raw.NumberObj); !ok || n.Int() != 1 {
 			return false
 		}
 	}

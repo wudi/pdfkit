@@ -66,6 +66,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	// Fonts (shared across pages by BaseFont)
 	fontRefs := map[string]raw.ObjectRef{}
 	xobjectRefs := map[string]raw.ObjectRef{}
+	patternRefs := map[string]raw.ObjectRef{}
 	ensureFont := func(base string) raw.ObjectRef {
 		if base == "" {
 			base = "Helvetica"
@@ -112,6 +113,44 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(xo.Data))))
 		objects[ref] = raw.NewStream(dict, xo.Data)
 		xobjectRefs[key] = ref
+		return ref
+	}
+	ensurePattern := func(name string, p semantic.Pattern) raw.ObjectRef {
+		key := patternKey(name, p)
+		if ref, ok := patternRefs[key]; ok {
+			return ref
+		}
+		ref := nextRef()
+		dict := raw.Dict()
+		dict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Pattern"))
+		pt := p.PatternType
+		if pt == 0 {
+			pt = 1
+		}
+		dict.Set(raw.NameLiteral("PatternType"), raw.NumberInt(int64(pt)))
+		paint := p.PaintType
+		if paint == 0 {
+			paint = 1
+		}
+		dict.Set(raw.NameLiteral("PaintType"), raw.NumberInt(int64(paint)))
+		tiling := p.TilingType
+		if tiling == 0 {
+			tiling = 1
+		}
+		dict.Set(raw.NameLiteral("TilingType"), raw.NumberInt(int64(tiling)))
+		if cropSet(p.BBox) {
+			dict.Set(raw.NameLiteral("BBox"), rectArray(p.BBox))
+		}
+		if p.XStep > 0 {
+			dict.Set(raw.NameLiteral("XStep"), raw.NumberFloat(p.XStep))
+		}
+		if p.YStep > 0 {
+			dict.Set(raw.NameLiteral("YStep"), raw.NumberFloat(p.YStep))
+		}
+		content := p.Content
+		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(content))))
+		objects[ref] = raw.NewStream(dict, content)
+		patternRefs[key] = ref
 		return ref
 	}
 
@@ -201,6 +240,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	unionExtGStates := raw.Dict()
 	unionColorSpaces := raw.Dict()
 	unionXObjects := raw.Dict()
+	unionPatterns := raw.Dict()
 	procSet := raw.NewArray(raw.NameLiteral("PDF"), raw.NameLiteral("Text"))
 	for i, p := range doc.Pages {
 		ref := nextRef()
@@ -299,6 +339,19 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 				resDict.Set(raw.NameLiteral("XObject"), xDict)
 			}
 		}
+		if p.Resources != nil && len(p.Resources.Patterns) > 0 {
+			patDict := raw.Dict()
+			for name, pat := range p.Resources.Patterns {
+				pRef := ensurePattern(name, pat)
+				patDict.Set(raw.NameLiteral(name), raw.Ref(pRef.Num, pRef.Gen))
+				if _, ok := unionPatterns.KV[name]; !ok {
+					unionPatterns.Set(raw.NameLiteral(name), raw.Ref(pRef.Num, pRef.Gen))
+				}
+			}
+			if patDict.Len() > 0 {
+				resDict.Set(raw.NameLiteral("Pattern"), patDict)
+			}
+		}
 		if procSet.Len() > 0 {
 			resDict.Set(raw.NameLiteral("ProcSet"), procSet)
 		}
@@ -366,6 +419,9 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		}
 		if unionXObjects.Len() > 0 {
 			pagesRes.Set(raw.NameLiteral("XObject"), unionXObjects)
+		}
+		if unionPatterns.Len() > 0 {
+			pagesRes.Set(raw.NameLiteral("Pattern"), unionPatterns)
 		}
 		if procSet.Len() > 0 {
 			pagesRes.Set(raw.NameLiteral("ProcSet"), procSet)
@@ -859,6 +915,15 @@ func xoKey(name string, xo semantic.XObject) string {
 	h.Write([]byte(fmt.Sprintf("%d-%d-%d", xo.Width, xo.Height, xo.BitsPerComponent)))
 	h.Write([]byte(xo.ColorSpace.Name))
 	h.Write(xo.Data)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func patternKey(name string, p semantic.Pattern) string {
+	h := sha256.New()
+	h.Write([]byte(name))
+	h.Write([]byte(fmt.Sprintf("%d-%d-%d", p.PatternType, p.PaintType, p.TilingType)))
+	h.Write([]byte(fmt.Sprintf("%f-%f-%f-%f-%f-%f", p.BBox.LLX, p.BBox.LLY, p.BBox.URX, p.BBox.URY, p.XStep, p.YStep)))
+	h.Write(p.Content)
 	return hex.EncodeToString(h.Sum(nil))
 }
 

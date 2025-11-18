@@ -91,6 +91,7 @@ type Resources struct {
 	ExtGStates  map[string]ExtGState
 	ColorSpaces map[string]ColorSpace
 	XObjects    map[string]XObject
+	Patterns    map[string]Pattern
 }
 
 // Font represents a font resource.
@@ -119,6 +120,17 @@ type XObject struct {
 	ColorSpace
 	BitsPerComponent int
 	Data             []byte
+}
+
+// Pattern describes a simple tiling pattern stream.
+type Pattern struct {
+	PatternType int // defaults to 1 (tiling)
+	PaintType   int // defaults to 1 (colored)
+	TilingType  int // defaults to 1
+	BBox        Rectangle
+	XStep       float64
+	YStep       float64
+	Content     []byte
 }
 
 // Rectangle represents a PDF rectangle.
