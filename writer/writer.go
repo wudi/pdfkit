@@ -3,6 +3,7 @@ package writer
 import (
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
+	"pdflib/pdfa"
 )
 
 type PDFVersion string
@@ -11,11 +12,10 @@ const (
 	PDF17 PDFVersion = "1.7"
 )
 
-type PDFALevel int
+// PDF/A level aliases point to the shared pdfa.Level type.
+type PDFALevel = pdfa.Level
 
-const (
-	PDFA1B PDFALevel = iota
-)
+const PDFA1B = pdfa.PDFA1B
 
 type ContentFilter int
 
@@ -40,7 +40,7 @@ type Config struct {
 	XRefStreams   bool
 	ObjectStreams bool
 	SubsetFonts   bool
-	PDFALevel     PDFALevel
+	PDFALevel     pdfa.Level
 }
 
 type Writer interface {

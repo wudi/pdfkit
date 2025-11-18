@@ -19,8 +19,11 @@ const (
 	EventDocumentStart EventType = iota
 	EventDocumentEnd
 	EventPageStart
-	EventContentStream
 	EventPageEnd
+	EventContentOperation
+	EventResourceRef
+	EventAnnotation
+	EventMetadata
 )
 
 type Event interface{ Type() EventType }
@@ -39,35 +42,55 @@ func (DocumentEndEvent) Type() EventType { return EventDocumentEnd }
 // PageStartEvent marks the beginning of a page and carries basic geometry.
 type PageStartEvent struct {
 	Index    int
-	MediaBox [4]float64
+	MediaBox semantic.Rectangle
 }
 
 func (PageStartEvent) Type() EventType { return EventPageStart }
-
-// ContentStreamEvent carries decoded content operations and resources for a page.
-type ContentStreamEvent struct {
-	PageIndex    int
-	Operations   []semantic.Operation
-	Resources    *semantic.Resources
-	UsedFonts    []string
-	UsedXObjects []string
-	UsedPatterns []string
-	UsedShadings []string
-	InlineImages []InlineImage
-}
-
-// InlineImage captures inline image dictionary and data from a content stream.
-type InlineImage struct {
-	Dict semantic.DictOperand
-	Data []byte
-}
-
-func (ContentStreamEvent) Type() EventType { return EventContentStream }
 
 // PageEndEvent marks the end of a page.
 type PageEndEvent struct{ Index int }
 
 func (PageEndEvent) Type() EventType { return EventPageEnd }
+
+// ContentOperationEvent emits a single decoded content operation.
+type ContentOperationEvent struct {
+	PageIndex int
+	Operation semantic.Operation
+}
+
+func (ContentOperationEvent) Type() EventType { return EventContentOperation }
+
+// ResourceRefEvent reports a resource reference encountered on a page.
+type ResourceRefEvent struct {
+	PageIndex int
+	Kind      string
+	Name      string
+}
+
+func (ResourceRefEvent) Type() EventType { return EventResourceRef }
+
+// AnnotationEvent reports an annotation present on a page.
+type AnnotationEvent struct {
+	PageIndex int
+	Ref       raw.ObjectRef
+	Subtype   string
+}
+
+func (AnnotationEvent) Type() EventType { return EventAnnotation }
+
+// MetadataEvent emits document-level metadata.
+type MetadataEvent struct {
+	Info raw.DocumentMetadata
+}
+
+func (MetadataEvent) Type() EventType { return EventMetadata }
+
+// InlineImage represents BI/ID/EI inline image segments parsed from content streams.
+// It is retained for potential consumers even though no dedicated event type is emitted.
+type InlineImage struct {
+	Dict semantic.DictOperand
+	Data []byte
+}
 
 type DocumentStream interface {
 	Events() <-chan Event
@@ -136,21 +159,14 @@ func (p *parserImpl) Stream(ctx Context, r ReaderAt, cfg StreamConfig) (Document
 		}
 
 		start := DocumentStartEvent{Version: rawDoc.Version, Encrypted: rawDoc.Encrypted}
-		select {
-		case events <- start:
-		case <-ctx.Done():
-			return
-		case <-cctx.Done():
+		if sendEvent(ctx, events, start) {
 			return
 		}
+		emitMetadata(ctx, rawDoc, events)
 
 		emitPages(ctx, rawDoc, events)
 
-		select {
-		case events <- DocumentEndEvent{}:
-		case <-ctx.Done():
-		case <-cctx.Done():
-		}
+		sendEvent(ctx, events, DocumentEndEvent{})
 	}()
 
 	return ds, nil
@@ -196,7 +212,13 @@ func emitPages(ctx Context, doc *raw.Document, events chan<- Event) {
 			return
 		default:
 		}
-		events <- PageStartEvent{Index: i, MediaBox: page.mediaBox}
+		pageBox := semantic.Rectangle{LLX: page.mediaBox[0], LLY: page.mediaBox[1], URX: page.mediaBox[2], URY: page.mediaBox[3]}
+		if sendEvent(ctx, events, PageStartEvent{Index: i, MediaBox: pageBox}) {
+			return
+		}
+		if res := resourcesFromDict(doc, page.resources); res != nil {
+			emitResourceRefs(ctx, i, res, events)
+		}
 		for _, content := range page.contents {
 			select {
 			case <-ctx.Done():
@@ -204,27 +226,25 @@ func emitPages(ctx Context, doc *raw.Document, events chan<- Event) {
 			default:
 			}
 			ops := parseOperations(content.data)
-			res := resourcesFromDict(doc, page.resources)
-			inline := extractInlineImages(content.data)
 			usage := collectUsage(ops)
-			events <- ContentStreamEvent{
-				PageIndex:    i,
-				Operations:   ops,
-				Resources:    res,
-				InlineImages: inline,
-				UsedFonts:    usage.fonts,
-				UsedXObjects: usage.xobjects,
-				UsedPatterns: usage.patterns,
-				UsedShadings: usage.shadings,
+			emitResourceUsage(ctx, i, usage, events)
+			for _, op := range ops {
+				if sendEvent(ctx, events, ContentOperationEvent{PageIndex: i, Operation: op}) {
+					return
+				}
 			}
 		}
-		events <- PageEndEvent{Index: i}
+		emitAnnotations(ctx, doc, page.annots, i, events)
+		if sendEvent(ctx, events, PageEndEvent{Index: i}) {
+			return
+		}
 	}
 }
 
 type pageInfo struct {
 	mediaBox  [4]float64
 	resources raw.Object
+	annots    raw.Object
 	contents  []decodedStream
 }
 
@@ -241,8 +261,12 @@ func walkPages(doc *raw.Document, ref raw.ObjectRef, dict raw.Dictionary, inheri
 		if res, ok := dict.Get(raw.NameLiteral("Resources")); ok {
 			resources = res
 		}
+		var annots raw.Object
+		if a, ok := dict.Get(raw.NameLiteral("Annots")); ok {
+			annots = a
+		}
 		contents := collectContents(doc, dict)
-		*pages = append(*pages, pageInfo{mediaBox: mbox, contents: contents, resources: resources})
+		*pages = append(*pages, pageInfo{mediaBox: mbox, contents: contents, resources: resources, annots: annots})
 		return
 	}
 	if name, ok := typ.(raw.NameObj); !ok || name.Value() != "Pages" {
@@ -310,6 +334,10 @@ func decodeStream(stream *raw.StreamObj) []byte {
 			filters.NewRunLengthDecoder(),
 			filters.NewASCII85Decoder(),
 			filters.NewASCIIHexDecoder(),
+			filters.NewDCTDecoder(),
+			filters.NewJPXDecoder(),
+			filters.NewCCITTFaxDecoder(),
+			filters.NewJBIG2Decoder(),
 		},
 		filters.Limits{},
 	)
@@ -640,6 +668,128 @@ func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
 		}
 	}
 	return res
+}
+
+func emitResourceRefs(ctx Context, pageIndex int, res *semantic.Resources, events chan<- Event) {
+	if res == nil {
+		return
+	}
+	emit := func(kind, name string) bool {
+		if name == "" {
+			return false
+		}
+		return sendEvent(ctx, events, ResourceRefEvent{PageIndex: pageIndex, Kind: kind, Name: name})
+	}
+	for name := range res.Fonts {
+		if emit("Font", name) {
+			return
+		}
+	}
+	for name := range res.XObjects {
+		if emit("XObject", name) {
+			return
+		}
+	}
+	for name := range res.Patterns {
+		if emit("Pattern", name) {
+			return
+		}
+	}
+	for name := range res.Shadings {
+		if emit("Shading", name) {
+			return
+		}
+	}
+	for name := range res.ExtGStates {
+		if emit("ExtGState", name) {
+			return
+		}
+	}
+	for name := range res.ColorSpaces {
+		if emit("ColorSpace", name) {
+			return
+		}
+	}
+}
+
+func emitResourceUsage(ctx Context, pageIndex int, usage usage, events chan<- Event) {
+	emitList := func(kind string, names []string) bool {
+		seen := make(map[string]struct{})
+		for _, n := range names {
+			if n == "" {
+				continue
+			}
+			if _, ok := seen[n]; ok {
+				continue
+			}
+			seen[n] = struct{}{}
+			if sendEvent(ctx, events, ResourceRefEvent{PageIndex: pageIndex, Kind: kind, Name: n}) {
+				return true
+			}
+		}
+		return false
+	}
+	if emitList("Font", usage.fonts) {
+		return
+	}
+	if emitList("XObject", usage.xobjects) {
+		return
+	}
+	if emitList("Pattern", usage.patterns) {
+		return
+	}
+	emitList("Shading", usage.shadings)
+}
+
+func emitAnnotations(ctx Context, doc *raw.Document, annots raw.Object, pageIndex int, events chan<- Event) {
+	var list []raw.Object
+	switch v := annots.(type) {
+	case *raw.ArrayObj:
+		list = v.Items
+	case raw.RefObj, *raw.DictObj:
+		list = []raw.Object{v}
+	default:
+		return
+	}
+	for _, it := range list {
+		ref, dict := resolveDict(doc, it)
+		if dict == nil {
+			continue
+		}
+		subtype := ""
+		if st, ok := dict.Get(raw.NameLiteral("Subtype")); ok {
+			if n, ok := st.(raw.NameObj); ok {
+				subtype = n.Value()
+			}
+		}
+		if sendEvent(ctx, events, AnnotationEvent{PageIndex: pageIndex, Ref: ref, Subtype: subtype}) {
+			return
+		}
+	}
+}
+
+func emitMetadata(ctx Context, doc *raw.Document, events chan<- Event) {
+	if doc == nil {
+		return
+	}
+	md := doc.Metadata
+	if md.Producer == "" && md.Creator == "" && md.Title == "" && md.Author == "" && md.Subject == "" && len(md.Keywords) == 0 {
+		return
+	}
+	sendEvent(ctx, events, MetadataEvent{Info: md})
+}
+
+func sendEvent(ctx Context, events chan<- Event, ev Event) bool {
+	if ctx.Done() == nil {
+		events <- ev
+		return false
+	}
+	select {
+	case <-ctx.Done():
+		return true
+	case events <- ev:
+		return false
+	}
 }
 
 // splitTokens is a small, naive tokenizer for content streams.

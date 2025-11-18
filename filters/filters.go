@@ -8,9 +8,19 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/jpeg"
+	_ "image/png"
 	"io"
 	"math"
+	"os"
+	"os/exec"
 	"time"
+
+	_ "golang.org/x/image/bmp"
+	"golang.org/x/image/ccitt"
+	_ "golang.org/x/image/webp"
 
 	"pdflib/ir/raw"
 )
@@ -19,6 +29,11 @@ type Decoder interface {
 	Name() string
 	Decode(ctx context.Context, input []byte, params raw.Dictionary) ([]byte, error)
 }
+
+// UnsupportedError reports a filter that is recognized but not implemented.
+type UnsupportedError struct{ Filter string }
+
+func (e UnsupportedError) Error() string { return fmt.Sprintf("%s filter not supported", e.Filter) }
 
 type Pipeline struct {
 	decoders []Decoder
@@ -58,7 +73,15 @@ func (p *Pipeline) Decode(ctx context.Context, input []byte, filterNames []strin
 		if i < len(params) {
 			param = params[i]
 		}
-		out, err := dec.Decode(ctx, data, param)
+		decodeCtx := ctx
+		var cancel context.CancelFunc
+		if p.limits.MaxDecodeTime > 0 {
+			decodeCtx, cancel = context.WithTimeout(ctx, p.limits.MaxDecodeTime)
+		}
+		out, err := dec.Decode(decodeCtx, data, param)
+		if cancel != nil {
+			cancel()
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -188,6 +211,205 @@ func (cryptDecoder) Decode(ctx context.Context, in []byte, params raw.Dictionary
 	return in, nil
 }
 func NewCryptDecoder() Decoder { return cryptDecoder{} }
+
+type dctDecoder struct{}
+
+func (dctDecoder) Name() string { return "DCTDecode" }
+func (dctDecoder) Decode(ctx context.Context, in []byte, params raw.Dictionary) ([]byte, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+	img, err := jpeg.Decode(bytes.NewReader(in))
+	if err != nil {
+		return nil, err
+	}
+	b := img.Bounds()
+	// Normalize to NRGBA pixel data.
+	rgba := image.NewNRGBA(b)
+	draw.Draw(rgba, b, img, b.Min, draw.Src)
+	return rgba.Pix, nil
+}
+func NewDCTDecoder() Decoder { return dctDecoder{} }
+
+type jpxDecoder struct{}
+
+func (jpxDecoder) Name() string { return "JPXDecode" }
+func (jpxDecoder) Decode(ctx context.Context, in []byte, params raw.Dictionary) ([]byte, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+	if pix, err := decodeImageToNRGBA(in); err == nil {
+		return pix, nil
+	}
+	if pix, err := decodeJPXExternal(ctx, in); err == nil {
+		return pix, nil
+	}
+	return nil, UnsupportedError{Filter: "JPXDecode"}
+}
+func NewJPXDecoder() Decoder { return jpxDecoder{} }
+
+type ccittFaxDecoder struct{}
+
+func (ccittFaxDecoder) Name() string { return "CCITTFaxDecode" }
+func (ccittFaxDecoder) Decode(ctx context.Context, in []byte, params raw.Dictionary) ([]byte, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+	if params == nil {
+		return nil, errors.New("CCITT params required")
+	}
+	width := int64(0)
+	height := int64(ccitt.AutoDetectHeight)
+	if v, ok := params.Get(raw.NameObj{Val: "Columns"}); ok {
+		if n, ok := v.(raw.NumberObj); ok {
+			width = n.Int()
+		}
+	}
+	if width <= 0 {
+		return nil, errors.New("CCITT Columns must be >0")
+	}
+	if v, ok := params.Get(raw.NameObj{Val: "Rows"}); ok {
+		if n, ok := v.(raw.NumberObj); ok {
+			height = n.Int()
+		}
+	}
+	k := int64(0)
+	if v, ok := params.Get(raw.NameObj{Val: "K"}); ok {
+		if n, ok := v.(raw.NumberObj); ok {
+			k = n.Int()
+		}
+	}
+	subFmt := ccitt.Group3
+	if k < 0 {
+		subFmt = ccitt.Group4
+	}
+	opts := &ccitt.Options{}
+	if v, ok := params.Get(raw.NameObj{Val: "EncodedByteAlign"}); ok {
+		if b, ok := v.(raw.BoolObj); ok && b.Value() {
+			opts.Align = true
+		}
+	}
+	if v, ok := params.Get(raw.NameObj{Val: "BlackIs1"}); ok {
+		if b, ok := v.(raw.BoolObj); ok && b.Value() {
+			opts.Invert = true
+		}
+	}
+	gray := image.NewGray(image.Rect(0, 0, int(width), int(height)))
+	if err := ccitt.DecodeIntoGray(gray, bytes.NewReader(in), ccitt.MSB, subFmt, opts); err != nil {
+		return nil, err
+	}
+	return gray.Pix, nil
+}
+func NewCCITTFaxDecoder() Decoder { return ccittFaxDecoder{} }
+
+type jbig2Decoder struct{}
+
+func (jbig2Decoder) Name() string { return "JBIG2Decode" }
+func (jbig2Decoder) Decode(ctx context.Context, in []byte, params raw.Dictionary) ([]byte, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+	if pix, err := decodeImageToNRGBA(in); err == nil {
+		return pix, nil
+	}
+	if pix, err := decodeJBIG2External(ctx, in); err == nil {
+		return pix, nil
+	}
+	return nil, UnsupportedError{Filter: "JBIG2Decode"}
+}
+func NewJBIG2Decoder() Decoder { return jbig2Decoder{} }
+
+// decodeImageToNRGBA attempts to decode arbitrary encoded image bytes into NRGBA pixels.
+func decodeImageToNRGBA(data []byte) ([]byte, error) {
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	b := img.Bounds()
+	rgba := image.NewNRGBA(b)
+	draw.Draw(rgba, b, img, b.Min, draw.Src)
+	return rgba.Pix, nil
+}
+
+// decodeJPXExternal calls opj_decompress (OpenJPEG) when available to decode JPX streams.
+func decodeJPXExternal(ctx context.Context, data []byte) ([]byte, error) {
+	tool, err := exec.LookPath("opj_decompress")
+	if err != nil {
+		return nil, err
+	}
+	input, err := os.CreateTemp("", "pdflib-jpx-*.jpx")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(input.Name())
+	if _, err := input.Write(data); err != nil {
+		input.Close()
+		return nil, err
+	}
+	input.Close()
+
+	output, err := os.CreateTemp("", "pdflib-jpx-out-*.png")
+	if err != nil {
+		return nil, err
+	}
+	outName := output.Name()
+	output.Close()
+	defer os.Remove(outName)
+
+	cmd := exec.CommandContext(ctx, tool, "-i", input.Name(), "-o", outName)
+	if runErr := cmd.Run(); runErr != nil {
+		return nil, runErr
+	}
+	outBytes, err := os.ReadFile(outName)
+	if err != nil {
+		return nil, err
+	}
+	return decodeImageToNRGBA(outBytes)
+}
+
+// decodeJBIG2External calls jbig2dec when available to decode JBIG2 streams.
+func decodeJBIG2External(ctx context.Context, data []byte) ([]byte, error) {
+	tool, err := exec.LookPath("jbig2dec")
+	if err != nil {
+		return nil, err
+	}
+	input, err := os.CreateTemp("", "pdflib-jb2-*.jb2")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(input.Name())
+	if _, err := input.Write(data); err != nil {
+		input.Close()
+		return nil, err
+	}
+	input.Close()
+
+	output, err := os.CreateTemp("", "pdflib-jb2-out-*.png")
+	if err != nil {
+		return nil, err
+	}
+	outName := output.Name()
+	output.Close()
+	defer os.Remove(outName)
+
+	cmd := exec.CommandContext(ctx, tool, "-o", outName, input.Name())
+	if runErr := cmd.Run(); runErr != nil {
+		return nil, runErr
+	}
+	outBytes, err := os.ReadFile(outName)
+	if err != nil {
+		return nil, err
+	}
+	return decodeImageToNRGBA(outBytes)
+}
 
 // Flate, LZW left intentionally minimal; ASCII decoders above, Flate below.
 

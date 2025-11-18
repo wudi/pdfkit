@@ -280,7 +280,7 @@ type DocumentMetadata struct {
 package decoded
 
 import (
-    "github.com/yourorg/pdflib/ir/raw"
+    "pdflib/ir/raw"
 )
 
 // Object wraps a raw object with decoded stream data
@@ -317,8 +317,8 @@ type Decoder interface {
 package semantic
 
 import (
-    "github.com/yourorg/pdflib/ir/decoded"
-    "github.com/yourorg/pdflib/ir/raw"
+    "pdflib/ir/decoded"
+    "pdflib/ir/raw"
 )
 
 // Document is the semantic representation of a PDF
@@ -485,9 +485,9 @@ type Builder interface {
 package ir
 
 import (
-    "github.com/yourorg/pdflib/ir/raw"
-    "github.com/yourorg/pdflib/ir/decoded"
-    "github.com/yourorg/pdflib/ir/semantic"
+    "pdflib/ir/raw"
+    "pdflib/ir/decoded"
+    "pdflib/ir/semantic"
 )
 
 // Pipeline orchestrates IR transformations
@@ -2263,8 +2263,8 @@ package main
 
 import (
     "context"
-    "github.com/yourorg/pdflib/parser"
-    "github.com/yourorg/pdflib/ir/semantic"
+    "pdflib/parser"
+    "pdflib/ir/semantic"
 )
 
 func main() {
@@ -2307,8 +2307,8 @@ func extractText(page *semantic.Page) string {
 package main
 
 import (
-    "github.com/yourorg/pdflib/builder"
-    "github.com/yourorg/pdflib/writer"
+    "pdflib/builder"
+    "pdflib/writer"
 )
 
 func main() {
@@ -2348,8 +2348,8 @@ func main() {
 package main
 
 import (
-    "github.com/yourorg/pdflib/fonts"
-    "github.com/yourorg/pdflib/parser"
+    "pdflib/fonts"
+    "pdflib/parser"
 )
 
 func main() {
@@ -2382,9 +2382,9 @@ func main() {
 package main
 
 import (
-    "github.com/yourorg/pdflib/pdfa"
-    "github.com/yourorg/pdflib/parser"
-    "github.com/yourorg/pdflib/writer"
+    "pdflib/pdfa"
+    "pdflib/parser"
+    "pdflib/writer"
 )
 
 func main() {

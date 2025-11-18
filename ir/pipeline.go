@@ -33,6 +33,10 @@ func NewDefault() *Pipeline {
 			filters.NewASCII85Decoder(),
 			filters.NewASCIIHexDecoder(),
 			filters.NewCryptDecoder(),
+			filters.NewDCTDecoder(),
+			filters.NewJPXDecoder(),
+			filters.NewCCITTFaxDecoder(),
+			filters.NewJBIG2Decoder(),
 		},
 		filters.Limits{},
 	)

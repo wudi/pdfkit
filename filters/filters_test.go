@@ -5,6 +5,13 @@ import (
 	"compress/flate"
 	"compress/lzw"
 	"context"
+	"errors"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/jpeg"
+	"image/png"
+	"os"
 	"testing"
 
 	"pdflib/ir/raw"
@@ -125,4 +132,122 @@ func TestASCIIHexDecode(t *testing.T) {
 	if string(out) != "hello world" {
 		t.Fatalf("unexpected output: %q", out)
 	}
+}
+
+func TestDCTDecode(t *testing.T) {
+	jpegData := sampleJPEG(t)
+	dec := NewDCTDecoder()
+	out, err := dec.Decode(context.Background(), jpegData, nil)
+	if err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if len(out) != 2*1*4 {
+		t.Fatalf("unexpected pixel size: %d", len(out))
+	}
+	// Ensure the decoded pixels are non-zero and differ, indicating decode happened.
+	if out[0] == 0 && out[1] == 0 && out[2] == 0 {
+		t.Fatalf("first pixel unexpectedly zero: %v", out[:4])
+	}
+	if bytes.Equal(out[:4], out[4:8]) {
+		t.Fatalf("expected differing pixels, got %v and %v", out[:4], out[4:8])
+	}
+}
+
+func TestPipelineDecodeDCT(t *testing.T) {
+	jpegData := sampleJPEG(t)
+	p := NewPipeline([]Decoder{NewDCTDecoder()}, Limits{})
+	out, err := p.Decode(context.Background(), jpegData, []string{"DCTDecode"}, nil)
+	if err != nil {
+		t.Fatalf("pipeline decode error: %v", err)
+	}
+	if len(out) == 0 {
+		t.Fatalf("pipeline decode produced empty data")
+	}
+}
+
+func TestCCITTFaxDecode(t *testing.T) {
+	data, err := os.ReadFile("testdata/bw-gopher.ccitt_group3")
+	if err != nil {
+		t.Fatalf("read ccitt fixture: %v", err)
+	}
+	pngFile, err := os.Open("testdata/bw-gopher.png")
+	if err != nil {
+		t.Fatalf("open png: %v", err)
+	}
+	defer pngFile.Close()
+	wantImg, err := png.Decode(pngFile)
+	if err != nil {
+		t.Fatalf("decode png: %v", err)
+	}
+	b := wantImg.Bounds()
+	params := raw.Dict()
+	params.Set(raw.NameObj{Val: "Columns"}, raw.NumberInt(int64(b.Dx())))
+	params.Set(raw.NameObj{Val: "Rows"}, raw.NumberInt(int64(b.Dy())))
+	params.Set(raw.NameObj{Val: "K"}, raw.NumberInt(0)) // Group3
+	dec := NewCCITTFaxDecoder()
+	out, err := dec.Decode(context.Background(), data, params)
+	if err != nil {
+		t.Fatalf("decode ccitt: %v", err)
+	}
+	if len(out) != b.Dx()*b.Dy() {
+		t.Fatalf("unexpected decoded size: %d", len(out))
+	}
+	wantGray := toGray(wantImg)
+	if len(wantGray.Pix) != len(out) {
+		t.Fatalf("unexpected want pix size: %d", len(wantGray.Pix))
+	}
+	for i := range wantGray.Pix {
+		if wantGray.Pix[i] != out[i] {
+			t.Fatalf("pixel %d mismatch: got %d want %d", i, out[i], wantGray.Pix[i])
+		}
+	}
+}
+
+func TestUnsupportedFilters(t *testing.T) {
+	fp := NewPipeline([]Decoder{NewJPXDecoder()}, Limits{})
+	_, err := fp.Decode(context.Background(), []byte{0x00}, []string{"JPXDecode"}, nil)
+	var ue UnsupportedError
+	if err == nil || !errors.As(err, &ue) || ue.Filter != "JPXDecode" {
+		t.Fatalf("expected unsupported error, got %v", err)
+	}
+}
+
+func TestJPXMislabeledPNG(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	img.Set(0, 0, color.NRGBA{R: 10, G: 20, B: 30, A: 255})
+	img.Set(1, 1, color.NRGBA{R: 200, G: 150, B: 100, A: 255})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	dec := NewJPXDecoder()
+	out, err := dec.Decode(context.Background(), buf.Bytes(), nil)
+	if err != nil {
+		t.Fatalf("decode mislabeled png: %v", err)
+	}
+	if len(out) != 2*2*4 {
+		t.Fatalf("unexpected size from jpx decoder: %d", len(out))
+	}
+}
+
+func toGray(img image.Image) *image.Gray {
+	if g, ok := img.(*image.Gray); ok {
+		return g
+	}
+	b := img.Bounds()
+	g := image.NewGray(b)
+	draw.Draw(g, b, img, b.Min, draw.Src)
+	return g
+}
+
+func sampleJPEG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 1))
+	img.Set(0, 0, color.NRGBA{R: 255, G: 0, B: 0, A: 255})
+	img.Set(1, 0, color.NRGBA{R: 0, G: 255, B: 0, A: 255})
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatalf("encode jpeg: %v", err)
+	}
+	return buf.Bytes()
 }

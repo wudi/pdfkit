@@ -49,3 +49,14 @@ Status key: Not started / In progress / Done.
 
 - [x] Remove observability references from design docs: scrub observability/logging mention from design.md cross-cutting concerns so the docs match the current codebase with observability removed. Status: Done (cross-cutting concerns updated to focus on context, security limits, and error recovery).
 - [x] Honor write cancellation: make the writer respond to context cancellation signals during document serialization, returning an error when the provided context is done to align with the design’s context/cancellation guidance. Status: Done (writer checks ctx.Done() at build, per-page, encryption, and serialization phases and aborts early with error).
+
+# New alignment and coverage tasks (2024-XX-XX)
+
+Status key: Not started / In progress / Done.
+
+- [x] Unify PDF/A level typing: consolidate writer and pdfa level enums into a shared type with clear conversions so config/enforcer interoperate without clashes. Status: Done (pdfa.Level is the canonical type; writer aliases to it for config/enforcer interoperability).
+- [x] Fix module path references: update design examples/imports to use the actual module path `pdflib/...` to avoid broken code snippets. Status: Done (design examples/imports now reflect the module path).
+- [ ] Complete filter coverage: add DCT, JPX, CCITT Fax, and JBIG2 decoders to the filter pipeline with limits/timeouts and tests/fixtures. Status: In progress (DCT decode implemented; CCITT Fax decodes via golang.org/x/image/ccitt with fixture test; JPX/JBIG2 attempt generic decode and optional external tools (opj_decompress/jbig2dec) before failing with explicit UnsupportedError; pipeline enforces decode timeouts).
+- [ ] Full JPX/JBIG2 native decoding: evaluate and integrate a maintained Go or cgo-backed decoder (e.g., OpenJPEG or libjbig2dec wrappers) to avoid external tool dependency and handle alpha, palettes, and symbol dictionaries with deterministic limits/tests. Status: Not started.
+- [x] Expand streaming events: emit per-operator/resource/annotation events in streaming.Parser to match the design, with backpressure handling tests. Status: Done (streaming parser now emits ContentOperation/ResourceRef/Annotation/Metadata events with context-aware delivery; test updated to assert per-operator flow).
+- [x] Add integration tests: cover image decoding via new filters, PDF/A enforce/validate round-trips, and streaming per-operator consumption/backpressure. Status: Done (pipeline DCT decode test added, PDF/A level/enforcer interoperability test added, and streaming backpressure/per-operator test added).

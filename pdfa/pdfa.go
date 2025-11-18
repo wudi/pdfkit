@@ -2,19 +2,39 @@ package pdfa
 
 import "pdflib/ir/semantic"
 
-type PDFALevel int
-const ( PDFA1B PDFALevel = iota )
+// Level represents a PDF/A conformance level shared across writer and enforcer.
+type Level int
 
-type Violation struct { Code, Description, Location string }
+const (
+	PDFA1B Level = iota
+)
 
-type ComplianceReport struct { Compliant bool; Level PDFALevel; Violations []Violation }
+// PDFALevel is kept for compatibility; use Level instead.
+type PDFALevel = Level
 
-type Enforcer interface { Enforce(ctx Context, doc *semantic.Document, level PDFALevel) error; Validate(ctx Context, doc *semantic.Document, level PDFALevel) (*ComplianceReport, error) }
+type Violation struct{ Code, Description, Location string }
+
+type ComplianceReport struct {
+	Compliant  bool
+	Level      Level
+	Violations []Violation
+}
+
+type Enforcer interface {
+	Enforce(ctx Context, doc *semantic.Document, level Level) error
+	Validate(ctx Context, doc *semantic.Document, level Level) (*ComplianceReport, error)
+}
 
 type enforcerImpl struct{}
 
 func NewEnforcer() Enforcer { return &enforcerImpl{} }
-func (e *enforcerImpl) Enforce(ctx Context, doc *semantic.Document, level PDFALevel) error { return nil }
-func (e *enforcerImpl) Validate(ctx Context, doc *semantic.Document, level PDFALevel) (*ComplianceReport, error) { return &ComplianceReport{Compliant:true, Level:level}, nil }
+
+func (e *enforcerImpl) Enforce(ctx Context, doc *semantic.Document, level Level) error {
+	return nil
+}
+
+func (e *enforcerImpl) Validate(ctx Context, doc *semantic.Document, level Level) (*ComplianceReport, error) {
+	return &ComplianceReport{Compliant: true, Level: level}, nil
+}
 
 type Context interface{ Done() <-chan struct{} }
