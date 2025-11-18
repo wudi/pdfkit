@@ -569,6 +569,8 @@ func TestWriter_TrimBox(t *testing.T) {
 				MediaBox: semantic.Rectangle{URX: 200, URY: 200},
 				CropBox:  semantic.Rectangle{URX: 180, URY: 180},
 				TrimBox:  semantic.Rectangle{LLX: 10, LLY: 20, URX: 150, URY: 160},
+				BleedBox: semantic.Rectangle{LLX: 5, LLY: 5, URX: 170, URY: 170},
+				ArtBox:   semantic.Rectangle{LLX: 15, LLY: 15, URX: 140, URY: 140},
 				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
 			},
 		},
@@ -584,6 +586,8 @@ func TestWriter_TrimBox(t *testing.T) {
 		t.Fatalf("parse raw: %v", err)
 	}
 	foundTrim := false
+	foundBleed := false
+	foundArt := false
 	for _, obj := range rawDoc.Objects {
 		dict, ok := obj.(*raw.DictObj)
 		if !ok {
@@ -598,9 +602,19 @@ func TestWriter_TrimBox(t *testing.T) {
 				foundTrim = true
 			}
 		}
+		if bleed, ok := dict.Get(raw.NameLiteral("BleedBox")); ok {
+			if arr, ok := bleed.(*raw.ArrayObj); ok && arr.Len() == 4 {
+				foundBleed = true
+			}
+		}
+		if art, ok := dict.Get(raw.NameLiteral("ArtBox")); ok {
+			if arr, ok := art.(*raw.ArrayObj); ok && arr.Len() == 4 {
+				foundArt = true
+			}
+		}
 	}
-	if !foundTrim {
-		t.Fatalf("TrimBox missing from page")
+	if !foundTrim || !foundBleed || !foundArt {
+		t.Fatalf("boxes missing (trim=%v, bleed=%v, art=%v)", foundTrim, foundBleed, foundArt)
 	}
 }
 

@@ -29,6 +29,8 @@ type Page struct {
 	MediaBox  Rectangle
 	CropBox   Rectangle
 	TrimBox   Rectangle
+	BleedBox  Rectangle
+	ArtBox    Rectangle
 	Rotate    int // degrees: 0/90/180/270
 	Resources *Resources
 	Contents  []ContentStream

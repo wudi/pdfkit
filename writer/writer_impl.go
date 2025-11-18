@@ -180,6 +180,12 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		if cropSet(p.TrimBox) {
 			pageDict.Set(raw.NameLiteral("TrimBox"), rectArray(p.TrimBox))
 		}
+		if cropSet(p.BleedBox) {
+			pageDict.Set(raw.NameLiteral("BleedBox"), rectArray(p.BleedBox))
+		}
+		if cropSet(p.ArtBox) {
+			pageDict.Set(raw.NameLiteral("ArtBox"), rectArray(p.ArtBox))
+		}
 		if rot := normalizeRotation(p.Rotate); rot != 0 {
 			pageDict.Set(raw.NameLiteral("Rotate"), raw.NumberInt(int64(rot)))
 		}
