@@ -227,7 +227,16 @@ type Annotation struct {
 type OutlineItem struct {
 	Title     string
 	PageIndex int
+	Dest      *OutlineDestination
 	Children  []OutlineItem
+}
+
+// OutlineDestination describes an outline destination using XYZ coordinates.
+// Nil fields indicate "leave unchanged" semantics per PDF spec.
+type OutlineDestination struct {
+	X    *float64
+	Y    *float64
+	Zoom *float64
 }
 
 // ArticleThread represents an article with an ordered list of beads.

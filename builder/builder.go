@@ -16,6 +16,7 @@ type PDFBuilder interface {
 	SetLanguage(lang string) PDFBuilder
 	SetMarked(marked bool) PDFBuilder
 	AddPageLabel(pageIndex int, prefix string) PDFBuilder
+	AddOutline(out Outline) PDFBuilder
 	RegisterFont(name string, font *semantic.Font) PDFBuilder
 	Build() (*semantic.Document, error)
 }
@@ -83,6 +84,18 @@ type Color struct {
 	A       float64
 }
 
+// Outline defines a bookmark entry for the builder API.
+// Page or PageIndex can be set; if both are provided, Page takes precedence.
+type Outline struct {
+	Title     string
+	Page      *semantic.Page
+	PageIndex int
+	X         *float64
+	Y         *float64
+	Zoom      *float64
+	Children  []Outline
+}
+
 type builderImpl struct {
 	pages        []*semantic.Page
 	info         *semantic.DocumentInfo
@@ -90,6 +103,7 @@ type builderImpl struct {
 	lang         string
 	marked       bool
 	pageLabels   map[int]string
+	outlines     []Outline
 	fonts        map[string]*semantic.Font
 	defaultFont  string
 	xobjectCount int
@@ -148,6 +162,11 @@ func (b *builderImpl) AddPageLabel(pageIndex int, prefix string) PDFBuilder {
 	return b
 }
 
+func (b *builderImpl) AddOutline(out Outline) PDFBuilder {
+	b.outlines = append(b.outlines, out)
+	return b
+}
+
 func (b *builderImpl) RegisterFont(name string, font *semantic.Font) PDFBuilder {
 	if b.fonts == nil {
 		b.fonts = make(map[string]*semantic.Font)
@@ -160,8 +179,10 @@ func (b *builderImpl) RegisterFont(name string, font *semantic.Font) PDFBuilder 
 }
 
 func (b *builderImpl) Build() (*semantic.Document, error) {
+	pageIndexByPtr := make(map[*semantic.Page]int, len(b.pages))
 	for i, p := range b.pages {
 		p.Index = i
+		pageIndexByPtr[p] = i
 	}
 	doc := &semantic.Document{
 		Pages:  b.pages,
@@ -171,6 +192,12 @@ func (b *builderImpl) Build() (*semantic.Document, error) {
 	}
 	if len(b.pageLabels) > 0 {
 		doc.PageLabels = b.pageLabels
+	}
+	if len(b.outlines) > 0 {
+		doc.Outlines = make([]semantic.OutlineItem, 0, len(b.outlines))
+		for _, out := range b.outlines {
+			doc.Outlines = append(doc.Outlines, b.convertOutline(out, pageIndexByPtr))
+		}
 	}
 	if len(b.metadata) > 0 {
 		doc.Metadata = &semantic.XMPMetadata{Raw: b.metadata}
@@ -435,6 +462,26 @@ func (p *pageBuilderImpl) ensureContentOps() *[]semantic.Operation {
 		p.page.Contents = append(p.page.Contents, semantic.ContentStream{})
 	}
 	return &p.page.Contents[0].Operations
+}
+
+func (b *builderImpl) convertOutline(out Outline, pageIndex map[*semantic.Page]int) semantic.OutlineItem {
+	idx := out.PageIndex
+	if out.Page != nil {
+		if resolved, ok := pageIndex[out.Page]; ok {
+			idx = resolved
+		}
+	}
+	item := semantic.OutlineItem{Title: out.Title, PageIndex: idx}
+	if out.X != nil || out.Y != nil || out.Zoom != nil {
+		item.Dest = &semantic.OutlineDestination{X: out.X, Y: out.Y, Zoom: out.Zoom}
+	}
+	if len(out.Children) > 0 {
+		item.Children = make([]semantic.OutlineItem, 0, len(out.Children))
+		for _, child := range out.Children {
+			item.Children = append(item.Children, b.convertOutline(child, pageIndex))
+		}
+	}
+	return item
 }
 
 func (p *pageBuilderImpl) appendColorOp(ops *[]semantic.Operation, c Color, stroking bool) {

@@ -1635,6 +1635,64 @@ func TestWriter_OutlinesDest(t *testing.T) {
 	}
 }
 
+func TestWriter_OutlinesXYZDest(t *testing.T) {
+	x := 42.0
+	y := 100.0
+	zoom := 2.0
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+		Outlines: []semantic.OutlineItem{
+			{Title: "Point", PageIndex: 0, Dest: &semantic.OutlineDestination{X: &x, Y: &y, Zoom: &zoom}},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	foundXYZ := false
+	for _, obj := range rawDoc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		title, ok := dict.Get(raw.NameLiteral("Title"))
+		if !ok {
+			continue
+		}
+		if ts, ok := title.(raw.StringObj); !ok || string(ts.Value()) != "Point" {
+			continue
+		}
+		destObj, ok := dict.Get(raw.NameLiteral("Dest"))
+		if !ok {
+			continue
+		}
+		arr, ok := destObj.(*raw.ArrayObj)
+		if !ok || arr.Len() != 5 {
+			continue
+		}
+		if name, ok := arr.Items[1].(raw.NameObj); ok && name.Value() == "XYZ" {
+			if xv, ok := arr.Items[2].(raw.NumberObj); ok {
+				if yv, ok := arr.Items[3].(raw.NumberObj); ok {
+					if zv, ok := arr.Items[4].(raw.NumberObj); ok && xv.Float() == x && yv.Float() == y && zv.Float() == zoom {
+						foundXYZ = true
+					}
+				}
+			}
+		}
+	}
+	if !foundXYZ {
+		t.Fatalf("XYZ destination not serialized")
+	}
+}
+
 func TestWriter_ComplianceFlags(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{

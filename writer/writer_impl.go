@@ -990,7 +990,18 @@ func (w *impl) buildOutlines(items []semantic.OutlineItem, parent raw.ObjectRef,
 		d.Set(raw.NameLiteral("Title"), raw.Str([]byte(item.Title)))
 		if item.PageIndex >= 0 && item.PageIndex < len(pageRefs) {
 			pref := pageRefs[item.PageIndex]
-			dest := raw.NewArray(raw.Ref(pref.Num, pref.Gen), raw.NameLiteral("Fit"))
+			var dest raw.Object
+			if item.Dest != nil {
+				dest = raw.NewArray(
+					raw.Ref(pref.Num, pref.Gen),
+					raw.NameLiteral("XYZ"),
+					xyzDestValue(item.Dest.X),
+					xyzDestValue(item.Dest.Y),
+					xyzDestValue(item.Dest.Zoom),
+				)
+			} else {
+				dest = raw.NewArray(raw.Ref(pref.Num, pref.Gen), raw.NameLiteral("Fit"))
+			}
 			d.Set(raw.NameLiteral("Dest"), dest)
 		}
 		d.Set(raw.NameLiteral("Parent"), raw.Ref(parent.Num, parent.Gen))
@@ -1012,6 +1023,13 @@ func (w *impl) buildOutlines(items []semantic.OutlineItem, parent raw.ObjectRef,
 	first = refs[0]
 	last = refs[len(refs)-1]
 	return first, last, count
+}
+
+func xyzDestValue(v *float64) raw.Object {
+	if v == nil {
+		return raw.NullObj{}
+	}
+	return raw.NumberFloat(*v)
 }
 
 func serializePrimitive(o raw.Object) []byte {

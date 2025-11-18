@@ -175,3 +175,42 @@ func TestBuilder_MetadataHelpers(t *testing.T) {
 		t.Fatalf("page labels not set correctly: %+v", doc.PageLabels)
 	}
 }
+
+func TestBuilder_Outlines(t *testing.T) {
+	b := NewBuilder()
+	p1 := b.NewPage(100, 100).(*pageBuilderImpl).page
+	b.NewPage(100, 100).Finish()
+	x := 10.0
+	y := 20.0
+	zoom := 1.5
+	b.AddOutline(Outline{
+		Title: "Parent",
+		Page:  p1,
+		X:     &x,
+		Y:     &y,
+		Zoom:  &zoom,
+		Children: []Outline{
+			{Title: "Child", PageIndex: 1},
+		},
+	})
+	doc, err := b.Build()
+	if err != nil {
+		t.Fatalf("build doc: %v", err)
+	}
+	if len(doc.Outlines) != 1 {
+		t.Fatalf("expected one outline")
+	}
+	parent := doc.Outlines[0]
+	if parent.PageIndex != 0 {
+		t.Fatalf("parent page index not resolved: %d", parent.PageIndex)
+	}
+	if parent.Dest == nil || parent.Dest.X == nil || parent.Dest.Y == nil || parent.Dest.Zoom == nil {
+		t.Fatalf("dest not populated: %+v", parent.Dest)
+	}
+	if *parent.Dest.X != x || *parent.Dest.Y != y || *parent.Dest.Zoom != zoom {
+		t.Fatalf("dest values mismatch: %+v", parent.Dest)
+	}
+	if len(parent.Children) != 1 || parent.Children[0].PageIndex != 1 {
+		t.Fatalf("child outline not preserved: %+v", parent.Children)
+	}
+}
