@@ -121,6 +121,7 @@ type XObject struct {
 	ColorSpace
 	BitsPerComponent int
 	Data             []byte
+	BBox             Rectangle // used for Form XObjects
 }
 
 // Pattern describes a simple tiling pattern stream.

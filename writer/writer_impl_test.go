@@ -786,6 +786,66 @@ func TestWriter_XObjectResources(t *testing.T) {
 	}
 }
 
+func TestWriter_FormXObjectResources(t *testing.T) {
+	formData := []byte("q 1 0 0 1 0 0 cm BT ET Q")
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 20, URY: 20},
+				Resources: &semantic.Resources{
+					XObjects: map[string]semantic.XObject{
+						"Fm1": {Subtype: "Form", BBox: semantic.Rectangle{LLX: 0, LLY: 0, URX: 10, URY: 10}, Data: formData},
+					},
+				},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	var pageDict, pagesDict *raw.DictObj
+	for _, obj := range rawDoc.Objects {
+		if d, ok := obj.(*raw.DictObj); ok {
+			if tval, ok := d.Get(raw.NameLiteral("Type")); ok {
+				if n, ok := tval.(raw.NameObj); ok && n.Value() == "Page" {
+					pageDict = d
+				}
+				if n, ok := tval.(raw.NameObj); ok && n.Value() == "Pages" {
+					pagesDict = d
+				}
+			}
+		}
+	}
+	if pageDict == nil || pagesDict == nil {
+		t.Fatalf("page or pages dict missing")
+	}
+	if !hasXObjectResource(rawDoc, pageDict, "Fm1") {
+		t.Fatalf("form xobject missing on page resources")
+	}
+	if !hasXObjectResource(rawDoc, pagesDict, "Fm1") {
+		t.Fatalf("form xobject missing on pages resources")
+	}
+	for _, obj := range rawDoc.Objects {
+		if s, ok := obj.(*raw.StreamObj); ok {
+			if sub, ok := s.Dict.Get(raw.NameLiteral("Subtype")); ok {
+				if n, ok := sub.(raw.NameObj); ok && n.Value() == "Form" {
+					if _, ok := s.Dict.Get(raw.NameLiteral("BBox")); !ok {
+						t.Fatalf("form missing BBox")
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestWriter_PatternResources(t *testing.T) {
 	patContent := []byte("0 0 m 1 0 l 1 1 l h f")
 	doc := &semantic.Document{
@@ -1500,11 +1560,23 @@ func hasXObjectResource(doc *raw.Document, dict *raw.DictObj, name string) bool 
 		return false
 	}
 	if sub, ok := s.Dict.Get(raw.NameLiteral("Subtype")); ok {
-		if n, ok := sub.(raw.NameObj); !ok || n.Value() != "Image" {
-			return false
+		if n, ok := sub.(raw.NameObj); ok {
+			switch n.Value() {
+			case "Image":
+				if wVal, ok := s.Dict.Get(raw.NameLiteral("Width")); !ok {
+					return false
+				} else if wNum, ok := wVal.(raw.NumberObj); !ok || wNum.Int() != 2 {
+					return false
+				}
+				return true
+			case "Form":
+				return true
+			default:
+				return false
+			}
 		}
 	}
-	return true
+	return false
 }
 
 func hasPatternResource(doc *raw.Document, dict *raw.DictObj, name string) bool {

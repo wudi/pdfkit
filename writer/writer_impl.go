@@ -97,19 +97,24 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 			sub = "Image"
 		}
 		dict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral(sub))
-		if xo.Width > 0 {
-			dict.Set(raw.NameLiteral("Width"), raw.NumberInt(int64(xo.Width)))
+		if sub == "Image" {
+			if xo.Width > 0 {
+				dict.Set(raw.NameLiteral("Width"), raw.NumberInt(int64(xo.Width)))
+			}
+			if xo.Height > 0 {
+				dict.Set(raw.NameLiteral("Height"), raw.NumberInt(int64(xo.Height)))
+			}
+			color := xo.ColorSpace.Name
+			if color == "" {
+				color = "DeviceRGB"
+			}
+			dict.Set(raw.NameLiteral("ColorSpace"), raw.NameLiteral(color))
+			if xo.BitsPerComponent > 0 {
+				dict.Set(raw.NameLiteral("BitsPerComponent"), raw.NumberInt(int64(xo.BitsPerComponent)))
+			}
 		}
-		if xo.Height > 0 {
-			dict.Set(raw.NameLiteral("Height"), raw.NumberInt(int64(xo.Height)))
-		}
-		color := xo.ColorSpace.Name
-		if color == "" {
-			color = "DeviceRGB"
-		}
-		dict.Set(raw.NameLiteral("ColorSpace"), raw.NameLiteral(color))
-		if xo.BitsPerComponent > 0 {
-			dict.Set(raw.NameLiteral("BitsPerComponent"), raw.NumberInt(int64(xo.BitsPerComponent)))
+		if sub == "Form" && cropSet(xo.BBox) {
+			dict.Set(raw.NameLiteral("BBox"), rectArray(xo.BBox))
 		}
 		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(xo.Data))))
 		objects[ref] = raw.NewStream(dict, xo.Data)
@@ -973,6 +978,7 @@ func xoKey(name string, xo semantic.XObject) string {
 	h.Write([]byte(xo.Subtype))
 	h.Write([]byte(fmt.Sprintf("%d-%d-%d", xo.Width, xo.Height, xo.BitsPerComponent)))
 	h.Write([]byte(xo.ColorSpace.Name))
+	h.Write([]byte(fmt.Sprintf("%f-%f-%f-%f", xo.BBox.LLX, xo.BBox.LLY, xo.BBox.URX, xo.BBox.URY)))
 	h.Write(xo.Data)
 	return hex.EncodeToString(h.Sum(nil))
 }
