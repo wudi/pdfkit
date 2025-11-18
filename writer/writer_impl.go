@@ -324,7 +324,14 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	unionXObjects := raw.Dict()
 	unionPatterns := raw.Dict()
 	unionShadings := raw.Dict()
+	procEntries := map[string]bool{"PDF": true, "Text": true}
 	procSet := raw.NewArray(raw.NameLiteral("PDF"), raw.NameLiteral("Text"))
+	addProc := func(name string) {
+		if !procEntries[name] {
+			procEntries[name] = true
+			procSet.Append(raw.NameLiteral(name))
+		}
+	}
 	for i, p := range doc.Pages {
 		ref := nextRef()
 		pageRefs = append(pageRefs, ref)
@@ -416,6 +423,13 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 				xDict.Set(raw.NameLiteral(name), raw.Ref(xref.Num, xref.Gen))
 				if _, ok := unionXObjects.KV[name]; !ok {
 					unionXObjects.Set(raw.NameLiteral(name), raw.Ref(xref.Num, xref.Gen))
+				}
+				if xo.Subtype == "Image" || xo.Subtype == "" {
+					if xo.ColorSpace.Name == "DeviceGray" {
+						addProc("ImageB")
+					} else {
+						addProc("ImageC")
+					}
 				}
 			}
 			if xDict.Len() > 0 {

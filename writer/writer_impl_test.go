@@ -592,6 +592,75 @@ func TestWriter_ProcSetIncluded(t *testing.T) {
 	}
 }
 
+func TestWriter_ProcSetWithImages(t *testing.T) {
+	data := []byte{0x01, 0x02, 0x03, 0x04}
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 20, URY: 20},
+				Resources: &semantic.Resources{
+					XObjects: map[string]semantic.XObject{
+						"Im1": {Subtype: "Image", Width: 2, Height: 2, BitsPerComponent: 8, ColorSpace: semantic.ColorSpace{Name: "DeviceRGB"}, Data: data},
+					},
+				},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+	pageHas := false
+	pagesHas := false
+	for _, obj := range rawDoc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		typ, _ := dict.Get(raw.NameLiteral("Type"))
+		if name, ok := typ.(raw.NameObj); ok && name.Value() == "Page" {
+			if res, ok := dict.Get(raw.NameLiteral("Resources")); ok {
+				if resDict, ok := res.(*raw.DictObj); ok {
+					if ps, ok := resDict.Get(raw.NameLiteral("ProcSet")); ok {
+						if arr, ok := ps.(*raw.ArrayObj); ok {
+							for _, item := range arr.Items {
+								if n, ok := item.(raw.NameObj); ok && n.Value() == "ImageC" {
+									pageHas = true
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		if name, ok := typ.(raw.NameObj); ok && name.Value() == "Pages" {
+			if res, ok := dict.Get(raw.NameLiteral("Resources")); ok {
+				if resDict, ok := res.(*raw.DictObj); ok {
+					if ps, ok := resDict.Get(raw.NameLiteral("ProcSet")); ok {
+						if arr, ok := ps.(*raw.ArrayObj); ok {
+							for _, item := range arr.Items {
+								if n, ok := item.(raw.NameObj); ok && n.Value() == "ImageC" {
+									pagesHas = true
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if !pageHas || !pagesHas {
+		t.Fatalf("image procset missing (page=%v pages=%v)", pageHas, pagesHas)
+	}
+}
+
 func TestWriter_ExtGStateResources(t *testing.T) {
 	lw := 2.5
 	stroke := 0.5
