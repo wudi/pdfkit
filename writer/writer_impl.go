@@ -281,6 +281,20 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	catalogDict := raw.Dict()
 	catalogDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Catalog"))
 	catalogDict.Set(raw.NameLiteral("Pages"), raw.Ref(pagesRef.Num, pagesRef.Gen))
+	if doc.StructTree != nil {
+		structRef := nextRef()
+		structDict := raw.Dict()
+		structDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("StructTreeRoot"))
+		if len(doc.StructTree.RoleMap) > 0 {
+			roleDict := raw.Dict()
+			for k, v := range doc.StructTree.RoleMap {
+				roleDict.Set(raw.NameLiteral(k), raw.NameLiteral(v))
+			}
+			structDict.Set(raw.NameLiteral("RoleMap"), roleDict)
+		}
+		objects[structRef] = structDict
+		catalogDict.Set(raw.NameLiteral("StructTreeRoot"), raw.Ref(structRef.Num, structRef.Gen))
+	}
 	if metadataRef != nil {
 		catalogDict.Set(raw.NameLiteral("Metadata"), raw.Ref(metadataRef.Num, metadataRef.Gen))
 	}

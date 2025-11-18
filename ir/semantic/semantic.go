@@ -114,7 +114,12 @@ type DocumentInfo struct {
 
 type XMPMetadata struct{ Raw []byte }
 
-type StructureTree struct{}
+type StructureTree struct {
+	RoleMap RoleMap
+}
+
+// RoleMap maps structure element names to role-mapped names.
+type RoleMap map[string]string
 
 // Annotation represents a simple page annotation.
 type Annotation struct {

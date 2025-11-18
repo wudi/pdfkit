@@ -800,6 +800,7 @@ func TestWriter_OutlinesDest(t *testing.T) {
 			{Title: "First", PageIndex: 0},
 			{Title: "Second", PageIndex: 1},
 		},
+		StructTree: &semantic.StructureTree{RoleMap: semantic.RoleMap{"H1": "Heading1"}},
 	}
 	var buf bytes.Buffer
 	w := (&WriterBuilder{}).Build()
@@ -813,6 +814,7 @@ func TestWriter_OutlinesDest(t *testing.T) {
 	}
 	outlinesFound := false
 	destOK := 0
+	roleMapOK := false
 	for ref, obj := range rawDoc.Objects {
 		d, ok := obj.(*raw.DictObj)
 		if !ok {
@@ -834,13 +836,31 @@ func TestWriter_OutlinesDest(t *testing.T) {
 				}
 			}
 		}
-		_ = ref
+		if ref == (raw.ObjectRef{}) {
+			// skip
+		}
+		if typ, ok := d.Get(raw.NameLiteral("Type")); ok {
+			if n, ok := typ.(raw.NameObj); ok && n.Value() == "StructTreeRoot" {
+				if rm, ok := d.Get(raw.NameLiteral("RoleMap")); ok {
+					if rmd, ok := rm.(*raw.DictObj); ok {
+						if mapped, ok := rmd.Get(raw.NameLiteral("H1")); ok {
+							if nv, ok := mapped.(raw.NameObj); ok && nv.Value() == "Heading1" {
+								roleMapOK = true
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 	if !outlinesFound {
 		t.Fatalf("Outlines dict missing")
 	}
 	if destOK != 2 {
 		t.Fatalf("outline destinations missing: %d", destOK)
+	}
+	if !roleMapOK {
+		t.Fatalf("StructTreeRoot or RoleMap not found")
 	}
 }
 
