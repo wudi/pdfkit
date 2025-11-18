@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"regexp"
+	"strings"
 	"testing"
 
 	"pdflib/builder"
@@ -90,5 +91,62 @@ func TestWriter_InfoMetadataIDDeterministic(t *testing.T) {
 	}
 	if !bytes.Equal(first.Bytes(), second.Bytes()) {
 		t.Fatalf("deterministic write expected identical output")
+	}
+}
+
+func TestWriter_PageGeometryAndResources(t *testing.T) {
+	page1 := &semantic.Page{
+		MediaBox: semantic.Rectangle{LLX: 0, LLY: 0, URX: 300, URY: 400},
+		CropBox:  semantic.Rectangle{LLX: 10, LLY: 10, URX: 290, URY: 390},
+		Rotate:   90,
+		UserUnit: 2.0,
+		Resources: &semantic.Resources{
+			Fonts: map[string]*semantic.Font{
+				"FBody": {BaseFont: "Helvetica"},
+				"FMono": {BaseFont: "Courier"},
+			},
+		},
+		Contents: []semantic.ContentStream{
+			{RawBytes: []byte("BT /FBody 12 Tf 0 0 Td (Hi) Tj ET")},
+		},
+	}
+	page2 := &semantic.Page{
+		MediaBox: semantic.Rectangle{LLX: 0, LLY: 0, URX: 300, URY: 400},
+		Resources: &semantic.Resources{
+			Fonts: map[string]*semantic.Font{
+				"FBody": {BaseFont: "Helvetica"},
+			},
+		},
+		Contents: []semantic.ContentStream{
+			{RawBytes: []byte("BT /FBody 10 Tf 10 10 Td (Two) Tj ET")},
+		},
+	}
+	doc := &semantic.Document{Pages: []*semantic.Page{page1, page2}}
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	data := buf.Bytes()
+	strData := string(data)
+
+	if !strings.Contains(strData, "/Rotate 90") {
+		t.Fatalf("expected Rotate entry")
+	}
+	if !regexp.MustCompile(`/CropBox\s*\[\s*10\.?0*\s+10\.?0*\s+290\.?0*\s+390\.?0*\s*\]`).Match(data) {
+		t.Fatalf("expected CropBox in page dictionary")
+	}
+	if !strings.Contains(strData, "/UserUnit 2") {
+		t.Fatalf("expected UserUnit entry")
+	}
+	if strings.Count(strData, "/BaseFont /Helvetica") != 1 {
+		t.Fatalf("expected shared Helvetica font object")
+	}
+	if strings.Count(strData, "/BaseFont /Courier") != 1 {
+		t.Fatalf("expected single Courier font object")
+	}
+	fontsRegex := regexp.MustCompile(`/Font\s*<<[^>]*?/FBody\s+\d+\s+0\s+R[^>]*?/FMono\s+\d+\s+0\s+R[^>]*?>>`)
+	if !fontsRegex.Match(data) {
+		t.Fatalf("expected page font resource entries")
 	}
 }

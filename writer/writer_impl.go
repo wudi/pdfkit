@@ -56,13 +56,24 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	pagesRef := nextRef()
 	pageRefs := make([]raw.ObjectRef, 0, len(doc.Pages))
 
-	// Fonts (single shared Helvetica core font)
-	fontRef := nextRef()
-	fontDict := raw.Dict()
-	fontDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Font"))
-	fontDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral("Type1"))
-	fontDict.Set(raw.NameLiteral("BaseFont"), raw.NameLiteral("Helvetica"))
-	objects[fontRef] = fontDict
+	// Fonts (shared across pages by BaseFont)
+	fontRefs := map[string]raw.ObjectRef{}
+	ensureFont := func(base string) raw.ObjectRef {
+		if base == "" {
+			base = "Helvetica"
+		}
+		if ref, ok := fontRefs[base]; ok {
+			return ref
+		}
+		ref := nextRef()
+		fontDict := raw.Dict()
+		fontDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Font"))
+		fontDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral("Type1"))
+		fontDict.Set(raw.NameLiteral("BaseFont"), raw.NameLiteral(base))
+		objects[ref] = fontDict
+		fontRefs[base] = ref
+		return ref
+	}
 
 	// Document info dictionary (Title only for now)
 	var infoRef *raw.ObjectRef
@@ -108,12 +119,28 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		pageDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Page"))
 		pageDict.Set(raw.NameLiteral("Parent"), raw.Ref(pagesRef.Num, pagesRef.Gen))
 		// MediaBox
-		mediaArr := raw.NewArray(raw.NumberInt(0), raw.NumberInt(0), raw.NumberInt(int64(p.MediaBox.URX)), raw.NumberInt(int64(p.MediaBox.URY)))
-		pageDict.Set(raw.NameLiteral("MediaBox"), mediaArr)
+		pageDict.Set(raw.NameLiteral("MediaBox"), rectArray(p.MediaBox))
+		if cropSet(p.CropBox) {
+			pageDict.Set(raw.NameLiteral("CropBox"), rectArray(p.CropBox))
+		}
+		if rot := normalizeRotation(p.Rotate); rot != 0 {
+			pageDict.Set(raw.NameLiteral("Rotate"), raw.NumberInt(int64(rot)))
+		}
+		if p.UserUnit > 0 {
+			pageDict.Set(raw.NameLiteral("UserUnit"), raw.NumberFloat(p.UserUnit))
+		}
 		// Resources
 		resDict := raw.Dict()
 		fontResDict := raw.Dict()
-		fontResDict.Set(raw.NameLiteral("F1"), raw.Ref(fontRef.Num, fontRef.Gen))
+		if p.Resources != nil && len(p.Resources.Fonts) > 0 {
+			for name, font := range p.Resources.Fonts {
+				fRef := ensureFont(font.BaseFont)
+				fontResDict.Set(raw.NameLiteral(name), raw.Ref(fRef.Num, fRef.Gen))
+			}
+		} else {
+			fRef := ensureFont("Helvetica")
+			fontResDict.Set(raw.NameLiteral("F1"), raw.Ref(fRef.Num, fRef.Gen))
+		}
 		resDict.Set(raw.NameLiteral("Font"), fontResDict)
 		pageDict.Set(raw.NameLiteral("Resources"), resDict)
 		// Contents
@@ -290,4 +317,28 @@ func deterministicIDSeed(doc *semantic.Document, cfg Config) []byte {
 	buf := make([]byte, 16)
 	copy(buf, sum)
 	return buf
+}
+
+func rectArray(r semantic.Rectangle) *raw.ArrayObj {
+	return raw.NewArray(
+		raw.NumberFloat(r.LLX),
+		raw.NumberFloat(r.LLY),
+		raw.NumberFloat(r.URX),
+		raw.NumberFloat(r.URY),
+	)
+}
+
+func cropSet(r semantic.Rectangle) bool {
+	return r.URX > r.LLX && r.URY > r.LLY
+}
+
+func normalizeRotation(rot int) int {
+	if rot == 0 {
+		return 0
+	}
+	rot %= 360
+	if rot < 0 {
+		rot += 360
+	}
+	return rot
 }
