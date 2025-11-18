@@ -19,6 +19,7 @@ type decoderImpl struct {
 
 func (d *decoderImpl) Decode(ctx context.Context, rawDoc *raw.Document) (*DecodedDocument, error) {
 	streams := make(map[raw.ObjectRef]Stream)
+	resolver := d.makeResolver(rawDoc)
 
 	for ref, obj := range rawDoc.Objects {
 		rawStream, ok := obj.(raw.Stream)
@@ -28,9 +29,9 @@ func (d *decoderImpl) Decode(ctx context.Context, rawDoc *raw.Document) (*Decode
 
 		data := rawStream.RawData()
 
-		names, params := extractFilters(rawStream.Dictionary())
+		names, params := filters.ExtractFilters(rawStream.Dictionary())
 		if d.pipeline != nil && len(names) > 0 {
-			decoded, err := d.pipeline.Decode(ctx, data, names, params)
+			decoded, err := d.pipeline.DecodeWithResolver(ctx, data, names, params, resolver)
 			if err != nil {
 				return nil, fmt.Errorf("decode filters %v: %w", names, err)
 			}
@@ -65,41 +66,25 @@ func (s decodedStream) Dictionary() raw.Dictionary { return s.raw.Dictionary() }
 func (s decodedStream) Data() []byte               { return s.data }
 func (s decodedStream) Filters() []string          { return s.filters }
 
-func extractFilters(dict raw.Dictionary) ([]string, []raw.Dictionary) {
-	var names []string
-	var params []raw.Dictionary
-
-	filterObj, ok := dict.Get(raw.NameLiteral("Filter"))
-	if !ok {
-		return names, params
-	}
-
-	switch f := filterObj.(type) {
-	case raw.Name:
-		names = append(names, f.Value())
-	case *raw.ArrayObj:
-		for _, item := range f.Items {
-			if n, ok := item.(raw.Name); ok {
-				names = append(names, n.Value())
-			}
+func (d *decoderImpl) makeResolver(doc *raw.Document) filters.StreamResolver {
+	return func(ctx context.Context, ref raw.ObjectRef) ([]byte, error) {
+		obj, ok := doc.Objects[ref]
+		if !ok {
+			return nil, fmt.Errorf("object %v not found", ref)
 		}
-	}
-
-	// DecodeParms optional
-	if len(names) > 0 {
-		if pObj, ok := dict.Get(raw.NameLiteral("DecodeParms")); ok {
-			switch p := pObj.(type) {
-			case raw.Dictionary:
-				params = append(params, p)
-			case *raw.ArrayObj:
-				for _, item := range p.Items {
-					if d, ok := item.(raw.Dictionary); ok {
-						params = append(params, d)
-					}
-				}
-			}
+		stream, ok := obj.(raw.Stream)
+		if !ok {
+			return nil, fmt.Errorf("object %v is not a stream", ref)
 		}
+		data := stream.RawData()
+		names, params := filters.ExtractFilters(stream.Dictionary())
+		if len(names) == 0 || d.pipeline == nil {
+			return data, nil
+		}
+		decoded, err := d.pipeline.Decode(ctx, data, names, params)
+		if err != nil {
+			return nil, fmt.Errorf("decode %v: %w", names, err)
+		}
+		return decoded, nil
 	}
-
-	return names, params
 }

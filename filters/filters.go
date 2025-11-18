@@ -40,6 +40,12 @@ type Pipeline struct {
 	limits   Limits
 }
 
+type jbig2GlobalsResolverKey struct{}
+
+// StreamResolver resolves referenced streams to decoded bytes for filters that
+// need auxiliary data (e.g., JBIG2Globals).
+type StreamResolver func(context.Context, raw.ObjectRef) ([]byte, error)
+
 // NewPipeline constructs a pipeline with provided decoders and limits.
 func NewPipeline(decoders []Decoder, limits Limits) *Pipeline {
 	return &Pipeline{decoders: decoders, limits: limits}
@@ -60,7 +66,20 @@ func (p *Pipeline) findDecoder(name string) Decoder {
 }
 
 func (p *Pipeline) Decode(ctx context.Context, input []byte, filterNames []string, params []raw.Dictionary) ([]byte, error) {
+	return p.decode(ctx, input, filterNames, params, nil)
+}
+
+// DecodeWithResolver decodes a stream using the provided filters and optional resolver.
+func (p *Pipeline) DecodeWithResolver(ctx context.Context, input []byte, filterNames []string, params []raw.Dictionary, resolver StreamResolver) ([]byte, error) {
+	return p.decode(ctx, input, filterNames, params, resolver)
+}
+
+func (p *Pipeline) decode(ctx context.Context, input []byte, filterNames []string, params []raw.Dictionary, resolver StreamResolver) ([]byte, error) {
 	data := input
+	baseCtx := ctx
+	if resolver != nil {
+		baseCtx = context.WithValue(ctx, jbig2GlobalsResolverKey{}, resolver)
+	}
 	for i, name := range filterNames {
 		dec := p.findDecoder(name)
 		if dec == nil {
@@ -73,10 +92,10 @@ func (p *Pipeline) Decode(ctx context.Context, input []byte, filterNames []strin
 		if i < len(params) {
 			param = params[i]
 		}
-		decodeCtx := ctx
+		decodeCtx := baseCtx
 		var cancel context.CancelFunc
 		if p.limits.MaxDecodeTime > 0 {
-			decodeCtx, cancel = context.WithTimeout(ctx, p.limits.MaxDecodeTime)
+			decodeCtx, cancel = context.WithTimeout(baseCtx, p.limits.MaxDecodeTime)
 		}
 		out, err := dec.Decode(decodeCtx, data, param)
 		if cancel != nil {
@@ -88,6 +107,18 @@ func (p *Pipeline) Decode(ctx context.Context, input []byte, filterNames []strin
 		data = out
 	}
 	return data, nil
+}
+
+func streamResolverFromContext(ctx context.Context) StreamResolver {
+	if ctx == nil {
+		return nil
+	}
+	if v := ctx.Value(jbig2GlobalsResolverKey{}); v != nil {
+		if resolver, ok := v.(StreamResolver); ok {
+			return resolver
+		}
+	}
+	return nil
 }
 
 type Registry struct{ decoders map[string]Decoder }
@@ -317,15 +348,48 @@ func (jbig2Decoder) Decode(ctx context.Context, in []byte, params raw.Dictionary
 		return nil, ctx.Err()
 	default:
 	}
+	globals, err := resolveJBIG2Globals(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	native, nativeErr := jbig2NativeDecode(ctx, in, globals)
+	if nativeErr == nil {
+		return native, nil
+	}
 	if pix, err := decodeImageToNRGBA(in); err == nil {
 		return pix, nil
 	}
 	if pix, err := decodeJBIG2External(ctx, in); err == nil {
 		return pix, nil
 	}
+	if nativeErr != nil && !errors.Is(nativeErr, errJBIG2NativeUnsupported) {
+		return nil, nativeErr
+	}
 	return nil, UnsupportedError{Filter: "JBIG2Decode"}
 }
 func NewJBIG2Decoder() Decoder { return jbig2Decoder{} }
+
+func resolveJBIG2Globals(ctx context.Context, params raw.Dictionary) ([]byte, error) {
+	if params == nil {
+		return nil, nil
+	}
+	globalsObj, ok := params.Get(raw.NameObj{Val: "JBIG2Globals"})
+	if !ok {
+		return nil, nil
+	}
+	switch v := globalsObj.(type) {
+	case raw.Stream:
+		return v.RawData(), nil
+	case raw.Reference:
+		resolver := streamResolverFromContext(ctx)
+		if resolver == nil {
+			return nil, errors.New("JBIG2Globals resolver unavailable")
+		}
+		return resolver(ctx, v.Ref())
+	default:
+		return nil, fmt.Errorf("unsupported JBIG2Globals type %T", globalsObj)
+	}
+}
 
 // decodeImageToNRGBA attempts to decode arbitrary encoded image bytes into NRGBA pixels.
 func decodeImageToNRGBA(data []byte) ([]byte, error) {
