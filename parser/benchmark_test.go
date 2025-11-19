@@ -22,3 +22,19 @@ func BenchmarkParseFCD14492(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkParse50MB(b *testing.B) {
+	data, err := os.ReadFile("../testdata/50mb.pdf")
+	if err != nil {
+		b.Fatalf("failed to read test file: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		p := NewDocumentParser(Config{})
+		_, err := p.Parse(context.Background(), bytes.NewReader(data))
+		if err != nil {
+			b.Fatalf("parse failed: %v", err)
+		}
+	}
+}

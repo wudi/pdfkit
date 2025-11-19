@@ -83,6 +83,7 @@ func New(r ReaderAt, cfg Config) Scanner {
 	if chunk <= 0 {
 		chunk = 64 * 1024
 	}
+	window := make([]byte, chunk)
 	return &pdfScanner{
 		reader:        r,
 		cfg:           cfg,
@@ -90,7 +91,8 @@ func New(r ReaderAt, cfg Config) Scanner {
 		chunkSize:     chunk,
 		pin:           -1,
 		readBuf:       make([]byte, chunk),
-		windowBuf:     make([]byte, chunk),
+		windowBuf:     window,
+		data:          window[:0],
 	}
 }
 
@@ -241,8 +243,7 @@ func (s *pdfScanner) loadMore() error {
 	off := s.base + int64(len(s.data))
 	n, err := s.reader.ReadAt(s.readBuf, off)
 	if n > 0 {
-		s.data = append(s.data, s.readBuf[:n]...)
-		s.trimBuffer()
+		s.appendData(s.readBuf[:n])
 	}
 	if err == io.EOF {
 		s.eof = true
@@ -271,7 +272,7 @@ func (s *pdfScanner) reloadWindow(off int64) error {
 	buf := s.windowBuf[:size]
 	n, err := s.reader.ReadAt(buf, off)
 	s.base = off
-	s.data = buf[:n]
+	s.data = s.windowBuf[:n]
 	s.eof = err == io.EOF
 	if err != nil && !errors.Is(err, io.EOF) {
 		return err
@@ -307,6 +308,48 @@ func (s *pdfScanner) trimBuffer() {
 	}
 	s.data = s.data[excess:]
 	s.base += excess
+}
+
+func (s *pdfScanner) appendData(chunk []byte) {
+	if len(chunk) == 0 {
+		return
+	}
+	s.ensureCapacity(len(chunk))
+	start := len(s.data)
+	copy(s.windowBuf[start:start+len(chunk)], chunk)
+	s.data = s.windowBuf[:start+len(chunk)]
+	s.trimBuffer()
+}
+
+func (s *pdfScanner) ensureCapacity(add int) {
+	if add <= 0 {
+		return
+	}
+	need := len(s.data) + add
+	if need <= cap(s.windowBuf) {
+		return
+	}
+	s.compactWindow()
+	if need <= cap(s.windowBuf) {
+		return
+	}
+	newCap := cap(s.windowBuf) * 2
+	if newCap < need {
+		newCap = need
+	}
+	buf := make([]byte, newCap)
+	copy(buf, s.data)
+	s.windowBuf = buf
+	s.data = s.windowBuf[:len(s.data)]
+}
+
+func (s *pdfScanner) compactWindow() {
+	offset := cap(s.windowBuf) - cap(s.data)
+	if offset == 0 || len(s.data) == 0 {
+		return
+	}
+	copy(s.windowBuf, s.data)
+	s.data = s.windowBuf[:len(s.data)]
 }
 
 func (s *pdfScanner) byteAt(off int64) (byte, error) {
