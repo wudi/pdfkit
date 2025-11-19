@@ -2147,44 +2147,44 @@ func BenchmarkWrite(b *testing.B) {}
 ## 22. Roadmap
 
 ### Phase 1: Core Foundation (Months 1-3)
-- ✅ Scanner and tokenizer
-- ✅ XRef resolution
-- ✅ Raw IR parsing
-- ✅ Filter pipeline (Flate, LZW, ASCII)
-- ✅ Basic object loader
-- ✅ Simple writer (no subsetting)
+- Scanner and tokenizer
+- XRef resolution
+- Raw IR parsing
+- Filter pipeline (Flate, LZW, ASCII)
+- Basic object loader
+- Simple writer (no subsetting)
 
 ### Phase 2: Semantic Layer (Months 4-6)
-- ✅ Decoded IR
-- ✅ Semantic IR (pages, fonts, images)
-- ✅ Content stream parser
-- ✅ Resource resolution
-- ✅ Graphics state tracking
-- ✅ Coordinate transformations
+- Decoded IR
+- Semantic IR (pages, fonts, images)
+- Content stream parser
+- Resource resolution
+- Graphics state tracking
+- Coordinate transformations
 
 ### Phase 3: Advanced Features (Months 7-9)
-- ✅ Font subsetting (TTF/OTF)
-- ✅ ToUnicode CMap generation
-- ✅ Security/encryption support
-- ✅ Incremental updates
-- ✅ Extension system
-- ✅ Error recovery
+- Font subsetting (TTF/OTF)
+- ToUnicode CMap generation
+- Security/encryption support
+- Incremental updates
+- Extension system
+- Error recovery
 
 ### Phase 4: Compliance & Quality (Months 10-12)
-- ✅ PDF/A validation
-- ✅ PDF/A enforcement
-- ✅ Linearization
-- ✅ Comprehensive test suite
-- ✅ Performance optimization
-- ✅ Documentation and examples
+- PDF/A validation
+- PDF/A enforcement
+- Linearization
+- Comprehensive test suite
+- Performance optimization
+- Documentation and examples
 
 ### Phase 5: Ecosystem (Months 13+)
-- ✅ Standard plugins (OCR, watermarking, redaction)
-- ✅ CLI tools
-- ✅ CJK font support
-- ✅ PDF/A-2/3 compliance
-- ✅ Digital signatures
-- ✅ Advanced optimizations
+- Standard plugins (OCR, watermarking, redaction)
+- CLI tools
+- CJK font support
+- PDF/A-2/3 compliance
+- Digital signatures
+- Advanced optimizations
 
 ---
 
