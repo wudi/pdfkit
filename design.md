@@ -1245,6 +1245,30 @@ func (p *SubsettingPipeline) Subset(ctx context.Context, doc *semantic.Document)
 
 ---
 
+## 10.1 Advanced Subsetting (Shaper-Aware)
+
+For complex scripts (Arabic, Indic, etc.) or advanced typography (ligatures, swashes), simple GID-based subsetting is insufficient because the PDF content stream might contain base characters while the font's GSUB table maps them to presentation forms (which must be present in the font).
+
+To support this without embedding the full font:
+
+1.  **GSUB Parsing**: The subsetter must parse the `GSUB` table to understand substitution rules.
+2.  **Closure Expansion**:
+    *   Start with the set of GIDs used in the content stream (`UsedGIDs`).
+    *   Iteratively expand this set by finding all glyphs that can be produced from `UsedGIDs` via GSUB rules (e.g., if 'f' and 'i' are used, and 'fi' ligature exists, include 'fi').
+    *   *Optimization*: Only include substitutions that are reachable given the input text sequences (requires partial shaping or conservative approximation).
+3.  **Table Subsetting**:
+    *   Subset the `GSUB` and `GPOS` tables themselves to remove rules involving unused glyphs (reducing file size).
+    *   Rebuild `GDEF` if necessary.
+
+```go
+// AdvancedSubsetter extends Subsetter
+type AdvancedSubsetter interface {
+    // ComputeClosure returns the transitive closure of GIDs based on GSUB rules
+    ComputeClosure(initialGIDs map[int]bool, gsub *GSUBTable) map[int]bool
+}
+```
+---
+
 ## 11. Streaming Architecture
 
 ```go
@@ -1543,8 +1567,7 @@ const (
 type PDFALevel int
 
 const (
-    PDFANone PDFALevel = iota
-    PDFA1B
+    PDFA1B PDFALevel = iota
     PDFA1A
     PDFA2B
     PDFA2A
@@ -2319,10 +2342,10 @@ func main() {
         DrawText("Hello, PDF!", 100, 700, builder.TextOptions{
             Font:     "Helvetica",
             FontSize: 24,
-            Color:    builder.Color{R: 0, G: 0, B: 0},
+            Color:    Color{R: 0, G: 0, B: 0},
         }).
         DrawRectangle(100, 650, 200, 50, builder.RectOptions{
-            StrokeColor: builder.Color{R: 1, G: 0, B: 0},
+            StrokeColor: Color{R: 1, G: 0, B: 0},
             LineWidth:   2,
             Stroke:      true,
         }).

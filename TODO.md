@@ -112,3 +112,11 @@ Status key: Not started / In progress / Done.
 - [x] Implement SubsetPlanner: create `fonts/planner.go` to map original GIDs to a subset. Status: Done (implemented in `fonts/subsetter.go`).
 - [x] Implement SubsetGenerator: create `fonts/generator.go` to generate the subsetted font file (initially just a pass-through or simple subset if possible). Status: Done (implemented in `fonts/subsetter.go` and `fonts/tt_subsetter.go` with full binary subsetting; includes fallback for complex scripts like Arabic to preserve shaping).
 - [x] Integrate subsetting into writer: update `writer` to use the subsetting pipeline when `SubsetFonts: true`. Status: Done.
+
+# Advanced Font Subsetting plan
+
+Status key: Not started / In progress / Done.
+
+- [ ] GSUB/GPOS Parsing: Implement a parser for OpenType Layout tables (GSUB, GPOS) to identify glyph substitution and positioning rules. Status: Not started.
+- [ ] Shaper-Aware Closure: Implement a closure algorithm that includes glyphs referenced by GSUB/GPOS rules (e.g., ligatures, presentation forms) when their base glyphs are used. Status: Not started.
+- [ ] Complex Script Subsetting: Update `fonts/tt_subsetter.go` to use the shaper-aware closure instead of the full-font fallback for complex scripts. Status: Not started.
