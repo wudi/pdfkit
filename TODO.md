@@ -121,3 +121,11 @@ Status key: Not started / In progress / Done.
 - [x] Shape runs via go-text/typesetting: feed recorded runs into `github.com/go-text/typesetting/shaping` with script/lang-specific options to collect exact glyph IDs emitted by the shaper. Status: Done.
 - [x] Merge shaped glyphs with closures: union shaped glyph IDs with composite/GSUB closures and drive the planner/subsetter with the expanded set, falling back only when shaping fails. Status: Done.
 - [x] Pipeline verification: add regression coverage (unit tests + `examples/fonts` + `examples/extract_text`) ensuring Arabic stays correct while subsetting is active. Status: Done.
+
+# Fuzz Testing
+
+Status key: Not started / In progress / Done.
+
+- [x] Scanner fuzzing: implement fuzz tests for `scanner.Next()` to ensure robustness against malformed inputs. Status: Done (implemented in `scanner/scanner_fuzz_test.go`).
+- [x] Parser fuzzing: implement fuzz tests for `DocumentParser.Parse()` to ensure robustness against malformed document structures. Status: Done (implemented in `parser/parser_fuzz_test.go`).
+- [x] Filter fuzzing: implement fuzz tests for `Pipeline.Decode()` to ensure robustness of stream decoders. Status: Done (implemented in `filters/filters_fuzz_test.go`).
