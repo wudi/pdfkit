@@ -1,6 +1,6 @@
 # Extract Text Example
 
-This example walks the PDF page tree produced by the raw parser/decoder pipeline and prints the text shown by `Tj`/`TJ` operators on each page. It is intentionally simple and meant as a starting point for building richer extraction logic.
+This example wires the high-level `extractor` package into a tiny CLI and prints the consolidated text discovered on each page. Because it leverages the shared extraction pipeline, it automatically benefits from ToUnicode maps, embedded font decoding, and any future improvements made to the core library.
 
 ## Run
 
@@ -13,4 +13,4 @@ This example walks the PDF page tree produced by the raw parser/decoder pipeline
    go run ./examples/extract_text invoice.pdf
    ```
 
-The program reports each page and a best-effort concatenation of the text show operators it finds.
+The program reports each page (with labels when available) and a best-effort concatenation of the text that the extractor resolves.
