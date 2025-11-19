@@ -93,7 +93,7 @@ func (e *Extractor) PageLabels() map[int]string {
 }
 
 func (e *Extractor) streamBytes(obj raw.Object) ([]byte, raw.Dictionary) {
-	if data, dict, ok := streamData(e.dec, obj); ok {
+	if data, dict, _, ok := streamData(e.dec, obj); ok {
 		copyData := make([]byte, len(data))
 		copy(copyData, data)
 		return copyData, dict
@@ -508,9 +508,9 @@ func derefArray(doc *raw.Document, obj raw.Object) *raw.ArrayObj {
 	return nil
 }
 
-func streamData(dec *decoded.DecodedDocument, obj raw.Object) ([]byte, raw.Dictionary, bool) {
+func streamData(dec *decoded.DecodedDocument, obj raw.Object) ([]byte, raw.Dictionary, []string, bool) {
 	if dec == nil {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 	switch v := obj.(type) {
 	case raw.RefObj:
@@ -518,13 +518,13 @@ func streamData(dec *decoded.DecodedDocument, obj raw.Object) ([]byte, raw.Dicti
 			data := stream.Data()
 			out := make([]byte, len(data))
 			copy(out, data)
-			return out, stream.Dictionary(), true
+			return out, stream.Dictionary(), stream.Filters(), true
 		}
 	case raw.Stream:
 		data := v.RawData()
 		out := make([]byte, len(data))
 		copy(out, data)
-		return out, v.Dictionary(), true
+		return out, v.Dictionary(), nil, true
 	}
-	return nil, nil, false
+	return nil, nil, nil, false
 }

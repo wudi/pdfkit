@@ -82,7 +82,7 @@ func hasStream(dec *decoded.DecodedDocument, obj raw.Object) bool {
 	}
 	switch v := obj.(type) {
 	case raw.RefObj:
-		_, _, ok := streamData(dec, v)
+		_, _, _, ok := streamData(dec, v)
 		return ok
 	case raw.Stream:
 		return true

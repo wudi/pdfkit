@@ -50,7 +50,7 @@ func (e *Extractor) ExtractText() ([]PageText, error) {
 func collectContentStreams(dec *decoded.DecodedDocument, obj raw.Object) [][]byte {
 	switch v := obj.(type) {
 	case raw.RefObj:
-		if data, _, ok := streamData(dec, v); ok {
+		if data, _, _, ok := streamData(dec, v); ok {
 			return [][]byte{data}
 		}
 	case *raw.ArrayObj:

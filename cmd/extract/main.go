@@ -216,9 +216,13 @@ func writeImages(dir string, assets []extractor.ImageAsset) ([]imageSummary, err
 		if name == "" {
 			name = fmt.Sprintf("img_%d", idx+1)
 		}
-		filename := fmt.Sprintf("page-%03d-%s.bin", asset.Page+1, safeName(name))
+		filename := fmt.Sprintf("page-%03d-%s.png", asset.Page+1, safeName(name))
 		path := filepath.Join(dir, filename)
-		if err := os.WriteFile(path, asset.Data, 0o644); err != nil {
+		pngData, err := asset.ToPNG()
+		if err != nil {
+			return nil, fmt.Errorf("encode image %q to png: %w", path, err)
+		}
+		if err := os.WriteFile(path, pngData, 0o644); err != nil {
 			return nil, fmt.Errorf("write image %q: %w", path, err)
 		}
 		summaries = append(summaries, imageSummary{
