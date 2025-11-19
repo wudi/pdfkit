@@ -1,6 +1,10 @@
 package fonts
 
 import (
+	"unicode/utf16"
+
+	"github.com/go-text/typesetting/language"
+
 	"pdflib/ir/semantic"
 )
 
@@ -8,11 +12,20 @@ import (
 type Analyzer struct {
 	// Map of font -> set of used CIDs/codes
 	UsedGlyphs map[*semantic.Font]map[int]bool
+	// TextRuns records per-font script-aware runs derived from ToUnicode mappings.
+	TextRuns map[*semantic.Font][]TextRun
+}
+
+// TextRun stores a contiguous set of runes that share the same script.
+type TextRun struct {
+	Runes  []rune
+	Script language.Script
 }
 
 func NewAnalyzer() *Analyzer {
 	return &Analyzer{
 		UsedGlyphs: make(map[*semantic.Font]map[int]bool),
+		TextRuns:   make(map[*semantic.Font][]TextRun),
 	}
 }
 
@@ -81,4 +94,90 @@ func (a *Analyzer) recordGlyphs(font *semantic.Font, data []byte) {
 			a.UsedGlyphs[font][int(b)] = true
 		}
 	}
+
+	a.recordTextRuns(font, data)
+}
+
+func (a *Analyzer) recordTextRuns(font *semantic.Font, data []byte) {
+	runes := decodeRunes(font, data)
+	if len(runes) == 0 {
+		return
+	}
+	var current TextRun
+	for _, r := range runes {
+		scr := language.LookupScript(r)
+		if len(current.Runes) == 0 {
+			current.Script = fallbackScript(scr)
+		} else if scr != 0 && scr != current.Script {
+			a.appendRun(font, current)
+			current = TextRun{Script: fallbackScript(scr)}
+		}
+		if len(current.Runes) == 0 {
+			current.Script = fallbackScript(scr)
+		}
+		current.Runes = append(current.Runes, r)
+	}
+	if len(current.Runes) > 0 {
+		a.appendRun(font, current)
+	}
+}
+
+func (a *Analyzer) appendRun(font *semantic.Font, run TextRun) {
+	if len(run.Runes) == 0 {
+		return
+	}
+	buf := make([]rune, len(run.Runes))
+	copy(buf, run.Runes)
+	a.TextRuns[font] = append(a.TextRuns[font], TextRun{Runes: buf, Script: run.Script})
+}
+
+func decodeRunes(font *semantic.Font, data []byte) []rune {
+	if font == nil || len(data) == 0 {
+		return nil
+	}
+	if font.Subtype == "Type0" && (font.Encoding == "Identity-H" || font.Encoding == "Identity-V") {
+		return decodeCIDRunes(font, data)
+	}
+	return decodeByteRunes(font, data)
+}
+
+func decodeCIDRunes(font *semantic.Font, data []byte) []rune {
+	runes := make([]rune, 0, len(data)/2)
+	for i := 0; i+1 < len(data); i += 2 {
+		cid := int(data[i])<<8 | int(data[i+1])
+		if font.ToUnicode != nil {
+			if mapping, ok := font.ToUnicode[cid]; ok {
+				runes = append(runes, mapping...)
+				continue
+			}
+		}
+		// Fall back to direct rune using CID to UTF-16 code unit mapping if possible
+		cp := utf16.Decode([]uint16{uint16(cid)})
+		if len(cp) > 0 {
+			runes = append(runes, cp...)
+		}
+	}
+	return runes
+}
+
+func decodeByteRunes(font *semantic.Font, data []byte) []rune {
+	runes := make([]rune, 0, len(data))
+	for _, b := range data {
+		code := int(b)
+		if font.ToUnicode != nil {
+			if mapping, ok := font.ToUnicode[code]; ok {
+				runes = append(runes, mapping...)
+				continue
+			}
+		}
+		runes = append(runes, rune(code))
+	}
+	return runes
+}
+
+func fallbackScript(scr language.Script) language.Script {
+	if scr != 0 {
+		return scr
+	}
+	return language.LookupScript('a')
 }

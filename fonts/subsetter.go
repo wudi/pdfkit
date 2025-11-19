@@ -1,11 +1,16 @@
 package fonts
 
-import "pdflib/ir/semantic"
+import (
+	"sort"
+
+	"pdflib/ir/semantic"
+)
 
 type Subset struct {
 	OriginalToSubset map[int]int // Map original CID -> new CID (identity for now)
 	SubsetToOriginal map[int]int // Map new CID -> original CID
 	UsedCIDs         []int       // List of used CIDs
+	GlyphSet         map[int]bool
 }
 
 type Planner struct {
@@ -20,18 +25,31 @@ func NewPlanner() *Planner {
 
 func (p *Planner) Plan(analyzer *Analyzer) {
 	for font, used := range analyzer.UsedGlyphs {
+		glyphSet := make(map[int]bool)
+		for cid := range used {
+			glyphSet[cid] = true
+		}
+		if shaped := shapeRunsForFont(font, analyzer.TextRuns[font]); len(shaped) > 0 {
+			for gid := range shaped {
+				glyphSet[gid] = true
+			}
+		}
+
 		subset := &Subset{
 			OriginalToSubset: make(map[int]int),
 			SubsetToOriginal: make(map[int]int),
+			GlyphSet:         glyphSet,
 		}
 
 		// For now, we keep original CIDs (Identity mapping).
 		// A real subsetter would renumber them to 0..N to save space.
-		for cid := range used {
+		for cid := range glyphSet {
 			subset.OriginalToSubset[cid] = cid
 			subset.SubsetToOriginal[cid] = cid
 			subset.UsedCIDs = append(subset.UsedCIDs, cid)
 		}
+		sort.Ints(subset.UsedCIDs)
+
 		p.Subsets[font] = subset
 	}
 }
@@ -75,10 +93,10 @@ func (s *Subsetter) Apply(doc *semantic.Document, planner *Planner) {
 
 		// 3. Subset FontFile
 		if font.Descriptor != nil && len(font.Descriptor.FontFile) > 0 && font.Descriptor.FontFileType == "FontFile2" {
-			// Create a map of used GIDs (Identity-H means CID=GID)
-			usedGIDs := make(map[int]bool)
-			for _, cid := range subset.UsedCIDs {
-				usedGIDs[cid] = true
+			// Identity-H means CID=GID, so the glyph set directly maps to TrueType glyph IDs.
+			usedGIDs := make(map[int]bool, len(subset.GlyphSet))
+			for gid := range subset.GlyphSet {
+				usedGIDs[gid] = true
 			}
 
 			newFontData, err := SubsetTrueType(font.Descriptor.FontFile, usedGIDs)

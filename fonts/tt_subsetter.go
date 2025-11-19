@@ -22,14 +22,19 @@ func SubsetTrueType(data []byte, usedGIDs map[int]bool) ([]byte, error) {
 		return data, nil
 	}
 
-	// Check for complex scripts (Arabic) in GSUB
+	inputGIDs := usedGIDs
 	if p.hasComplexScript() {
-		// For complex scripts, naive subsetting breaks shaping (ligatures/positioning).
-		// Until we implement a proper shaper-aware subsetter, we must keep the full font
-		// or at least all glyphs. For safety, we return the original font.
-		return data, nil
+		closure, err := ComputeClosureGSUB(data, usedGIDs)
+		if err != nil {
+			return data, nil
+		}
+		inputGIDs = closure
 	}
 
+	return p.subsetWithClosure(inputGIDs)
+}
+
+func (p *ttParser) subsetWithClosure(usedGIDs map[int]bool) ([]byte, error) {
 	// 1. Read head to get indexToLocFormat
 	headData, err := p.ReadTable("head")
 	if err != nil {
@@ -324,15 +329,6 @@ func (p *ttParser) rebuildGlyfLoca(closure map[int]bool, numGlyphs int, indexToL
 	}
 
 	var newGlyf bytes.Buffer
-	var newLoca bytes.Buffer
-
-	// We force long format for safety and simplicity in output
-	// But if we want to respect original format, we can.
-	// Let's stick to long format (1) for output loca to avoid overflow issues,
-	// unless we want to minimize size further.
-	// Actually, if we use long format, we must update 'head' table indexToLocFormat to 1.
-	// Let's do that. It simplifies things.
-
 	offsets := make([]uint32, numGlyphs+1)
 	currentOffset := uint32(0)
 
@@ -350,8 +346,14 @@ func (p *ttParser) rebuildGlyfLoca(closure map[int]bool, numGlyphs int, indexToL
 	}
 	offsets[numGlyphs] = currentOffset
 
+	useLongLoca := indexToLocFormat == 1
+	var newLoca bytes.Buffer
 	for _, off := range offsets {
-		binary.Write(&newLoca, binary.BigEndian, off)
+		if useLongLoca {
+			binary.Write(&newLoca, binary.BigEndian, off)
+		} else {
+			binary.Write(&newLoca, binary.BigEndian, uint16(off/2))
+		}
 	}
 
 	return newGlyf.Bytes(), newLoca.Bytes(), nil

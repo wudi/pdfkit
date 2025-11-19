@@ -117,6 +117,7 @@ Status key: Not started / In progress / Done.
 
 Status key: Not started / In progress / Done.
 
-- [ ] GSUB/GPOS Parsing: Integrate `github.com/go-text/typesetting` to parse OpenType Layout tables (GSUB, GPOS) and identify glyph substitution/positioning rules. Status: Not started.
-- [ ] Shaper-Aware Closure: Implement a closure algorithm using `go-text/typesetting` to find glyphs referenced by GSUB/GPOS rules (e.g., ligatures, presentation forms) when their base glyphs are used. Status: Not started.
-- [ ] Complex Script Subsetting: Update `fonts/tt_subsetter.go` to use the shaper-aware closure instead of the full-font fallback for complex scripts. Status: Not started.
+- [ ] Capture script-aware runs: extend `fonts.Analyzer` to log per-font UTF-16 runs plus detected script/direction so shaping can replay real text. Status: Not started.
+- [ ] Shape runs via go-text/typesetting: feed recorded runs into `github.com/go-text/typesetting/shaping` with script/lang-specific options to collect exact glyph IDs emitted by the shaper. Status: Not started.
+- [ ] Merge shaped glyphs with closures: union shaped glyph IDs with composite/GSUB closures and drive the planner/subsetter with the expanded set, falling back only when shaping fails. Status: Not started.
+- [ ] Pipeline verification: add regression coverage (unit tests + `examples/fonts` + `examples/extract_text`) ensuring Arabic stays correct while subsetting is active. Status: Not started.
