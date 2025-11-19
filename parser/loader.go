@@ -149,7 +149,7 @@ func (o *objectLoader) loadAtOffset(objNum int, offset int64, gen int) (raw.Obje
 		return nil, errors.New("expected obj keyword")
 	}
 
-	obj, err := parseObject(tr)
+	obj, err := parseObject(tr, o.recovery, objNum, gen)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +243,7 @@ func (o *objectLoader) loadFromObjectStream(ctx context.Context, ref raw.ObjectR
 		off := pairs[2*i+1]
 		sc := bodyScanner(off)
 		tr := &tokenReader{s: sc}
-		obj, err := parseObject(tr)
+		obj, err := parseObject(tr, o.recovery, objNum, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -465,7 +465,7 @@ func (r *tokenReader) clearStreamLengthHint() {
 	}
 }
 
-func parseObject(tr *tokenReader) (raw.Object, error) {
+func parseObject(tr *tokenReader, rec recovery.Strategy, objNum, gen int) (raw.Object, error) {
 	tok, err := tr.next()
 	if err != nil {
 		return nil, err
@@ -496,9 +496,9 @@ func parseObject(tr *tokenReader) (raw.Object, error) {
 			return raw.StringObj{Bytes: b}, nil
 		}
 	case scanner.TokenArray:
-		return parseArray(tr)
+		return parseArray(tr, rec, objNum, gen)
 	case scanner.TokenDict:
-		return parseDict(tr)
+		return parseDict(tr, rec, objNum, gen)
 	case scanner.TokenRef:
 		if v, ok := tok.Value.(struct{ Num, Gen int }); ok {
 			return raw.RefObj{R: raw.ObjectRef{Num: v.Num, Gen: v.Gen}}, nil
@@ -507,7 +507,7 @@ func parseObject(tr *tokenReader) (raw.Object, error) {
 	return nil, errors.New("unexpected token")
 }
 
-func parseArray(tr *tokenReader) (raw.Object, error) {
+func parseArray(tr *tokenReader, rec recovery.Strategy, objNum, gen int) (raw.Object, error) {
 	arr := &raw.ArrayObj{}
 	for {
 		tok, err := tr.next()
@@ -518,7 +518,7 @@ func parseArray(tr *tokenReader) (raw.Object, error) {
 			break
 		}
 		tr.unread(tok)
-		item, err := parseObject(tr)
+		item, err := parseObject(tr, rec, objNum, gen)
 		if err != nil {
 			return nil, err
 		}
@@ -527,7 +527,7 @@ func parseArray(tr *tokenReader) (raw.Object, error) {
 	return arr, nil
 }
 
-func parseDict(tr *tokenReader) (raw.Object, error) {
+func parseDict(tr *tokenReader, rec recovery.Strategy, objNum, gen int) (raw.Object, error) {
 	d := raw.Dict()
 	for {
 		tok, err := tr.next()
@@ -538,10 +538,21 @@ func parseDict(tr *tokenReader) (raw.Object, error) {
 			break
 		}
 		if tok.Type != scanner.TokenName {
+			// Recovery logic for missing ">>"
+			if tok.Type == scanner.TokenKeyword && tok.Value == "endobj" {
+				err := errors.New("unexpected endobj in dict (missing >>?)")
+				action := rec.OnError(nil, err, recovery.Location{ObjectNum: objNum, ObjectGen: gen, Component: "Parser"})
+				if action == recovery.ActionWarn || action == recovery.ActionFix {
+					tr.unread(tok)
+					break
+				}
+				return nil, err
+			}
+
 			return nil, errors.New("expected name in dict")
 		}
 		key, _ := tok.Value.(string)
-		val, err := parseObject(tr)
+		val, err := parseObject(tr, rec, objNum, gen)
 		if err != nil {
 			return nil, err
 		}

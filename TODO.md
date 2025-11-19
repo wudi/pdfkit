@@ -88,3 +88,27 @@ Status key: Not started / In progress / Done.
 
 - [x] PDF/A-1b validation: implement `pdfa.Enforcer.Validate` to check for encryption, font embedding, OutputIntents, and forbidden actions (Launch/Sound/Movie). Status: Done (implemented in `pdfa/pdfa.go` with checks for encryption, output intents, font embedding, and forbidden annotations).
 - [x] Linearization (Fast Web View): implement 2-pass writing in `writer` to calculate object offsets, reorder objects (Linearization Dict -> Page 1 -> Shared -> Others), and generate Hint Tables when `Linearize: true`. Status: Done (implemented 2-pass writer with object reordering, hint stream generation, and linearization dictionary).
+
+# Error Recovery plan
+
+Status key: Not started / In progress / Done.
+
+- [x] Implement recovery strategies: create `StrictStrategy` (fail fast) and `LenientStrategy` (log & continue) in `recovery/strategies.go`. Status: Done.
+- [x] Integrate recovery into scanner/parser: update `scanner` and `parser` to use the configured recovery strategy for common errors (e.g., missing delimiters, bad xrefs). Status: Done (integrated into scanner and object loader; xref repair pending).
+- [x] Add recovery tests: create tests with malformed PDFs to verify that `StrictStrategy` fails and `LenientStrategy` recovers. Status: Done.
+
+# PDF/A Enforcement plan
+
+Status key: Not started / In progress / Done.
+
+- [ ] Implement PDF/A enforcement: implement `Enforce` in `pdfa/pdfa.go` to automatically fix violations (e.g., remove encryption, strip forbidden annotations). Status: Not started.
+- [ ] Add enforcement tests: create tests that take a non-compliant PDF and verify it becomes compliant after enforcement. Status: Not started.
+
+# Font Subsetting plan
+
+Status key: Not started / In progress / Done.
+
+- [x] Implement GlyphAnalyzer: create `fonts/analyzer.go` to scan content streams and identify used glyphs. Status: Done.
+- [x] Implement SubsetPlanner: create `fonts/planner.go` to map original GIDs to a subset. Status: Done (implemented in `fonts/subsetter.go`).
+- [x] Implement SubsetGenerator: create `fonts/generator.go` to generate the subsetted font file (initially just a pass-through or simple subset if possible). Status: Done (implemented in `fonts/subsetter.go` as `Subsetter`, currently filters Widths/ToUnicode but passes full font file).
+- [x] Integrate subsetting into writer: update `writer` to use the subsetting pipeline when `SubsetFonts: true`. Status: Done.

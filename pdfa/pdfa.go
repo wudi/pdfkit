@@ -1,6 +1,9 @@
 package pdfa
 
-import "pdflib/ir/semantic"
+import (
+	"pdflib/ir/raw"
+	"pdflib/ir/semantic"
+)
 
 // Level represents a PDF/A conformance level shared across writer and enforcer.
 type Level int
@@ -31,6 +34,44 @@ type enforcerImpl struct{}
 func NewEnforcer() Enforcer { return &enforcerImpl{} }
 
 func (e *enforcerImpl) Enforce(ctx Context, doc *semantic.Document, level Level) error {
+	// 1. Remove encryption
+	if doc.Encrypted {
+		doc.Encrypted = false
+		doc.Permissions = raw.Permissions{}
+		doc.OwnerPassword = ""
+		doc.UserPassword = ""
+	}
+
+	// 2. Add OutputIntent if missing
+	if len(doc.OutputIntents) == 0 {
+		doc.OutputIntents = []semantic.OutputIntent{
+			{
+				S:                         "GTS_PDFA1",
+				OutputConditionIdentifier: "sRGB IEC61966-2.1",
+				Info:                      "sRGB IEC61966-2.1",
+				// Note: A real implementation should embed a valid ICC profile here.
+				DestOutputProfile: nil,
+			},
+		}
+	}
+
+	// 3. Remove forbidden annotations
+	for _, p := range doc.Pages {
+		if err := checkCancelled(ctx); err != nil {
+			return err
+		}
+		if len(p.Annotations) == 0 {
+			continue
+		}
+		var validAnnots []semantic.Annotation
+		for _, annot := range p.Annotations {
+			if !isForbiddenAnnotation(annot) {
+				validAnnots = append(validAnnots, annot)
+			}
+		}
+		p.Annotations = validAnnots
+	}
+
 	return nil
 }
 

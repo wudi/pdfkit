@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"pdflib/ir/raw"
+	"pdflib/recovery"
 	"pdflib/scanner"
 	"pdflib/security"
 	"pdflib/xref"
@@ -171,7 +172,7 @@ func TestTokenReaderLengthHintWithNestedDecodeParms(t *testing.T) {
 	sc := scanner.New(bytes.NewReader(data), scanner.Config{})
 	tr := newTokenReader(NewStreamAware(sc))
 
-	obj, err := parseObject(tr)
+	obj, err := parseObject(tr, recovery.NewStrictStrategy(), 0, 0)
 	if err != nil {
 		t.Fatalf("parse dict: %v", err)
 	}

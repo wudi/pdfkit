@@ -73,7 +73,7 @@ func main() {
 
 	var buf bytes.Buffer
 	w := (&writer.WriterBuilder{}).Build()
-	if err := w.Write(context.Background(), doc, &buf, writer.Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.Background(), doc, &buf, writer.Config{Deterministic: true, SubsetFonts: true}); err != nil {
 		exitErr("write pdf", err)
 	}
 	if err := os.WriteFile(out, buf.Bytes(), 0o644); err != nil {

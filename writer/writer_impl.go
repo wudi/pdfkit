@@ -3,6 +3,7 @@ package writer
 import (
 	"bytes"
 	"fmt"
+	"pdflib/fonts"
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
 	"sort"
@@ -47,6 +48,15 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	}
 	if err := checkCancelled(); err != nil {
 		return err
+	}
+
+	if cfg.SubsetFonts {
+		analyzer := fonts.NewAnalyzer()
+		analyzer.Analyze(doc)
+		planner := fonts.NewPlanner()
+		planner.Plan(analyzer)
+		subsetter := fonts.NewSubsetter()
+		subsetter.Apply(doc, planner)
 	}
 
 	if cfg.Linearize {
