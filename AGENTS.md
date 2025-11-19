@@ -34,3 +34,4 @@
 ## Security & Configuration Tips
 - Do not commit real secrets or proprietary PDFs; prefer synthetic/redacted fixtures. Centralize encryption assumptions in `security/`.
 - Validate lengths/offsets and bound reads in scanners, filters, and content streams to avoid resource exhaustion; keep defensive defaults and document any graceful degradation paths.
+- Native JPX/JBIG2 decoders enforce 32k dimension / 64MP pixel caps—adjust `filters/image_limits.go` if you need different limits and include tests for the change.

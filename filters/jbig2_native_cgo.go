@@ -106,7 +106,10 @@ func decodeJBIG2Native(ctx context.Context, pageData, globalData []byte) ([]byte
 	height := int(img.height)
 	stride := int(img.stride)
 
-	if width <= 0 || height <= 0 || stride <= 0 {
+	if err := validateNativeImageBounds(width, height); err != nil {
+		return nil, err
+	}
+	if stride <= 0 {
 		return nil, errors.New("invalid JBIG2 image dimensions")
 	}
 	rawLen := stride * height

@@ -276,8 +276,8 @@ func convertOPJImage(img *C.opj_image_t) ([]byte, error) {
 	}
 	width := int(img.x1 - img.x0)
 	height := int(img.y1 - img.y0)
-	if width <= 0 || height <= 0 {
-		return nil, errors.New("JPX image has invalid bounds")
+	if err := validateNativeImageBounds(width, height); err != nil {
+		return nil, err
 	}
 	pixelCount := int64(width) * int64(height)
 	const maxInt = int64(^uint(0) >> 1)

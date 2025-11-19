@@ -42,4 +42,20 @@ func TestComposeJPXPixelBuffer(t *testing.T) {
 	if !bytes.Equal(buf, expected) {
 		t.Fatalf("unexpected cmyk output %v", buf)
 	}
+
+	sy := jpxComponent{samples: []int32{235}, precision: 8}
+	scb := jpxComponent{samples: []int32{128}, precision: 8}
+	scr := jpxComponent{samples: []int32{128}, precision: 8}
+	buf, err = composeJPXPixelBuffer([]jpxComponent{sy, scb, scr}, 1, 1, jpxColorSpaceSYCC)
+	if err != nil {
+		t.Fatalf("compose sycc: %v", err)
+	}
+	if buf[0] <= 200 || buf[1] <= 200 || buf[2] <= 200 {
+		t.Fatalf("expected near white from SYCC midpoints, got %v", buf)
+	}
+
+	_, err = composeJPXPixelBuffer([]jpxComponent{jpxComponent{samples: []int32{0}, precision: 8}, jpxComponent{samples: []int32{}, precision: 8}}, 1, 1, jpxColorSpaceRGB)
+	if err == nil {
+		t.Fatalf("expected mismatch error when lengths differ")
+	}
 }
