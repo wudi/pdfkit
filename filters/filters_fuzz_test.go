@@ -2,8 +2,8 @@ package filters
 
 import (
 	"context"
-	"testing"
 	"pdflib/ir/raw"
+	"testing"
 )
 
 func FuzzFilters(f *testing.F) {
