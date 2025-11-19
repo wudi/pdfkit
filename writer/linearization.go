@@ -578,6 +578,7 @@ func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt
 	if err != nil {
 		return err
 	}
+	idPair := fileID(doc, cfg)
 
 	// 3. Prepare Linearization Dict and Hint Stream
 	linDict := raw.Dict()
@@ -645,7 +646,7 @@ func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt
 		// Trailer size is variable.
 
 		// Let's build a dummy trailer to measure size.
-		fpTrailer := buildTrailer(maxP1Num+1, raw.ObjectRef{}, nil, nil, doc, cfg, 0, fileID(doc, cfg))
+		fpTrailer := buildTrailer(maxP1Num+1, raw.ObjectRef{}, nil, nil, doc, cfg, 0, idPair)
 		fpTrailerBytes := serializePrimitive(fpTrailer)
 
 		// xref\n0 N\n...
@@ -679,6 +680,24 @@ func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt
 		}
 
 		fileLen := currentOffset
+		maxObjNum := sortedRefs[len(sortedRefs)-1].Num
+		size := maxObjNum + 1
+		entryCount := size - (maxP1Num + 1)
+		if entryCount < 0 {
+			entryCount = 0
+		}
+		fpXRefOffset := offsets[linDictRef.Num] + lengths[linDictRef.Num]
+		mainTrailer := buildTrailer(size, l.catalog, l.info, l.encrypt, doc, cfg, 0, idPair)
+		mainTrailer.Set(raw.NameLiteral("Prev"), raw.NumberInt(fpXRefOffset))
+		trailerBytes := serializePrimitive(mainTrailer)
+		mainXRefLen := int64(len("xref\n"))
+		mainXRefLen += int64(len(fmt.Sprintf("%d %d\n", maxP1Num+1, entryCount)))
+		mainXRefLen += int64(entryCount) * 20
+		mainXRefLen += int64(len("trailer\n"))
+		mainXRefLen += int64(len(trailerBytes))
+		mainXRefLen += int64(len("\nstartxref\n"))
+		mainXRefLen += int64(len(fmt.Sprintf("%d\n%%EOF\n", currentOffset)))
+		fileLen += mainXRefLen
 
 		// Generate Hint Stream
 		hintData, err := l.generateHintStream(offsets, lengths)
@@ -699,7 +718,7 @@ func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt
 
 		// Main XRef Offset (T)
 		// Main XRef starts at fileLen.
-		linDict.Set(raw.NameLiteral("T"), raw.NumberInt(fileLen))
+		linDict.Set(raw.NameLiteral("T"), raw.NumberInt(currentOffset))
 	}
 
 	// 5. Final Write
@@ -721,7 +740,7 @@ func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt
 			buf.WriteString("0000000000 65535 f \n")
 		}
 	}
-	fpTrailer := buildTrailer(maxP1Num+1, raw.ObjectRef{}, nil, nil, doc, cfg, 0, fileID(doc, cfg))
+	fpTrailer := buildTrailer(maxP1Num+1, raw.ObjectRef{}, nil, nil, doc, cfg, 0, idPair)
 	buf.WriteString("trailer\n")
 	buf.Write(serializePrimitive(fpTrailer))
 	buf.WriteString("\n")
@@ -768,7 +787,7 @@ func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt
 		}
 	}
 
-	trailer := buildTrailer(size, l.catalog, l.info, l.encrypt, doc, cfg, 0, fileID(doc, cfg))
+	trailer := buildTrailer(size, l.catalog, l.info, l.encrypt, doc, cfg, 0, idPair)
 	// Main trailer must have Prev pointing to First Page XRef?
 	// "The trailer... shall contain a Prev entry giving the offset of the first page cross-reference table."
 	// First Page XRef offset is offsets[linDictRef.Num] + lengths[linDictRef.Num]
