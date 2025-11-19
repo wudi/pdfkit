@@ -48,6 +48,11 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	if err := checkCancelled(); err != nil {
 		return err
 	}
+
+	if cfg.Linearize {
+		return w.writeLinearized(ctx, doc, out, cfg)
+	}
+
 	version := pdfVersion(cfg)
 	incr := incrementalContext(doc, out, cfg)
 	idPair := fileID(doc, cfg)
