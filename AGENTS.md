@@ -10,6 +10,7 @@
 ## Build, Test, and Development Commands
 - `go test ./...` — full suite across parser, filters, writer, and pipeline.
 - `go test ./... -run <Name>` — target a specific test group (e.g., `Pipeline`, `ASCIIHex`).
+- `go test ./... -tags openjpeg` — run the suite with the native OpenJPEG-backed JPX decoder enabled (requires libopenjp2 headers/libs, e.g., mac: `brew install openjpeg` ubuntu/debian: `apt install libopenjp2-7 libopenjp2-7-dev`).
 - `go vet ./...` — static checks for common issues.
 - `go fmt ./...` — canonical formatting before sending changes.
 - `go run ./cmd/scantest` — quick sanity pass when touching scanner/xref behavior.

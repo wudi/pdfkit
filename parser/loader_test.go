@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"pdflib/ir/raw"
+	"pdflib/scanner"
 	"pdflib/security"
 	"pdflib/xref"
 )
@@ -89,12 +90,12 @@ func buildPDF() string {
 }
 
 type cryptStub struct {
-	calls    int
-	filter   string
+	calls     int
+	filter    string
 	encrypted bool
 }
 
-func (c *cryptStub) IsEncrypted() bool { return c.encrypted }
+func (c *cryptStub) IsEncrypted() bool                  { return c.encrypted }
 func (c *cryptStub) Authenticate(password string) error { return nil }
 func (c *cryptStub) DecryptWithFilter(objNum, gen int, data []byte, class security.DataClass, cryptFilter string) ([]byte, error) {
 	c.calls++
@@ -162,5 +163,29 @@ func TestDecryptStreamUsesCryptFilterName(t *testing.T) {
 	}
 	if stub.filter != "CF1" {
 		t.Fatalf("crypt filter name propagated, got %q", stub.filter)
+	}
+}
+
+func TestTokenReaderLengthHintWithNestedDecodeParms(t *testing.T) {
+	data := []byte("<< /Type /XObject /DecodeParms [ << /Predictor 15 >> ] /Length 6 >>\nstream\nABCDEF\nendstream\n")
+	sc := scanner.New(bytes.NewReader(data), scanner.Config{})
+	tr := newTokenReader(NewStreamAware(sc))
+
+	obj, err := parseObject(tr)
+	if err != nil {
+		t.Fatalf("parse dict: %v", err)
+	}
+	if _, ok := obj.(*raw.DictObj); !ok {
+		t.Fatalf("expected dict, got %T", obj)
+	}
+	streamTok, err := tr.next()
+	if err != nil {
+		t.Fatalf("read stream token: %v", err)
+	}
+	if streamTok.Type != scanner.TokenStream {
+		t.Fatalf("expected stream token, got %v", streamTok.Type)
+	}
+	if payload, _ := streamTok.Value.([]byte); len(payload) != 6 {
+		t.Fatalf("expected 6-byte stream, got %d", len(payload))
 	}
 }

@@ -3,6 +3,7 @@ package filters
 import (
 	"bytes"
 	"compress/flate"
+	"compress/zlib"
 	"context"
 	stdascii85 "encoding/ascii85"
 	"encoding/hex"
@@ -273,6 +274,11 @@ func (jpxDecoder) Decode(ctx context.Context, in []byte, params raw.Dictionary) 
 		return nil, ctx.Err()
 	default:
 	}
+	if pix, err := decodeJPXOpenJPEG(ctx, in); err == nil {
+		return pix, nil
+	} else if !errors.Is(err, errJPXNativeUnsupported) {
+		return nil, err
+	}
 	if pix, err := decodeImageToNRGBA(in); err == nil {
 		return pix, nil
 	}
@@ -362,7 +368,7 @@ func (jbig2Decoder) Decode(ctx context.Context, in []byte, params raw.Dictionary
 	if pix, err := decodeJBIG2External(ctx, in); err == nil {
 		return pix, nil
 	}
-	if nativeErr != nil && !errors.Is(nativeErr, errJBIG2NativeUnsupported) {
+	if !errors.Is(nativeErr, errJBIG2NativeUnsupported) {
 		return nil, nativeErr
 	}
 	return nil, UnsupportedError{Filter: "JBIG2Decode"}
@@ -479,11 +485,17 @@ func decodeJBIG2External(ctx context.Context, data []byte) ([]byte, error) {
 
 // flateDecoder implements FlateDecode using the standard library.
 func (flateDecoder) Decode(ctx context.Context, in []byte, params raw.Dictionary) ([]byte, error) {
-	r := flate.NewReader(bytes.NewReader(in))
-	defer r.Close()
-
 	var out bytes.Buffer
-	if _, err := io.Copy(&out, r); err != nil {
+	if zr, err := zlib.NewReader(bytes.NewReader(in)); err == nil {
+		defer zr.Close()
+		if _, err := io.Copy(&out, zr); err != nil {
+			return nil, err
+		}
+		return applyPredictor(out.Bytes(), params)
+	}
+	fr := flate.NewReader(bytes.NewReader(in))
+	defer fr.Close()
+	if _, err := io.Copy(&out, fr); err != nil {
 		return nil, err
 	}
 	return applyPredictor(out.Bytes(), params)

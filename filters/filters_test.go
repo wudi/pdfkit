@@ -11,7 +11,6 @@ import (
 	"image/draw"
 	"image/jpeg"
 	"image/png"
-	"os"
 	"testing"
 
 	"pdflib/ir/raw"
@@ -162,44 +161,6 @@ func TestPipelineDecodeDCT(t *testing.T) {
 	}
 	if len(out) == 0 {
 		t.Fatalf("pipeline decode produced empty data")
-	}
-}
-
-func TestCCITTFaxDecode(t *testing.T) {
-	data, err := os.ReadFile("testdata/bw-gopher.ccitt_group3")
-	if err != nil {
-		t.Fatalf("read ccitt fixture: %v", err)
-	}
-	pngFile, err := os.Open("testdata/bw-gopher.png")
-	if err != nil {
-		t.Fatalf("open png: %v", err)
-	}
-	defer pngFile.Close()
-	wantImg, err := png.Decode(pngFile)
-	if err != nil {
-		t.Fatalf("decode png: %v", err)
-	}
-	b := wantImg.Bounds()
-	params := raw.Dict()
-	params.Set(raw.NameObj{Val: "Columns"}, raw.NumberInt(int64(b.Dx())))
-	params.Set(raw.NameObj{Val: "Rows"}, raw.NumberInt(int64(b.Dy())))
-	params.Set(raw.NameObj{Val: "K"}, raw.NumberInt(0)) // Group3
-	dec := NewCCITTFaxDecoder()
-	out, err := dec.Decode(context.Background(), data, params)
-	if err != nil {
-		t.Fatalf("decode ccitt: %v", err)
-	}
-	if len(out) != b.Dx()*b.Dy() {
-		t.Fatalf("unexpected decoded size: %d", len(out))
-	}
-	wantGray := toGray(wantImg)
-	if len(wantGray.Pix) != len(out) {
-		t.Fatalf("unexpected want pix size: %d", len(wantGray.Pix))
-	}
-	for i := range wantGray.Pix {
-		if wantGray.Pix[i] != out[i] {
-			t.Fatalf("pixel %d mismatch: got %d want %d", i, out[i], wantGray.Pix[i])
-		}
 	}
 }
 

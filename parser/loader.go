@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 
@@ -121,7 +122,7 @@ func (o *objectLoader) loadAtOffset(objNum int, offset int64, gen int) (raw.Obje
 	if err := s.Seek(offset); err != nil {
 		return nil, err
 	}
-	tr := &tokenReader{s: NewStreamAware(s)}
+	tr := newTokenReader(s)
 
 	// Expect "<objNum> <gen> obj"
 	tokNum, err := tr.next()
@@ -153,8 +154,19 @@ func (o *objectLoader) loadAtOffset(objNum int, offset int64, gen int) (raw.Obje
 		return nil, err
 	}
 	if dict, ok := obj.(*raw.DictObj); ok {
+		hint, err := o.resolveStreamLength(dict)
+		if err != nil {
+			return nil, err
+		}
+		if hint > 0 {
+			tr.setStreamLengthHint(hint)
+		} else {
+			tr.clearStreamLengthHint()
+		}
 		if streamTok, err := tr.next(); err == nil && streamTok.Type == scanner.TokenStream {
 			obj = raw.NewStream(dict, copyBytes(streamTok.Value))
+		} else if err == nil {
+			tr.unread(streamTok)
 		}
 	}
 	return o.decryptObject(raw.ObjectRef{Num: objNum, Gen: gen}, obj)
@@ -414,9 +426,20 @@ func isMetadataStream(d *raw.DictObj) bool {
 
 // Parsing helpers (duplicated from raw parser for loader-focused parsing).
 
+type streamLengthSetter interface{ SetNextStreamLength(int64) }
+
 type tokenReader struct {
-	s   interface{ Next() (scanner.Token, error) }
-	buf []scanner.Token
+	s            interface{ Next() (scanner.Token, error) }
+	buf          []scanner.Token
+	lengthSetter streamLengthSetter
+}
+
+func newTokenReader(src interface{ Next() (scanner.Token, error) }) *tokenReader {
+	tr := &tokenReader{s: src}
+	if setter, ok := src.(streamLengthSetter); ok {
+		tr.lengthSetter = setter
+	}
+	return tr
 }
 
 func (r *tokenReader) next() (scanner.Token, error) {
@@ -429,6 +452,18 @@ func (r *tokenReader) next() (scanner.Token, error) {
 }
 
 func (r *tokenReader) unread(tok scanner.Token) { r.buf = append(r.buf, tok) }
+
+func (r *tokenReader) setStreamLengthHint(n int64) {
+	if r.lengthSetter != nil && n > 0 {
+		r.lengthSetter.SetNextStreamLength(n)
+	}
+}
+
+func (r *tokenReader) clearStreamLengthHint() {
+	if r.lengthSetter != nil {
+		r.lengthSetter.SetNextStreamLength(-1)
+	}
+}
 
 func parseObject(tr *tokenReader) (raw.Object, error) {
 	tok, err := tr.next()
@@ -513,6 +548,39 @@ func parseDict(tr *tokenReader) (raw.Object, error) {
 		d.Set(raw.NameObj{Val: key}, val)
 	}
 	return d, nil
+}
+
+func (o *objectLoader) resolveStreamLength(dict *raw.DictObj) (int64, error) {
+	if dict == nil {
+		return 0, nil
+	}
+	val, ok := dict.Get(raw.NameLiteral("Length"))
+	if !ok {
+		return 0, nil
+	}
+	switch v := val.(type) {
+	case raw.NumberObj:
+		return v.Int(), nil
+	case raw.RefObj:
+		obj, err := o.loadReferencedObject(v.R)
+		if err != nil {
+			return 0, err
+		}
+		if num, ok := obj.(raw.NumberObj); ok {
+			return num.Int(), nil
+		}
+		return 0, fmt.Errorf("length reference %v is not numeric", v.R)
+	default:
+		return 0, nil
+	}
+}
+
+func (o *objectLoader) loadReferencedObject(ref raw.ObjectRef) (raw.Object, error) {
+	offset, gen, ok := o.xrefTable.Lookup(ref.Num)
+	if !ok {
+		return nil, fmt.Errorf("object %d missing for length reference", ref.Num)
+	}
+	return o.loadAtOffset(ref.Num, offset, gen)
 }
 
 func toInt(v interface{}) (int64, bool) {
