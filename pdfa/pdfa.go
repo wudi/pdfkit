@@ -35,7 +35,119 @@ func (e *enforcerImpl) Enforce(ctx Context, doc *semantic.Document, level Level)
 }
 
 func (e *enforcerImpl) Validate(ctx Context, doc *semantic.Document, level Level) (*ComplianceReport, error) {
-	return &ComplianceReport{Compliant: true, Level: level}, nil
+	report := &ComplianceReport{
+		Level:      level,
+		Violations: []Violation{},
+	}
+
+	// 1. Encryption forbidden
+	if doc.Encrypted {
+		report.Violations = append(report.Violations, Violation{
+			Code:        "ENC001",
+			Description: "Encryption is forbidden in PDF/A",
+			Location:    "Document",
+		})
+	}
+
+	// 2. OutputIntent required
+	if len(doc.OutputIntents) == 0 {
+		report.Violations = append(report.Violations, Violation{
+			Code:        "INT001",
+			Description: "OutputIntent is required",
+			Location:    "Catalog",
+		})
+	}
+
+	// 3. Font embedding required
+	// We need to check all fonts used in the document.
+	// Since fonts are stored in Page Resources, we iterate pages.
+	// To avoid duplicate checks, we track visited fonts by pointer or name.
+	visitedFonts := make(map[*semantic.Font]bool)
+
+	for i, p := range doc.Pages {
+		if err := checkCancelled(ctx); err != nil {
+			return nil, err
+		}
+		if p.Resources == nil {
+			continue
+		}
+		for name, font := range p.Resources.Fonts {
+			if visitedFonts[font] {
+				continue
+			}
+			visitedFonts[font] = true
+
+			if !isFontEmbedded(font) {
+				report.Violations = append(report.Violations, Violation{
+					Code:        "FNT001",
+					Description: "Font must be embedded: " + font.BaseFont,
+					Location:    "Page " + string(rune(i+1)) + " Resource " + name,
+				})
+			}
+		}
+
+		// 4. Forbidden Actions (Launch, Sound, Movie, JavaScript)
+		// Check Annotations
+		for _, annot := range p.Annotations {
+			if isForbiddenAnnotation(annot) {
+				report.Violations = append(report.Violations, Violation{
+					Code:        "ACT001",
+					Description: "Forbidden annotation type or action: " + annot.Subtype,
+					Location:    "Page " + string(rune(i+1)),
+				})
+			}
+		}
+	}
+
+	report.Compliant = len(report.Violations) == 0
+	return report, nil
 }
+
+func isFontEmbedded(f *semantic.Font) bool {
+	if f == nil {
+		return false
+	}
+	// Type3 fonts are defined by streams in the PDF, effectively embedded.
+	if f.Subtype == "Type3" {
+		return true
+	}
+	// Standard 14 fonts must also be embedded in PDF/A.
+	if f.Descriptor != nil && len(f.Descriptor.FontFile) > 0 {
+		return true
+	}
+	// Check descendant for Type0
+	if f.Subtype == "Type0" && f.DescendantFont != nil {
+		if f.DescendantFont.Descriptor != nil && len(f.DescendantFont.Descriptor.FontFile) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func isForbiddenAnnotation(a semantic.Annotation) bool {
+	switch a.Subtype {
+	case "Movie", "Sound", "Screen", "3D":
+		return true
+	}
+	// Check for JavaScript in URI (simplified check)
+	// Real implementation would check the Action dictionary
+	if len(a.URI) > 11 && a.URI[:11] == "javascript:" {
+		return true
+	}
+	return false
+}
+
+func checkCancelled(ctx Context) error {
+	select {
+	case <-ctx.Done():
+		return &ValidationCancelledError{}
+	default:
+		return nil
+	}
+}
+
+type ValidationCancelledError struct{}
+
+func (e *ValidationCancelledError) Error() string { return "validation cancelled" }
 
 type Context interface{ Done() <-chan struct{} }

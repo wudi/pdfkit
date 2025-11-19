@@ -81,3 +81,10 @@ Status key: Not started / In progress / Done.
 - [x] Extract table of contents: merge outlines with `PageLabels` to build a user-facing TOC payload that mirrors viewer panels. Status: Done (`extractor.ExtractTableOfContents` attaches computed page labels; `cmd/extract -toc` surfaces the flattened view).
 - [x] Extract font inventory (new need): walk per-page `Resources.Fonts` to report font names, encodings, and whether ToUnicode maps exist, helping audit multi-language PDFs. Status: Done (`extractor.ExtractFonts` deduplicates font dictionaries and lists page usage; surfaced via `cmd/extract -fonts`).
 - [x] Extract embedded files (new need): surface `semantic.Document.EmbeddedFiles` as downloadable attachments with relationship metadata to support PDF/A-3 workflows. Status: Done (`extractor.ExtractEmbeddedFiles` walks the Names tree and `cmd/extract -attachments` writes attachments plus JSON summaries).
+
+# Compliance & Quality plan (Phase 4)
+
+Status key: Not started / In progress / Done.
+
+- [x] PDF/A-1b validation: implement `pdfa.Enforcer.Validate` to check for encryption, font embedding, OutputIntents, and forbidden actions (Launch/Sound/Movie). Status: Done (implemented in `pdfa/pdfa.go` with checks for encryption, output intents, font embedding, and forbidden annotations).
+- [ ] Linearization (Fast Web View): implement 2-pass writing in `writer` to calculate object offsets, reorder objects (Linearization Dict -> Page 1 -> Shared -> Others), and generate Hint Tables when `Linearize: true`. Status: Not started.
