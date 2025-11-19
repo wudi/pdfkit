@@ -18,6 +18,7 @@ type Extractor struct {
 	catalog    *raw.DictObj
 	pages      []*raw.DictObj
 	pageLabels map[int]string
+	fontCache  map[raw.ObjectRef]*fontDecoder
 	inflated   bool
 }
 
