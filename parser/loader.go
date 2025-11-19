@@ -118,7 +118,10 @@ func (o *objectLoader) loadOnce(ctx context.Context, ref raw.ObjectRef) (raw.Obj
 
 // loadAtOffset assumes caller holds the loader mutex.
 func (o *objectLoader) loadAtOffset(objNum int, offset int64, gen int) (raw.Object, error) {
-	s := scanner.New(o.reader, scanner.Config{Recovery: o.recovery})
+	if o.scanner == nil {
+		o.scanner = scanner.New(o.reader, scanner.Config{Recovery: o.recovery})
+	}
+	s := o.scanner
 	if err := s.Seek(offset); err != nil {
 		return nil, err
 	}
@@ -164,7 +167,9 @@ func (o *objectLoader) loadAtOffset(objNum int, offset int64, gen int) (raw.Obje
 			tr.clearStreamLengthHint()
 		}
 		if streamTok, err := tr.next(); err == nil && streamTok.Type == scanner.TokenStream {
-			obj = raw.NewStream(dict, copyBytes(streamTok.Value))
+			if b, ok := streamTok.Value.([]byte); ok {
+				obj = raw.NewStream(dict, b)
+			}
 		} else if err == nil {
 			tr.unread(streamTok)
 		}

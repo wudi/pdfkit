@@ -73,6 +73,8 @@ type pdfScanner struct {
 	fixArrayClose int
 	fixDictClose  int
 	pin           int64
+	readBuf       []byte
+	windowBuf     []byte
 }
 
 // New loads entire ReaderAt into memory and returns a scanner.
@@ -81,7 +83,15 @@ func New(r ReaderAt, cfg Config) Scanner {
 	if chunk <= 0 {
 		chunk = 64 * 1024
 	}
-	return &pdfScanner{reader: r, cfg: cfg, nextStreamLen: -1, chunkSize: chunk, pin: -1}
+	return &pdfScanner{
+		reader:        r,
+		cfg:           cfg,
+		nextStreamLen: -1,
+		chunkSize:     chunk,
+		pin:           -1,
+		readBuf:       make([]byte, chunk),
+		windowBuf:     make([]byte, chunk),
+	}
 }
 
 func (s *pdfScanner) Position() int64 { return s.pos }
@@ -225,11 +235,13 @@ func (s *pdfScanner) ensure(n int64) error {
 }
 
 func (s *pdfScanner) loadMore() error {
-	buf := make([]byte, s.chunkSize)
+	if int64(len(s.readBuf)) != s.chunkSize {
+		s.readBuf = make([]byte, s.chunkSize)
+	}
 	off := s.base + int64(len(s.data))
-	n, err := s.reader.ReadAt(buf, off)
+	n, err := s.reader.ReadAt(s.readBuf, off)
 	if n > 0 {
-		s.data = append(s.data, buf[:n]...)
+		s.data = append(s.data, s.readBuf[:n]...)
 		s.trimBuffer()
 	}
 	if err == io.EOF {
@@ -253,7 +265,10 @@ func (s *pdfScanner) reloadWindow(off int64) error {
 	if size == 0 {
 		size = s.chunkSize
 	}
-	buf := make([]byte, size)
+	if int64(cap(s.windowBuf)) < size {
+		s.windowBuf = make([]byte, size)
+	}
+	buf := s.windowBuf[:size]
 	n, err := s.reader.ReadAt(buf, off)
 	s.base = off
 	s.data = buf[:n]

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strconv"
 
@@ -48,12 +49,28 @@ type tableResolver struct {
 }
 
 func (t *tableResolver) Resolve(ctx context.Context, r io.ReaderAt) (Table, error) {
-	data := readAll(r)
-	startOffset, err := findStartXRef(data)
+	var reader io.ReaderAt = r
+	var size int64
+
+	if s, ok := r.(interface{ Size() int64 }); ok {
+		size = s.Size()
+	} else if s, ok := r.(interface{ Stat() (os.FileInfo, error) }); ok {
+		if fi, err := s.Stat(); err == nil {
+			size = fi.Size()
+		}
+	}
+
+	if size == 0 {
+		data := readAll(r)
+		reader = bytes.NewReader(data)
+		size = int64(len(data))
+	}
+
+	startOffset, err := findStartXRef(reader, size)
 	if err != nil {
 		return nil, err
 	}
-	t.linearized = detectLinearized(data)
+	t.linearized = detectLinearized(reader)
 
 	var sections []Table
 	var trailers []*raw.DictObj
@@ -72,7 +89,7 @@ func (t *tableResolver) Resolve(ctx context.Context, r io.ReaderAt) (Table, erro
 		}
 		seen[off] = struct{}{}
 
-		tbl, trailer, prev, err := parseSection(ctx, data, off, t.cfg)
+		tbl, trailer, prev, err := parseSection(ctx, reader, off, t.cfg)
 		if err != nil {
 			return nil, err
 		}
@@ -84,7 +101,7 @@ func (t *tableResolver) Resolve(ctx context.Context, r io.ReaderAt) (Table, erro
 					return nil, errors.New("xref loop detected (xrefstm)")
 				}
 				seen[xrefStmOff] = struct{}{}
-				stmTable, stmTrailer, stmPrev, err := parseXRefStream(ctx, data, xrefStmOff, t.cfg)
+				stmTable, stmTrailer, stmPrev, err := parseXRefStream(ctx, reader, xrefStmOff, t.cfg)
 				if err != nil {
 					return nil, err
 				}
@@ -256,8 +273,8 @@ func (m *mergedTable) maxObjectNumber() int {
 	return max
 }
 
-func parseSection(ctx context.Context, data []byte, offset int64, cfg ResolverConfig) (Table, *raw.DictObj, int64, error) {
-	s := scanner.New(bytes.NewReader(data), scanner.Config{Recovery: cfg.Recovery})
+func parseSection(ctx context.Context, r io.ReaderAt, offset int64, cfg ResolverConfig) (Table, *raw.DictObj, int64, error) {
+	s := scanner.New(r, scanner.Config{Recovery: cfg.Recovery})
 	if err := s.Seek(offset); err != nil {
 		return nil, nil, 0, err
 	}
@@ -268,7 +285,7 @@ func parseSection(ctx context.Context, data []byte, offset int64, cfg ResolverCo
 	if tok.Type == scanner.TokenKeyword && tok.Value == "xref" {
 		return parseClassic(s)
 	}
-	return parseXRefStream(ctx, data, offset, cfg)
+	return parseXRefStream(ctx, r, offset, cfg)
 }
 
 // parseClassic parses a traditional xref table (already positioned at the "xref" keyword).
@@ -327,11 +344,11 @@ func parseClassic(s scanner.Scanner) (Table, *raw.DictObj, int64, error) {
 }
 
 // parseXRefStream decodes a cross-reference stream at the given offset.
-func parseXRefStream(ctx context.Context, data []byte, offset int64, cfg ResolverConfig) (Table, *raw.DictObj, int64, error) {
-	if offset < 0 || offset >= int64(len(data)) {
+func parseXRefStream(ctx context.Context, r io.ReaderAt, offset int64, cfg ResolverConfig) (Table, *raw.DictObj, int64, error) {
+	if offset < 0 {
 		return nil, nil, 0, errors.New("xref stream offset out of range")
 	}
-	s := scanner.New(bytes.NewReader(data), scanner.Config{Recovery: cfg.Recovery})
+	s := scanner.New(r, scanner.Config{Recovery: cfg.Recovery})
 	if err := s.Seek(offset); err != nil {
 		return nil, nil, 0, err
 	}
@@ -614,8 +631,8 @@ func toFilters(filterObj raw.Object, dict *raw.DictObj) ([]string, []raw.Diction
 func readAll(r io.ReaderAt) []byte {
 	var buf bytes.Buffer
 	const chunk = int64(32 * 1024)
+	tmp := make([]byte, chunk)
 	for off := int64(0); ; off += chunk {
-		tmp := make([]byte, chunk)
 		n, err := r.ReadAt(tmp, off)
 		if n > 0 {
 			buf.Write(tmp[:n])
@@ -630,7 +647,18 @@ func readAll(r io.ReaderAt) []byte {
 	return buf.Bytes()
 }
 
-func findStartXRef(data []byte) (int64, error) {
+func findStartXRef(r io.ReaderAt, size int64) (int64, error) {
+	const tailSize = 2048
+	off := size - tailSize
+	if off < 0 {
+		off = 0
+	}
+	buf := make([]byte, size-off)
+	n, err := r.ReadAt(buf, off)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return 0, err
+	}
+	data := buf[:n]
 	startxref := bytes.LastIndex(data, []byte("startxref"))
 	if startxref < 0 {
 		return 0, errors.New("startxref not found")
@@ -663,8 +691,8 @@ func toIntValue(v interface{}) int64 {
 	}
 }
 
-func detectLinearized(data []byte) bool {
-	s := scanner.New(bytes.NewReader(data), scanner.Config{})
+func detectLinearized(r io.ReaderAt) bool {
+	s := scanner.New(r, scanner.Config{})
 	// Skip header
 	for {
 		tok, err := s.Next()
