@@ -233,6 +233,32 @@ func (l *linearizer) updateRefs(obj raw.Object) raw.Object {
 	}
 }
 
+func (l *linearizer) getContentStreamRef(pageRef raw.ObjectRef) (raw.ObjectRef, bool) {
+	obj, ok := l.objects[pageRef]
+	if !ok {
+		return raw.ObjectRef{}, false
+	}
+	dict, ok := obj.(*raw.DictObj)
+	if !ok {
+		return raw.ObjectRef{}, false
+	}
+	contents, ok := dict.Get(raw.NameLiteral("Contents"))
+	if !ok {
+		return raw.ObjectRef{}, false
+	}
+	if ref, ok := contents.(raw.RefObj); ok {
+		return ref.Ref(), true
+	}
+	if arr, ok := contents.(*raw.ArrayObj); ok {
+		if len(arr.Items) > 0 {
+			if ref, ok := arr.Items[0].(raw.RefObj); ok {
+				return ref.Ref(), true
+			}
+		}
+	}
+	return raw.ObjectRef{}, false
+}
+
 func (l *linearizer) generateHintStream(offsets map[int]int64, lengths map[int]int64) ([]byte, error) {
 	// 1. Analyze Pages
 	type pageInfo struct {
@@ -332,6 +358,30 @@ func (l *linearizer) generateHintStream(offsets map[int]int64, lengths map[int]i
 		}
 	}
 
+	// Calculate Content Stream info
+	var minContentLength int64 = -1
+	var p1ContentOffset int64
+
+	for i, pageRef := range l.pageList {
+		csRef, ok := l.getContentStreamRef(pageRef)
+		if ok {
+			newRef := l.renumber[csRef]
+			if l, ok := lengths[newRef.Num]; ok {
+				if minContentLength == -1 || l < minContentLength {
+					minContentLength = l
+				}
+			}
+			if i == 0 {
+				if off, ok := offsets[newRef.Num]; ok {
+					p1ContentOffset = off
+				}
+			}
+		}
+	}
+	if minContentLength == -1 {
+		minContentLength = 0
+	}
+
 	bitsNObjects := bitsNeeded(maxNObjects)
 	bitsLength := bitsNeeded(maxLength)
 	bitsNShared := bitsNeeded(maxNShared)
@@ -365,10 +415,10 @@ func (l *linearizer) generateHintStream(offsets map[int]int64, lengths map[int]i
 	bw.write(uint64(minLength), 32)
 
 	bw.write(uint64(bitsLength), 16)
-	bw.write(0, 32) // Content stream offset
-	bw.write(0, 16) // Bits for content stream offset
-	bw.write(0, 32) // Content stream length
-	bw.write(0, 16) // Bits for content stream length
+	bw.write(uint64(p1ContentOffset), 32) // Content stream offset
+	bw.write(0, 16)                       // Bits for content stream offset
+	bw.write(uint64(minContentLength), 32) // Content stream length
+	bw.write(0, 16)                        // Bits for content stream length
 	bw.write(uint64(bitsNShared), 16)
 	bw.write(uint64(bitsSharedIndex), 16)
 	bw.write(0, 16) // Numerator
@@ -391,7 +441,7 @@ func (l *linearizer) generateHintStream(offsets map[int]int64, lengths map[int]i
 		firstSharedOffset = offsets[l.renumber[sharedList[0]].Num]
 	}
 	bw.write(uint64(firstSharedOffset), 32)
-	bw.write(0, 32) // Location of first shared object hint table entry
+	bw.write(12, 32) // Location of first shared object hint table entry (header is 12 bytes)
 
 	maxSharedLen := int64(0)
 	for _, ref := range sharedList {
@@ -620,6 +670,10 @@ func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt
 			maxP1Num = n
 		}
 	}
+	// The Hint Stream is also part of the First Page section (Part 5),
+	// and must be included in the First Page XRef (Part 3).
+	// hintRef is always assigned immediately after Page 1 objects.
+	lastP1ObjNum := hintRef.Num
 
 	version := pdfVersion(cfg)
 	header := []byte("%PDF-" + version + "\n%\xE2\xE3\xCF\xD3\n")
@@ -642,7 +696,7 @@ func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt
 
 		// First Page XRef
 		// We need to simulate its size.
-		// It covers 0 to maxP1Num.
+		// It covers 0 to lastP1ObjNum.
 		// We can build it to a buffer.
 		// Note: We need offsets for it to be correct, but for size estimation,
 		// we can use current offsets (which might be slightly off, but XRef entries are fixed size 20 bytes).
@@ -652,11 +706,18 @@ func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt
 		// Trailer size is variable.
 
 		// Let's build a dummy trailer to measure size.
-		fpTrailer := buildTrailer(maxP1Num+1, raw.ObjectRef{}, nil, nil, doc, cfg, 0, idPair)
+		var fpInfo, fpEncrypt *raw.ObjectRef
+		if l.info != nil && l.renumber[*l.info].Num <= lastP1ObjNum {
+			fpInfo = l.info
+		}
+		if l.encrypt != nil && l.renumber[*l.encrypt].Num <= lastP1ObjNum {
+			fpEncrypt = l.encrypt
+		}
+		fpTrailer := buildTrailer(lastP1ObjNum+1, l.catalog, fpInfo, fpEncrypt, doc, cfg, 0, idPair)
 		fpTrailerBytes := serializePrimitive(fpTrailer)
 
 		// xref\n0 N\n...
-		xrefLen := int64(5 + len(fmt.Sprintf("0 %d\n", maxP1Num+1)) + (maxP1Num+1)*20)
+		xrefLen := int64(5 + len(fmt.Sprintf("0 %d\n", lastP1ObjNum+1)) + (lastP1ObjNum+1)*20)
 		xrefLen += int64(len("trailer\n") + len(fpTrailerBytes) + 1)
 
 		// First Page XRef doesn't have startxref?
@@ -688,7 +749,7 @@ func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt
 		fileLen := currentOffset
 		maxObjNum := sortedRefs[len(sortedRefs)-1].Num
 		size := maxObjNum + 1
-		entryCount := size - (maxP1Num + 1)
+		entryCount := size - (lastP1ObjNum + 1)
 		if entryCount < 0 {
 			entryCount = 0
 		}
@@ -697,7 +758,7 @@ func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt
 		mainTrailer.Set(raw.NameLiteral("Prev"), raw.NumberInt(fpXRefOffset))
 		trailerBytes := serializePrimitive(mainTrailer)
 		mainXRefLen := int64(len("xref\n"))
-		mainXRefLen += int64(len(fmt.Sprintf("%d %d\n", maxP1Num+1, entryCount)))
+		mainXRefLen += int64(len(fmt.Sprintf("%d %d\n", lastP1ObjNum+1, entryCount)))
 		mainXRefLen += int64(entryCount) * 20
 		mainXRefLen += int64(len("trailer\n"))
 		mainXRefLen += int64(len(trailerBytes))
@@ -713,6 +774,22 @@ func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt
 
 		// Update Hint Stream
 		hintStream.Data = hintData
+		newObjects[hintRef] = hintStream // Update the object in the map
+
+		// Re-calculate Hint Stream length
+		serializedHint, _ := w.SerializeObject(hintRef, hintStream)
+		newHintLen := int64(len(serializedHint))
+		lenDiff := newHintLen - lengths[hintRef.Num]
+		lengths[hintRef.Num] = newHintLen
+
+		// Adjust offsets for subsequent objects
+		for _, ref := range sortedRefs {
+			if ref.Num > hintRef.Num {
+				offsets[ref.Num] += lenDiff
+			}
+		}
+		currentOffset += lenDiff
+		fileLen += lenDiff
 
 		// Update LinDict
 		linDict.Set(raw.NameLiteral("L"), raw.NumberInt(fileLen))
@@ -737,16 +814,23 @@ func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt
 
 	// First Page XRef
 	buf.WriteString("xref\n")
-	buf.WriteString(fmt.Sprintf("0 %d\n", maxP1Num+1))
+	buf.WriteString(fmt.Sprintf("0 %d\n", lastP1ObjNum+1))
 	buf.WriteString("0000000000 65535 f \n")
-	for i := 1; i <= maxP1Num; i++ {
+	for i := 1; i <= lastP1ObjNum; i++ {
 		if off, ok := offsets[i]; ok {
 			buf.WriteString(fmt.Sprintf("%010d 00000 n \n", off))
 		} else {
 			buf.WriteString("0000000000 65535 f \n")
 		}
 	}
-	fpTrailer := buildTrailer(maxP1Num+1, raw.ObjectRef{}, nil, nil, doc, cfg, 0, idPair)
+	var fpInfo, fpEncrypt *raw.ObjectRef
+	if l.info != nil && l.renumber[*l.info].Num <= lastP1ObjNum {
+		fpInfo = l.info
+	}
+	if l.encrypt != nil && l.renumber[*l.encrypt].Num <= lastP1ObjNum {
+		fpEncrypt = l.encrypt
+	}
+	fpTrailer := buildTrailer(lastP1ObjNum+1, l.catalog, fpInfo, fpEncrypt, doc, cfg, 0, idPair)
 	buf.WriteString("trailer\n")
 	buf.Write(serializePrimitive(fpTrailer))
 	buf.WriteString("\n")
@@ -777,15 +861,15 @@ func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt
 	size := maxObjNum + 1
 
 	buf.WriteString("xref\n")
-	// We can write just the update (from maxP1Num+1 to end) or full table.
+	// We can write just the update (from lastP1ObjNum+1 to end) or full table.
 	// Linearized PDF usually has Main XRef starting from 0 but with some entries free?
 	// Or just the new entries.
 	// "The main cross-reference table... shall consist of entries for all objects... that are not listed in the first page cross-reference table."
-	// So it starts at maxP1Num + 1?
+	// So it starts at lastP1ObjNum + 1?
 	// Yes, usually.
 
-	buf.WriteString(fmt.Sprintf("%d %d\n", maxP1Num+1, size-(maxP1Num+1)))
-	for i := maxP1Num + 1; i < size; i++ {
+	buf.WriteString(fmt.Sprintf("%d %d\n", lastP1ObjNum+1, size-(lastP1ObjNum+1)))
+	for i := lastP1ObjNum + 1; i < size; i++ {
 		if off, ok := offsets[i]; ok {
 			buf.WriteString(fmt.Sprintf("%010d 00000 n \n", off))
 		} else {
