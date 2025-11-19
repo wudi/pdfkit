@@ -273,8 +273,14 @@ func (l *linearizer) generateHintStream(offsets map[int]int64, lengths map[int]i
 
 		// Shared objects
 		seenShared := make(map[int]bool)
+		visited := make(map[raw.ObjectRef]bool)
 		var visit func(ref raw.ObjectRef)
 		visit = func(ref raw.ObjectRef) {
+			if visited[ref] {
+				return
+			}
+			visited[ref] = true
+
 			if l.sharedRefs[ref] {
 				idx := sharedIdxMap[ref]
 				seenShared[idx] = true
