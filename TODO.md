@@ -87,4 +87,4 @@ Status key: Not started / In progress / Done.
 Status key: Not started / In progress / Done.
 
 - [x] PDF/A-1b validation: implement `pdfa.Enforcer.Validate` to check for encryption, font embedding, OutputIntents, and forbidden actions (Launch/Sound/Movie). Status: Done (implemented in `pdfa/pdfa.go` with checks for encryption, output intents, font embedding, and forbidden annotations).
-- [ ] Linearization (Fast Web View): implement 2-pass writing in `writer` to calculate object offsets, reorder objects (Linearization Dict -> Page 1 -> Shared -> Others), and generate Hint Tables when `Linearize: true`. Status: Not started.
+- [x] Linearization (Fast Web View): implement 2-pass writing in `writer` to calculate object offsets, reorder objects (Linearization Dict -> Page 1 -> Shared -> Others), and generate Hint Tables when `Linearize: true`. Status: Done (implemented 2-pass writer with object reordering, hint stream generation, and linearization dictionary).
