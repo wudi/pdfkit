@@ -2,6 +2,7 @@ package builder
 
 import (
 	"fmt"
+	"math"
 
 	"pdflib/contentstream"
 	"pdflib/fonts"
@@ -53,6 +54,7 @@ type TextOptions struct {
 	Rise         float64
 	Tag          string
 	MCID         *int
+	Rotate       float64 // Rotation in degrees (counter-clockwise)
 }
 
 // PathOptions configures path drawing.
@@ -412,13 +414,18 @@ func (p *pageBuilderImpl) DrawText(text string, x, y float64, opts TextOptions) 
 	if opts.RenderMode != contentstream.TextFill {
 		*ops = append(*ops, semantic.Operation{Operator: "Tr", Operands: []semantic.Operand{semantic.NumberOperand{Value: float64(opts.RenderMode)}}})
 	}
+
+	rad := opts.Rotate * math.Pi / 180
+	c := math.Cos(rad)
+	s := math.Sin(rad)
+
 	*ops = append(*ops, semantic.Operation{
 		Operator: "Tm",
 		Operands: []semantic.Operand{
-			semantic.NumberOperand{Value: 1},
-			semantic.NumberOperand{Value: 0},
-			semantic.NumberOperand{Value: 0},
-			semantic.NumberOperand{Value: 1},
+			semantic.NumberOperand{Value: c},
+			semantic.NumberOperand{Value: s},
+			semantic.NumberOperand{Value: -s},
+			semantic.NumberOperand{Value: c},
 			semantic.NumberOperand{Value: x},
 			semantic.NumberOperand{Value: y},
 		},
