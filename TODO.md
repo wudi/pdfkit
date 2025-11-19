@@ -129,3 +129,11 @@ Status key: Not started / In progress / Done.
 - [x] Scanner fuzzing: implement fuzz tests for `scanner.Next()` to ensure robustness against malformed inputs. Status: Done (implemented in `scanner/scanner_fuzz_test.go`).
 - [x] Parser fuzzing: implement fuzz tests for `DocumentParser.Parse()` to ensure robustness against malformed document structures. Status: Done (implemented in `parser/parser_fuzz_test.go`).
 - [x] Filter fuzzing: implement fuzz tests for `Pipeline.Decode()` to ensure robustness of stream decoders. Status: Done (implemented in `filters/filters_fuzz_test.go`).
+
+# Extension System plan
+
+Status key: Not started / In progress / Done.
+
+- [x] Formalize Extension Interfaces: Update `extensions/extensions.go` to define specific interfaces (`Inspector`, `Sanitizer`, `Transformer`, `Validator`) and report structures (`InspectionReport`, `SanitizationReport`, `ValidationReport`). Status: Done.
+- [x] Implement Standard Extensions: Create default implementations for Inspector (metadata/count), Sanitizer (remove JS), and Validator (wrapper around `pdfa`). Status: Done.
+- [x] Documentation: Update `design.md` to reflect any intentional deviations or update the code to match. Status: Done.

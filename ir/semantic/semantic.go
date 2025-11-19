@@ -264,6 +264,7 @@ type Annotation struct {
 	Border          []float64
 	Color           []float64
 	AppearanceState string
+	Ref             raw.ObjectRef
 }
 
 // OutlineItem describes a bookmark entry.

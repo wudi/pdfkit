@@ -3,6 +3,7 @@ package extensions
 import (
 	"sort"
 
+	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
 )
 
@@ -22,6 +23,73 @@ type Extension interface {
 	Phase() Phase
 	Priority() int
 	Execute(ctx Context, doc *semantic.Document) error
+}
+
+// Inspector is an extension that inspects the document and produces a report.
+type Inspector interface {
+	Extension
+	Inspect(ctx Context, doc *semantic.Document) (*InspectionReport, error)
+}
+
+// Sanitizer is an extension that cleans up the document.
+type Sanitizer interface {
+	Extension
+	Sanitize(ctx Context, doc *semantic.Document) (*SanitizationReport, error)
+}
+
+// Transformer is an extension that modifies the document structure.
+type Transformer interface {
+	Extension
+	Transform(ctx Context, doc *semantic.Document) error
+}
+
+// Validator is an extension that validates the document against a standard.
+type Validator interface {
+	Extension
+	Validate(ctx Context, doc *semantic.Document) (*ValidationReport, error)
+}
+
+type InspectionReport struct {
+	PageCount  int
+	FontCount  int
+	ImageCount int
+	FileSize   int64
+	Version    string
+	Encrypted  bool
+	Linearized bool
+	Tagged     bool
+	Metadata   map[string]interface{}
+}
+
+type SanitizationReport struct {
+	ItemsRemoved int
+	ItemsFixed   int
+	Actions      []SanitizationAction
+}
+
+type SanitizationAction struct {
+	Type        string
+	Description string
+	ObjectRef   raw.ObjectRef
+}
+
+type ValidationReport struct {
+	Valid    bool
+	Errors   []ValidationError
+	Warnings []ValidationWarning
+}
+
+type ValidationError struct {
+	Code      string
+	Message   string
+	Location  string
+	ObjectRef raw.ObjectRef
+}
+
+type ValidationWarning struct {
+	Code     string
+	Message  string
+	Location string
 }
 
 type Hub interface {

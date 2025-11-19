@@ -1647,13 +1647,7 @@ type PDFALevel int
 
 const (
     PDFA1B PDFALevel = iota
-    PDFA1A
-    PDFA2B
-    PDFA2A
-    PDFA2U
     PDFA3B
-    PDFA3A
-    PDFA3U
 )
 
 // ComplianceReport details compliance status
@@ -1661,71 +1655,13 @@ type ComplianceReport struct {
     Compliant bool
     Level     PDFALevel
     Violations []Violation
-    Warnings   []Warning
 }
 
 type Violation struct {
     Code        string
     Description string
     Location    string
-    Severity    Severity
-    AutoFixable bool
 }
-
-type Warning struct {
-    Code        string
-    Description string
-    Location    string
-}
-
-type Severity int
-
-const (
-    SeverityError Severity = iota
-    SeverityWarning
-    SeverityInfo
-)
-
-// Rule represents a PDF/A compliance rule
-type Rule interface {
-    // Code returns rule identifier (e.g., "6.2.11.3")
-    Code() string
-    
-    // Check validates rule against document
-    Check(ctx context.Context, doc *semantic.Document) ([]Violation, error)
-    
-    // Fix attempts to fix violations
-    Fix(ctx context.Context, doc *semantic.Document) error
-    
-    // AppliesTo returns PDF/A levels this rule applies to
-    AppliesTo() []PDFALevel
-}
-
-// RuleRegistry manages PDF/A rules
-type RuleRegistry struct {
-    rules map[PDFALevel][]Rule
-}
-
-func (r *RuleRegistry) Register(rule Rule) {
-    for _, level := range rule.AppliesTo() {
-        r.rules[level] = append(r.rules[level], rule)
-    }
-}
-
-func (r *RuleRegistry) RulesFor(level PDFALevel) []Rule {
-    return r.rules[level]
-}
-
-// Common PDF/A rules
-type FontEmbeddingRule struct{}      // All fonts must be embedded
-type ColorSpaceRule struct{}         // Must use device-independent color
-type EncryptionRule struct{}         // Encryption prohibited
-type JavaScriptRule struct{}         // JavaScript prohibited
-type MultimediaRule struct{}         // Audio/video prohibited
-type TransparencyRule struct{}       // Transparency rules for PDF/A-1
-type XMPMetadataRule struct{}        // XMP metadata required
-type OutputIntentRule struct{}       // OutputIntent required
-type TaggingRule struct{}            // Document tagging required (PDF/A-1a, 2a, 3a)
 
 // XMPGenerator creates XMP metadata packets
 type XMPGenerator interface {
