@@ -7,9 +7,10 @@ import (
 
 func TestSubsetTrueType(t *testing.T) {
 	// Load a real font file from testdata
-	fontData, err := os.ReadFile("../testdata/Rubik-Regular.ttf")
+	// We use NotoSansJP-Regular.ttf because Rubik contains Arabic script, which disables subsetting.
+	fontData, err := os.ReadFile("../testdata/NotoSansJP-Regular.ttf")
 	if err != nil {
-		t.Skip("Rubik-Regular.ttf not found, skipping test")
+		t.Skip("NotoSansJP-Regular.ttf not found, skipping test")
 	}
 
 	// Define used GIDs (arbitrary set)

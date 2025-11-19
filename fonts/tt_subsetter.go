@@ -22,6 +22,14 @@ func SubsetTrueType(data []byte, usedGIDs map[int]bool) ([]byte, error) {
 		return data, nil
 	}
 
+	// Check for complex scripts (Arabic) in GSUB
+	if p.hasComplexScript() {
+		// For complex scripts, naive subsetting breaks shaping (ligatures/positioning).
+		// Until we implement a proper shaper-aware subsetter, we must keep the full font
+		// or at least all glyphs. For safety, we return the original font.
+		return data, nil
+	}
+
 	// 1. Read head to get indexToLocFormat
 	headData, err := p.ReadTable("head")
 	if err != nil {
@@ -79,9 +87,10 @@ func SubsetTrueType(data []byte, usedGIDs map[int]bool) ([]byte, error) {
 
 	// 8. Assemble new font
 	// Tables to keep
-	keepTables := []string{"head", "hhea", "maxp", "hmtx", "loca", "glyf", "cmap", "name", "OS/2", "post", "cvt ", "fpgm", "prep"}
+	keepTables := []string{"head", "hhea", "maxp", "hmtx", "loca", "glyf", "cmap", "name", "OS/2", "post", "cvt ", "fpgm", "prep", "GSUB", "GPOS", "GDEF", "GASP"}
 
 	w := &ttWriter{}
+
 	w.AddTable("glyf", newGlyf)
 	w.AddTable("loca", newLoca)
 	w.AddTable("hmtx", newHmtx)
@@ -166,6 +175,44 @@ func (p *ttParser) ReadTable(tag string) ([]byte, error) {
 		return nil, fmt.Errorf("table %s out of bounds", tag)
 	}
 	return p.data[entry.offset : entry.offset+entry.length], nil
+}
+
+func (p *ttParser) hasComplexScript() bool {
+	if !p.HasTable("GSUB") {
+		return false
+	}
+	data, err := p.ReadTable("GSUB")
+	if err != nil {
+		return false
+	}
+	if len(data) < 10 {
+		return false
+	}
+
+	// ScriptListOffset is at offset 4
+	scriptListOffset := binary.BigEndian.Uint16(data[4:6])
+	if int(scriptListOffset) >= len(data) {
+		return false
+	}
+
+	listData := data[scriptListOffset:]
+	if len(listData) < 2 {
+		return false
+	}
+	scriptCount := binary.BigEndian.Uint16(listData[0:2])
+
+	offset := 2
+	for i := 0; i < int(scriptCount); i++ {
+		if offset+6 > len(listData) {
+			break
+		}
+		tag := string(listData[offset : offset+4])
+		if tag == "arab" {
+			return true
+		}
+		offset += 6
+	}
+	return false
 }
 
 func (p *ttParser) computeClosure(closure map[int]bool, numGlyphs int, indexToLocFormat int16) error {

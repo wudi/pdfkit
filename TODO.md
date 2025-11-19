@@ -110,5 +110,5 @@ Status key: Not started / In progress / Done.
 
 - [x] Implement GlyphAnalyzer: create `fonts/analyzer.go` to scan content streams and identify used glyphs. Status: Done.
 - [x] Implement SubsetPlanner: create `fonts/planner.go` to map original GIDs to a subset. Status: Done (implemented in `fonts/subsetter.go`).
-- [x] Implement SubsetGenerator: create `fonts/generator.go` to generate the subsetted font file (initially just a pass-through or simple subset if possible). Status: Done (implemented in `fonts/subsetter.go` and `fonts/tt_subsetter.go` with full binary subsetting).
+- [x] Implement SubsetGenerator: create `fonts/generator.go` to generate the subsetted font file (initially just a pass-through or simple subset if possible). Status: Done (implemented in `fonts/subsetter.go` and `fonts/tt_subsetter.go` with full binary subsetting; includes fallback for complex scripts like Arabic to preserve shaping).
 - [x] Integrate subsetting into writer: update `writer` to use the subsetting pipeline when `SubsetFonts: true`. Status: Done.
