@@ -1251,7 +1251,7 @@ For complex scripts (Arabic, Indic, etc.) or advanced typography (ligatures, swa
 
 To support this without embedding the full font:
 
-1.  **GSUB Parsing**: The subsetter must parse the `GSUB` table to understand substitution rules.
+1.  **GSUB Parsing**: Use `github.com/go-text/typesetting` to parse the `GSUB` table and understand substitution rules.
 2.  **Closure Expansion**:
     *   Start with the set of GIDs used in the content stream (`UsedGIDs`).
     *   Iteratively expand this set by finding all glyphs that can be produced from `UsedGIDs` via GSUB rules (e.g., if 'f' and 'i' are used, and 'fi' ligature exists, include 'fi').
