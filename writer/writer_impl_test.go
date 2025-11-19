@@ -6,6 +6,7 @@ import (
 	"compress/lzw"
 	"context"
 	"io"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -790,6 +791,49 @@ func TestWriter_EncryptDictionary(t *testing.T) {
 		if !bytes.Contains(data, []byte("/Filter /Standard")) || !bytes.Contains(data, []byte("/O ")) || !bytes.Contains(data, []byte("/U ")) {
 			t.Fatalf("Encrypt dictionary fields missing (streams=%v)", cfg.XRefStreams)
 		}
+	}
+}
+
+func TestWriter_EmbeddedFilesAndAF(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{MediaBox: semantic.Rectangle{URX: 10, URY: 10}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
+		},
+		EmbeddedFiles: []semantic.EmbeddedFile{
+			{
+				Name:         "invoice.xml",
+				Description:  "ZUGFeRD payload",
+				Relationship: "Data",
+				Subtype:      "application/xml",
+				Data:         []byte("<Invoice></Invoice>"),
+			},
+		},
+	}
+	w := (&WriterBuilder{}).Build()
+	var buf bytes.Buffer
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+	os.WriteFile("/tmp/writer_test_output.pdf", buf.Bytes(), 0644)
+
+	pdf := buf.Bytes()
+	if !bytes.Contains(pdf, []byte("/AFRelationship /Data")) {
+		t.Fatalf("expected AFRelationship /Data entry")
+	}
+	if !bytes.Contains(pdf, []byte("/Subtype /application#2Fxml")) {
+		t.Fatalf("expected MIME subtype encoding")
+	}
+	if !regexp.MustCompile(`/AF\s*\[\s*\d+\s+0\s+R`).Match(pdf) {
+		t.Fatalf("expected catalog AF array with file spec reference")
+	}
+	if !regexp.MustCompile(`/Names\s*<<[^>]*EmbeddedFiles`).Match(pdf) {
+		t.Fatalf("expected names dictionary with EmbeddedFiles entry")
+	}
+	if !regexp.MustCompile(`\(invoice\.xml\)\s+\d+\s+0\s+R`).Match(pdf) {
+		t.Fatalf("expected filename mapping in names array")
+	}
+	if !bytes.Contains(pdf, []byte("ZUGFeRD payload")) {
+		t.Fatalf("expected embedded file description")
 	}
 }
 

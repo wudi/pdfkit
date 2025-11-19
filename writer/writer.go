@@ -15,7 +15,10 @@ const (
 // PDF/A level aliases point to the shared pdfa.Level type.
 type PDFALevel = pdfa.Level
 
-const PDFA1B = pdfa.PDFA1B
+const (
+	PDFA1B = pdfa.PDFA1B
+	PDFA3B = pdfa.PDFA3B
+)
 
 type ContentFilter int
 

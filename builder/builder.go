@@ -22,6 +22,7 @@ type PDFBuilder interface {
 	SetEncryption(ownerPassword, userPassword string, perms raw.Permissions, encryptMetadata bool) PDFBuilder
 	RegisterFont(name string, font *semantic.Font) PDFBuilder
 	RegisterTrueTypeFont(name string, data []byte) PDFBuilder
+	AddEmbeddedFile(file semantic.EmbeddedFile) PDFBuilder
 	Build() (*semantic.Document, error)
 }
 
@@ -197,6 +198,7 @@ type builderImpl struct {
 	fontErr       error
 	structTree    *semantic.StructureTree
 	mcidCounters  map[*semantic.Page]int
+	embeddedFiles []semantic.EmbeddedFile
 }
 
 type pageBuilderImpl struct {
@@ -213,7 +215,7 @@ const (
 func NewBuilder() PDFBuilder { return &builderImpl{defaultFont: defaultFontResource} }
 
 func (b *builderImpl) NewPage(w, h float64) PageBuilder {
-	p := &semantic.Page{MediaBox: semantic.Rectangle{0, 0, w, h}}
+	p := &semantic.Page{MediaBox: semantic.Rectangle{LLX: 0, LLY: 0, URX: w, URY: h}}
 	b.pages = append(b.pages, p)
 	return &pageBuilderImpl{parent: b, page: p}
 }
@@ -278,6 +280,21 @@ func (b *builderImpl) RegisterTrueTypeFont(name string, data []byte) PDFBuilder 
 	return b.addFont(name, font)
 }
 
+func (b *builderImpl) AddEmbeddedFile(file semantic.EmbeddedFile) PDFBuilder {
+	if file.Name == "" || len(file.Data) == 0 {
+		return b
+	}
+	if file.Relationship == "" {
+		file.Relationship = "Unspecified"
+	}
+	copyFile := file
+	if len(file.Data) > 0 {
+		copyFile.Data = append([]byte(nil), file.Data...)
+	}
+	b.embeddedFiles = append(b.embeddedFiles, copyFile)
+	return b
+}
+
 func (b *builderImpl) addFont(name string, font *semantic.Font) PDFBuilder {
 	if b.fonts == nil {
 		b.fonts = make(map[string]fontResource)
@@ -328,6 +345,16 @@ func (b *builderImpl) Build() (*semantic.Document, error) {
 		doc.Permissions = b.permissions
 		doc.Encrypted = true
 		doc.MetadataEncrypted = b.encryptMeta
+	}
+	if len(b.embeddedFiles) > 0 {
+		doc.EmbeddedFiles = make([]semantic.EmbeddedFile, len(b.embeddedFiles))
+		for i, ef := range b.embeddedFiles {
+			copyEf := ef
+			if len(ef.Data) > 0 {
+				copyEf.Data = append([]byte(nil), ef.Data...)
+			}
+			doc.EmbeddedFiles[i] = copyEf
+		}
 	}
 	return doc, nil
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"pdflib/ir/raw"
@@ -58,6 +59,49 @@ func TestDocumentParserFollowsPrevChain(t *testing.T) {
 	}
 	if _, ok := doc.Trailer.Get(raw.NameObj{Val: "Prev"}); !ok {
 		t.Fatalf("Prev not propagated on final trailer")
+	}
+}
+
+func TestDocumentParserPDFA3bFixture(t *testing.T) {
+	path := "../testdata/pdfa-3b-with-embedded-file.pdf"
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open fixture: %v", err)
+	}
+	defer f.Close()
+	p := NewDocumentParser(Config{})
+	doc, err := p.Parse(context.Background(), f)
+	if err != nil {
+		t.Fatalf("parse pdfa-3b fixture: %v", err)
+	}
+	if doc == nil {
+		t.Fatalf("expected document")
+	}
+	foundEmbedded := false
+	foundFilespec := false
+	for _, obj := range doc.Objects {
+		switch v := obj.(type) {
+		case *raw.StreamObj:
+			if typ, ok := v.Dict.Get(raw.NameLiteral("Type")); ok {
+				if name, ok := typ.(raw.NameObj); ok && name.Value() == "EmbeddedFile" {
+					foundEmbedded = true
+				}
+			}
+		case *raw.DictObj:
+			if typ, ok := v.Get(raw.NameLiteral("Type")); ok {
+				if name, ok := typ.(raw.NameObj); ok && name.Value() == "Filespec" {
+					if _, ok := v.Get(raw.NameLiteral("AFRelationship")); ok {
+						foundFilespec = true
+					}
+				}
+			}
+		}
+	}
+	if !foundEmbedded {
+		t.Fatalf("expected at least one embedded file stream in fixture")
+	}
+	if !foundFilespec {
+		t.Fatalf("expected filespec dictionary with AFRelationship")
 	}
 }
 

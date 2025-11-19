@@ -7,6 +7,7 @@ type Level int
 
 const (
 	PDFA1B Level = iota
+	PDFA3B
 )
 
 // PDFALevel is kept for compatibility; use Level instead.

@@ -470,6 +470,57 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		outputIntentRefs = append(outputIntentRefs, ref)
 	}
 
+	var embeddedFilesDict *raw.DictObj
+	var afFileSpecRefs []raw.ObjectRef
+	if len(doc.EmbeddedFiles) > 0 {
+		namesArr := raw.NewArray()
+		for _, ef := range doc.EmbeddedFiles {
+			if len(ef.Data) == 0 || ef.Name == "" {
+				continue
+			}
+			streamDict := raw.Dict()
+			streamDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("EmbeddedFile"))
+			if ef.Subtype != "" {
+				streamDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral(pdfNameLiteral(ef.Subtype)))
+			}
+			streamDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(ef.Data))))
+			params := raw.Dict()
+			params.Set(raw.NameLiteral("Size"), raw.NumberInt(int64(len(ef.Data))))
+			if params.Len() > 0 {
+				streamDict.Set(raw.NameLiteral("Params"), params)
+			}
+			streamRef := nextRef()
+			objects[streamRef] = raw.NewStream(streamDict, ef.Data)
+
+			fileSpec := raw.Dict()
+			fileSpec.Set(raw.NameLiteral("Type"), raw.NameLiteral("Filespec"))
+			fileSpec.Set(raw.NameLiteral("F"), raw.Str([]byte(ef.Name)))
+			fileSpec.Set(raw.NameLiteral("UF"), raw.Str([]byte(ef.Name)))
+			if ef.Description != "" {
+				fileSpec.Set(raw.NameLiteral("Desc"), raw.Str([]byte(ef.Description)))
+			}
+			afRel := ef.Relationship
+			if afRel == "" {
+				afRel = "Unspecified"
+			}
+			fileSpec.Set(raw.NameLiteral("AFRelationship"), raw.NameLiteral(afRel))
+			refDict := raw.Dict()
+			refDict.Set(raw.NameLiteral("F"), raw.Ref(streamRef.Num, streamRef.Gen))
+			fileSpec.Set(raw.NameLiteral("EF"), refDict)
+			fileSpecRef := nextRef()
+			objects[fileSpecRef] = fileSpec
+
+			namesArr.Append(raw.Str([]byte(ef.Name)))
+			namesArr.Append(raw.Ref(fileSpecRef.Num, fileSpecRef.Gen))
+			afFileSpecRefs = append(afFileSpecRefs, fileSpecRef)
+		}
+		if namesArr.Len() > 0 {
+			dict := raw.Dict()
+			dict.Set(raw.NameLiteral("Names"), namesArr)
+			embeddedFilesDict = dict
+		}
+	}
+
 	// Page content streams
 	contentRefs := []raw.ObjectRef{}
 	annotationRefs := make([][]raw.ObjectRef, len(doc.Pages))
@@ -532,7 +583,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	for i, p := range doc.Pages {
 		ref := nextRef()
 		pageRefs = append(pageRefs, ref)
-		p.MediaBox = semantic.Rectangle{0, 0, p.MediaBox.URX, p.MediaBox.URY}
+		p.MediaBox = semantic.Rectangle{LLX: 0, LLY: 0, URX: p.MediaBox.URX, URY: p.MediaBox.URY}
 		pageDict := raw.Dict()
 		pageDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Page"))
 		pageDict.Set(raw.NameLiteral("Parent"), raw.Ref(pagesRef.Num, pagesRef.Gen))
@@ -969,6 +1020,24 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		}
 		catalogDict.Set(raw.NameLiteral("OutputIntents"), arr)
 	}
+	if embeddedFilesDict != nil {
+		if namesObj, ok := catalogDict.Get(raw.NameLiteral("Names")); ok {
+			if namesDict, ok := namesObj.(*raw.DictObj); ok {
+				namesDict.Set(raw.NameLiteral("EmbeddedFiles"), embeddedFilesDict)
+			}
+		} else {
+			namesDict := raw.Dict()
+			namesDict.Set(raw.NameLiteral("EmbeddedFiles"), embeddedFilesDict)
+			catalogDict.Set(raw.NameLiteral("Names"), namesDict)
+		}
+	}
+	if len(afFileSpecRefs) > 0 {
+		afArr := raw.NewArray()
+		for _, ref := range afFileSpecRefs {
+			afArr.Append(raw.Ref(ref.Num, ref.Gen))
+		}
+		catalogDict.Set(raw.NameLiteral("AF"), afArr)
+	}
 	objects[catalogRef] = catalogDict
 
 	if encryptionHandler != nil {
@@ -1186,6 +1255,25 @@ func serializePrimitive(o raw.Object) []byte {
 	default:
 		return []byte("null")
 	}
+}
+
+func pdfNameLiteral(value string) string {
+	if value == "" {
+		return ""
+	}
+	if strings.Contains(value, "#") {
+		return value
+	}
+	var b strings.Builder
+	for i := 0; i < len(value); i++ {
+		ch := value[i]
+		if (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.' {
+			b.WriteByte(ch)
+			continue
+		}
+		fmt.Fprintf(&b, "#%02X", ch)
+	}
+	return b.String()
 }
 
 func pdfVersion(cfg Config) string {

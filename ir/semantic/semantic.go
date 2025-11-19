@@ -21,6 +21,7 @@ type Document struct {
 	AcroForm          *AcroForm
 	StructTree        *StructureTree
 	OutputIntents     []OutputIntent
+	EmbeddedFiles     []EmbeddedFile
 	decoded           *decoded.DecodedDocument
 	OwnerPassword     string
 	UserPassword      string
@@ -199,6 +200,15 @@ type FontDescriptor struct {
 }
 
 type Catalog struct{}
+
+// EmbeddedFile models an associated file (e.g., PDF/A-3 attachments).
+type EmbeddedFile struct {
+	Name         string
+	Description  string
+	Relationship string
+	Subtype      string
+	Data         []byte
+}
 
 // DocumentInfo models /Info dictionary values.
 type DocumentInfo struct {
