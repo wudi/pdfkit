@@ -117,7 +117,7 @@ Status key: Not started / In progress / Done.
 
 Status key: Not started / In progress / Done.
 
-- [x] Capture script-aware runs: extend `fonts.Analyzer` to log per-font UTF-16 runs plus detected script/direction so shaping can replay real text. Status: Not started.
-- [x] Shape runs via go-text/typesetting: feed recorded runs into `github.com/go-text/typesetting/shaping` with script/lang-specific options to collect exact glyph IDs emitted by the shaper. Status: Not started.
-- [x] Merge shaped glyphs with closures: union shaped glyph IDs with composite/GSUB closures and drive the planner/subsetter with the expanded set, falling back only when shaping fails. Status: Not started.
-- [x] Pipeline verification: add regression coverage (unit tests + `examples/fonts` + `examples/extract_text`) ensuring Arabic stays correct while subsetting is active. Status: Not started.
+- [x] Capture script-aware runs: extend `fonts.Analyzer` to log per-font UTF-16 runs plus detected script/direction so shaping can replay real text. Status: Done.
+- [x] Shape runs via go-text/typesetting: feed recorded runs into `github.com/go-text/typesetting/shaping` with script/lang-specific options to collect exact glyph IDs emitted by the shaper. Status: Done.
+- [x] Merge shaped glyphs with closures: union shaped glyph IDs with composite/GSUB closures and drive the planner/subsetter with the expanded set, falling back only when shaping fails. Status: Done.
+- [x] Pipeline verification: add regression coverage (unit tests + `examples/fonts` + `examples/extract_text`) ensuring Arabic stays correct while subsetting is active. Status: Done.

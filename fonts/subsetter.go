@@ -35,6 +35,15 @@ func (p *Planner) Plan(analyzer *Analyzer) {
 			}
 		}
 
+		// Compute GSUB closure if font data is available
+		if font.Descriptor != nil && len(font.Descriptor.FontFile) > 0 {
+			if closure, err := ComputeClosureGSUB(font.Descriptor.FontFile, glyphSet); err == nil {
+				for gid := range closure {
+					glyphSet[gid] = true
+				}
+			}
+		}
+
 		subset := &Subset{
 			OriginalToSubset: make(map[int]int),
 			SubsetToOriginal: make(map[int]int),
