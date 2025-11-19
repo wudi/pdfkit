@@ -1,6 +1,7 @@
 package extractor
 
 import (
+	"fmt"
 	"testing"
 
 	"pdflib/ir/decoded"
@@ -61,6 +62,18 @@ func TestExtractor_Features(t *testing.T) {
 	files := ext.ExtractEmbeddedFiles()
 	if len(files) != 1 || files[0].Name != "attachment.txt" || string(files[0].Data) != "embedded" {
 		t.Fatalf("unexpected embedded files: %+v", files)
+	}
+}
+
+func TestExtractor_ObjectStreamOutlines(t *testing.T) {
+	dec := buildObjStreamOutlinesDoc(t)
+	ext, err := New(dec)
+	if err != nil {
+		t.Fatalf("new extractor: %v", err)
+	}
+	toc := ext.ExtractTableOfContents()
+	if len(toc) != 1 || toc[0].Title != "ObjStream" || toc[0].Page != 0 {
+		t.Fatalf("unexpected toc from object stream: %+v", toc)
 	}
 }
 
@@ -191,6 +204,59 @@ func buildFixtureDecodedDoc(t *testing.T) *decoded.DecodedDocument {
 		MetadataEncrypted: doc.MetadataEncrypted,
 	}
 	return dec
+}
+
+func buildObjStreamOutlinesDoc(t *testing.T) *decoded.DecodedDocument {
+	t.Helper()
+
+	root := raw.Dict()
+	pages := raw.Dict()
+	page := raw.Dict()
+	contents := raw.NewStream(raw.Dict(), []byte("BT ET"))
+
+	root.Set(raw.NameLiteral("Type"), raw.NameLiteral("Catalog"))
+	root.Set(raw.NameLiteral("Pages"), raw.Ref(2, 0))
+	root.Set(raw.NameLiteral("Outlines"), raw.Ref(5, 0))
+
+	pages.Set(raw.NameLiteral("Type"), raw.NameLiteral("Pages"))
+	pages.Set(raw.NameLiteral("Kids"), raw.NewArray(raw.Ref(3, 0)))
+	pages.Set(raw.NameLiteral("Count"), raw.NumberInt(1))
+
+	page.Set(raw.NameLiteral("Type"), raw.NameLiteral("Page"))
+	page.Set(raw.NameLiteral("Parent"), raw.Ref(2, 0))
+	page.Set(raw.NameLiteral("Contents"), raw.Ref(4, 0))
+
+	obj5 := []byte("<< /Type /Outlines /First 6 0 R /Last 6 0 R /Count 1 >>")
+	obj6 := []byte("<< /Title (ObjStream) /Dest [3 0 R /Fit] >>")
+	body := append(append([]byte{}, obj5...), '\n')
+	obj6Offset := len(body)
+	body = append(body, obj6...)
+	header := []byte(fmt.Sprintf("5 0 6 %d ", obj6Offset))
+	data := append(header, body...)
+	objstmDict := raw.Dict()
+	objstmDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("ObjStm"))
+	objstmDict.Set(raw.NameLiteral("N"), raw.NumberInt(2))
+	objstmDict.Set(raw.NameLiteral("First"), raw.NumberInt(int64(len(header))))
+	objstm := raw.NewStream(objstmDict, data)
+
+	doc := &raw.Document{
+		Objects: map[raw.ObjectRef]raw.Object{
+			{Num: 1, Gen: 0}:  root,
+			{Num: 2, Gen: 0}:  pages,
+			{Num: 3, Gen: 0}:  page,
+			{Num: 4, Gen: 0}:  contents,
+			{Num: 10, Gen: 0}: objstm,
+		},
+		Trailer: raw.Dict(),
+	}
+	doc.Trailer.Set(raw.NameLiteral("Root"), raw.Ref(1, 0))
+
+	streams := map[raw.ObjectRef]decoded.Stream{
+		{Num: 4, Gen: 0}:  testStream{stream: contents},
+		{Num: 10, Gen: 0}: testStream{stream: objstm},
+	}
+
+	return &decoded.DecodedDocument{Raw: doc, Streams: streams}
 }
 
 type testStream struct {

@@ -1,11 +1,14 @@
 package extractor
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 
 	"pdflib/ir/decoded"
 	"pdflib/ir/raw"
+	"pdflib/scanner"
 )
 
 // Extractor exposes helper routines for pulling structured data out of a decoded PDF.
@@ -15,6 +18,7 @@ type Extractor struct {
 	catalog    *raw.DictObj
 	pages      []*raw.DictObj
 	pageLabels map[int]string
+	inflated   bool
 }
 
 // New creates an extractor backed by the provided decoded document.
@@ -37,6 +41,7 @@ func New(dec *decoded.DecodedDocument) (*Extractor, error) {
 		pages:   pages,
 	}
 	e.pageLabels = collectPageLabels(dec.Raw, catalog, len(pages))
+	e.inflateObjectStreams()
 	return e, nil
 }
 
@@ -93,6 +98,215 @@ func (e *Extractor) streamBytes(obj raw.Object) ([]byte, raw.Dictionary) {
 		return copyData, dict
 	}
 	return nil, nil
+}
+
+func (e *Extractor) inflateObjectStreams() {
+	if e.inflated || e.dec == nil || e.raw == nil {
+		return
+	}
+	newObjects := make(map[raw.ObjectRef]raw.Object)
+	for ref, obj := range e.raw.Objects {
+		stream, ok := obj.(raw.Stream)
+		if !ok {
+			continue
+		}
+		typ, _ := nameFromDict(stream.Dictionary(), "Type")
+		if typ != "ObjStm" {
+			continue
+		}
+		objects, err := e.decodeObjectStream(raw.RefObj{R: ref})
+		if err != nil {
+			continue
+		}
+		for num, embedded := range objects {
+			key := raw.ObjectRef{Num: num, Gen: 0}
+			if _, exists := e.raw.Objects[key]; !exists {
+				newObjects[key] = embedded
+			}
+		}
+	}
+	for ref, obj := range newObjects {
+		e.raw.Objects[ref] = obj
+	}
+	e.inflated = true
+}
+
+func (e *Extractor) decodeObjectStream(ref raw.RefObj) (map[int]raw.Object, error) {
+	data, dict := e.streamBytes(ref)
+	if len(data) == 0 || dict == nil {
+		return nil, fmt.Errorf("object stream missing data")
+	}
+	count, ok := intFromObject(valueFromDict(dict, "N"))
+	if !ok || count <= 0 {
+		return nil, fmt.Errorf("invalid object stream count")
+	}
+	first, ok := intFromObject(valueFromDict(dict, "First"))
+	if !ok || first < 0 || first > len(data) {
+		return nil, fmt.Errorf("invalid object stream First")
+	}
+	header := data[:first]
+	body := data[first:]
+	type entry struct {
+		num int
+		off int
+	}
+	entries := make([]entry, 0, count)
+	reader := bufio.NewReader(bytes.NewReader(header))
+	for i := 0; i < count; i++ {
+		var objNum, offset int
+		if _, err := fmt.Fscan(reader, &objNum, &offset); err != nil {
+			return nil, fmt.Errorf("parse objstm header: %w", err)
+		}
+		entries = append(entries, entry{num: objNum, off: offset})
+	}
+	objects := make(map[int]raw.Object, len(entries))
+	for idx, ent := range entries {
+		start := ent.off
+		if start < 0 || start > len(body) {
+			continue
+		}
+		end := len(body)
+		if idx+1 < len(entries) {
+			next := entries[idx+1].off
+			if next >= 0 && next <= len(body) {
+				end = next
+			}
+		}
+		segment := bytes.TrimSpace(body[start:end])
+		if len(segment) == 0 {
+			continue
+		}
+		obj, err := parseObjectBytes(segment)
+		if err != nil {
+			return nil, fmt.Errorf("parse objstm object %d: %w", ent.num, err)
+		}
+		objects[ent.num] = obj
+	}
+	return objects, nil
+}
+
+func parseObjectBytes(data []byte) (raw.Object, error) {
+	reader := bytes.NewReader(data)
+	sc := scanner.New(reader, scanner.Config{})
+	tr := &tokenReader{s: sc}
+	return parseObject(tr)
+}
+
+type tokenReader struct {
+	s   scanner.Scanner
+	buf []scanner.Token
+}
+
+func (r *tokenReader) next() (scanner.Token, error) {
+	if l := len(r.buf); l > 0 {
+		t := r.buf[l-1]
+		r.buf = r.buf[:l-1]
+		return t, nil
+	}
+	return r.s.Next()
+}
+
+func (r *tokenReader) unread(tok scanner.Token) {
+	r.buf = append(r.buf, tok)
+}
+
+func parseObject(tr *tokenReader) (raw.Object, error) {
+	tok, err := tr.next()
+	if err != nil {
+		return nil, err
+	}
+	switch tok.Type {
+	case scanner.TokenName:
+		if v, ok := tok.Value.(string); ok {
+			return raw.NameObj{Val: v}, nil
+		}
+	case scanner.TokenNumber:
+		if i, ok := toInt(tok.Value); ok {
+			return raw.NumberObj{I: i, IsInt: true}, nil
+		}
+		if f, ok := tok.Value.(float64); ok {
+			return raw.NumberObj{F: f, IsInt: false}, nil
+		}
+	case scanner.TokenBoolean:
+		if v, ok := tok.Value.(bool); ok {
+			return raw.BoolObj{V: v}, nil
+		}
+	case scanner.TokenNull:
+		return raw.NullObj{}, nil
+	case scanner.TokenString:
+		if b, ok := tok.Value.([]byte); ok {
+			return raw.StringObj{Bytes: b}, nil
+		}
+	case scanner.TokenArray:
+		return parseArray(tr)
+	case scanner.TokenDict:
+		return parseDict(tr)
+	case scanner.TokenRef:
+		if v, ok := tok.Value.(struct{ Num, Gen int }); ok {
+			return raw.RefObj{R: raw.ObjectRef{Num: v.Num, Gen: v.Gen}}, nil
+		}
+	case scanner.TokenKeyword:
+		if tok.Value == "stream" {
+			return nil, fmt.Errorf("unexpected stream keyword inside object stream")
+		}
+	}
+	return nil, fmt.Errorf("unexpected token: %v", tok.Type)
+}
+
+func parseArray(tr *tokenReader) (raw.Object, error) {
+	arr := &raw.ArrayObj{}
+	for {
+		tok, err := tr.next()
+		if err != nil {
+			return nil, err
+		}
+		if tok.Type == scanner.TokenKeyword && tok.Value == "]" {
+			break
+		}
+		tr.unread(tok)
+		item, err := parseObject(tr)
+		if err != nil {
+			return nil, err
+		}
+		arr.Append(item)
+	}
+	return arr, nil
+}
+
+func parseDict(tr *tokenReader) (raw.Object, error) {
+	d := raw.Dict()
+	for {
+		tok, err := tr.next()
+		if err != nil {
+			return nil, err
+		}
+		if tok.Type == scanner.TokenKeyword && tok.Value == ">>" {
+			break
+		}
+		if tok.Type != scanner.TokenName {
+			return nil, fmt.Errorf("expected name in dict, got %v", tok.Type)
+		}
+		key, _ := tok.Value.(string)
+		val, err := parseObject(tr)
+		if err != nil {
+			return nil, err
+		}
+		d.Set(raw.NameObj{Val: key}, val)
+	}
+	return d, nil
+}
+
+func toInt(v interface{}) (int64, bool) {
+	switch n := v.(type) {
+	case int:
+		return int64(n), true
+	case int64:
+		return n, true
+	case float64:
+		return int64(n), true
+	default:
+		return 0, false
+	}
 }
 
 func rootCatalog(doc *raw.Document) *raw.DictObj {
