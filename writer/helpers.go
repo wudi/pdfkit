@@ -402,17 +402,28 @@ func shadingKey(name string, s semantic.Shading) string {
 	h := sha256.New()
 	h.Write([]byte(name))
 	csName := ""
-	if s.ColorSpace != nil {
-		csName = s.ColorSpace.ColorSpaceName()
+	if s.ShadingColorSpace() != nil {
+		csName = s.ShadingColorSpace().ColorSpaceName()
 	}
-	h.Write([]byte(fmt.Sprintf("%d-%s", s.ShadingType, csName)))
-	for _, c := range s.Coords {
-		h.Write([]byte(fmt.Sprintf("%f", c)))
+	h.Write([]byte(fmt.Sprintf("%d-%s", s.ShadingType(), csName)))
+
+	switch sh := s.(type) {
+	case *semantic.FunctionShading:
+		for _, c := range sh.Coords {
+			h.Write([]byte(fmt.Sprintf("%f", c)))
+		}
+		for _, d := range sh.Domain {
+			h.Write([]byte(fmt.Sprintf("%f", d)))
+		}
+		h.Write(sh.Function)
+	case *semantic.MeshShading:
+		h.Write([]byte(fmt.Sprintf("%d-%d-%d", sh.BitsPerCoordinate, sh.BitsPerComponent, sh.BitsPerFlag)))
+		for _, d := range sh.Decode {
+			h.Write([]byte(fmt.Sprintf("%f", d)))
+		}
+		h.Write(sh.Stream)
+		h.Write(sh.Function)
 	}
-	for _, d := range s.Domain {
-		h.Write([]byte(fmt.Sprintf("%f", d)))
-	}
-	h.Write(s.Function)
 	return hex.EncodeToString(h.Sum(nil))
 }
 

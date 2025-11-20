@@ -1313,11 +1313,13 @@ func TestWriter_ShadingResources(t *testing.T) {
 				MediaBox: semantic.Rectangle{URX: 10, URY: 10},
 				Resources: &semantic.Resources{
 					Shadings: map[string]semantic.Shading{
-						"S1": {
-							ShadingType: 2,
-							ColorSpace:  &semantic.DeviceColorSpace{Name: "DeviceRGB"},
-							Coords:      []float64{0, 0, 10, 0},
-							Domain:      []float64{0, 1},
+						"S1": &semantic.FunctionShading{
+							BaseShading: semantic.BaseShading{
+								Type:       2,
+								ColorSpace: &semantic.DeviceColorSpace{Name: "DeviceRGB"},
+							},
+							Coords: []float64{0, 0, 10, 0},
+							Domain: []float64{0, 1},
 						},
 					},
 				},
@@ -1717,10 +1719,9 @@ func TestWriter_OutlinesDest(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if typ, ok := d.Get(raw.NameLiteral("Type")); ok {
-			if n, ok := typ.(raw.NameObj); ok && n.Value() == "Outlines" {
-				outlinesFound = true
-			}
+		typ, _ := d.Get(raw.NameLiteral("Type"))
+		if n, ok := typ.(raw.NameObj); ok && n.Value() == "Outlines" {
+			outlinesFound = true
 		}
 		if titleObj, ok := d.Get(raw.NameLiteral("Title")); ok {
 			if _, ok := titleObj.(raw.StringObj); ok {
@@ -2195,19 +2196,18 @@ func TestWriter_AnnotationAppearance(t *testing.T) {
 			continue
 		}
 		typ, _ := d.Get(raw.NameLiteral("Type"))
-		if n, ok := typ.(raw.NameObj); !ok || n.Value() != "Annot" {
-			continue
-		}
-		apDict, ok := d.Get(raw.NameLiteral("AP"))
-		if !ok {
-			continue
-		}
-		if apDictObj, ok := apDict.(*raw.DictObj); ok {
-			if nRef, ok := apDictObj.Get(raw.NameLiteral("N")); ok {
-				if ref, ok := nRef.(raw.RefObj); ok {
-					if stream, ok := rawDoc.Objects[ref.Ref()].(*raw.StreamObj); ok {
-						if bytes.Equal(stream.Data, ap) {
-							foundAppearance = true
+		if n, ok := typ.(raw.NameObj); ok && n.Value() == "Annot" {
+			apDict, ok := d.Get(raw.NameLiteral("AP"))
+			if !ok {
+				continue
+			}
+			if apDictObj, ok := apDict.(*raw.DictObj); ok {
+				if nRef, ok := apDictObj.Get(raw.NameLiteral("N")); ok {
+					if ref, ok := nRef.(raw.RefObj); ok {
+						if stream, ok := rawDoc.Objects[ref.Ref()].(*raw.StreamObj); ok {
+							if bytes.Equal(stream.Data, ap) {
+								foundAppearance = true
+							}
 						}
 					}
 				}
@@ -2263,7 +2263,10 @@ func TestWriter_AcroFormFields(t *testing.T) {
 		},
 		AcroForm: &semantic.AcroForm{
 			Fields: []semantic.FormField{
-				{Name: "Field1", Value: "hello", Type: "Tx"},
+				&semantic.TextFormField{
+					BaseFormField: semantic.BaseFormField{Name: "Field1"},
+					Value:         "hello",
+				},
 			},
 		},
 	}
@@ -2328,17 +2331,20 @@ func TestWriter_AcroFormWidgetAppearance(t *testing.T) {
 		},
 		AcroForm: &semantic.AcroForm{
 			Fields: []semantic.FormField{
-				{
-					Name:            "Check",
-					Type:            "Btn",
-					Value:           "Yes",
-					PageIndex:       0,
-					Rect:            semantic.Rectangle{LLX: 0, LLY: 0, URX: 10, URY: 10},
-					Flags:           1,
-					Appearance:      ap,
-					AppearanceState: "Yes",
-					Border:          []float64{0, 0, 2},
-					Color:           []float64{1, 0, 0},
+				&semantic.ButtonFormField{
+					BaseFormField: semantic.BaseFormField{
+						Name:            "Check",
+						PageIndex:       0,
+						Rect:            semantic.Rectangle{LLX: 0, LLY: 0, URX: 10, URY: 10},
+						Flags:           1,
+						Appearance:      ap,
+						AppearanceState: "Yes",
+						Border:          []float64{0, 0, 2},
+						Color:           []float64{1, 0, 0},
+					},
+					IsCheck: true,
+					Checked: true,
+					OnState: "Yes",
 				},
 			},
 		},
@@ -2792,4 +2798,123 @@ func hasShadingResource(doc *raw.Document, dict *raw.DictObj, name string) bool 
 		return true
 	}
 	return false
+}
+
+func TestWriter_AdvancedColorAndShading(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 100, URY: 100},
+				Resources: &semantic.Resources{
+					ColorSpaces: map[string]semantic.ColorSpace{
+						"CS_Sep": &semantic.SeparationColorSpace{
+							Name:          "PantoneOrange",
+							Alternate:     &semantic.DeviceColorSpace{Name: "DeviceCMYK"},
+							TintTransform: []byte("...function..."),
+						},
+						"CS_DevN": &semantic.DeviceNColorSpace{
+							Names:         []string{"Orange", "Green"},
+							Alternate:     &semantic.DeviceColorSpace{Name: "DeviceCMYK"},
+							TintTransform: []byte("...function..."),
+							Attributes:    &semantic.DeviceNAttributes{Subtype: "DeviceN"},
+						},
+					},
+					Shadings: map[string]semantic.Shading{
+						"SH_Mesh": &semantic.MeshShading{
+							BaseShading: semantic.BaseShading{
+								Type:       4, // Free-form Gouraud-shaded triangle mesh
+								ColorSpace: &semantic.DeviceColorSpace{Name: "DeviceRGB"},
+							},
+							BitsPerCoordinate: 8,
+							BitsPerComponent:  8,
+							BitsPerFlag:       8,
+							Decode:            []float64{0, 100, 0, 100, 0, 1, 0, 1, 0, 1},
+							Stream:            []byte("...mesh data..."),
+						},
+					},
+				},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("/CS_Sep cs 0.5 scn /SH_Mesh sh")}},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+
+	foundSep := false
+	foundDevN := false
+	foundMesh := false
+
+	for _, obj := range rawDoc.Objects {
+		d, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		// Check Page Resources
+		if typ, ok := d.Get(raw.NameLiteral("Type")); ok {
+			if n, ok := typ.(raw.NameObj); ok && n.Value() == "Page" {
+				res, _ := d.Get(raw.NameLiteral("Resources"))
+				resDict, _ := res.(*raw.DictObj)
+
+				// Check ColorSpaces
+				cs, _ := resDict.Get(raw.NameLiteral("ColorSpace"))
+				csDict, _ := cs.(*raw.DictObj)
+
+				if sepObj, ok := csDict.Get(raw.NameLiteral("CS_Sep")); ok {
+					if arr, ok := sepObj.(*raw.ArrayObj); ok && arr.Len() == 4 {
+						if n, ok := arr.Items[0].(raw.NameObj); ok && n.Value() == "Separation" {
+							if n, ok := arr.Items[1].(raw.NameObj); ok && n.Value() == "PantoneOrange" {
+								foundSep = true
+							}
+						}
+					}
+				}
+
+				if devNObj, ok := csDict.Get(raw.NameLiteral("CS_DevN")); ok {
+					if arr, ok := devNObj.(*raw.ArrayObj); ok && arr.Len() >= 4 {
+						if n, ok := arr.Items[0].(raw.NameObj); ok && n.Value() == "DeviceN" {
+							if names, ok := arr.Items[1].(*raw.ArrayObj); ok && names.Len() == 2 {
+								foundDevN = true
+							}
+						}
+					}
+				}
+
+				// Check Shading
+				sh, _ := resDict.Get(raw.NameLiteral("Shading"))
+				shDict, _ := sh.(*raw.DictObj)
+				if meshRef, ok := shDict.Get(raw.NameLiteral("SH_Mesh")); ok {
+					if ref, ok := meshRef.(raw.RefObj); ok {
+						meshObj := rawDoc.Objects[ref.Ref()]
+						if stream, ok := meshObj.(*raw.StreamObj); ok {
+							if st, ok := stream.Dict.Get(raw.NameLiteral("ShadingType")); ok {
+								if n, ok := st.(raw.NumberObj); ok && n.Int() == 4 {
+									foundMesh = true
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if !foundSep {
+		t.Fatalf("Separation color space not found or malformed")
+	}
+	if !foundDevN {
+		t.Fatalf("DeviceN color space not found or malformed")
+	}
+	if !foundMesh {
+		t.Fatalf("Mesh shading not found or malformed")
+	}
 }

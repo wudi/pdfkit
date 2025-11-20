@@ -171,17 +171,55 @@ func (s *defaultAnnotationSerializer) Serialize(a semantic.Annotation, ctx Seria
 		}
 	case *semantic.WidgetAnnotation:
 		if t.Field != nil {
-			if t.Field.Type != "" {
-				dict.Set(raw.NameLiteral("FT"), raw.NameLiteral(t.Field.Type))
+			if ft := t.Field.FieldType(); ft != "" {
+				dict.Set(raw.NameLiteral("FT"), raw.NameLiteral(ft))
 			}
-			if t.Field.Name != "" {
-				dict.Set(raw.NameLiteral("T"), raw.Str([]byte(t.Field.Name)))
+			if name := t.Field.FieldName(); name != "" {
+				dict.Set(raw.NameLiteral("T"), raw.Str([]byte(name)))
 			}
-			if t.Field.Value != "" {
-				dict.Set(raw.NameLiteral("V"), raw.Str([]byte(t.Field.Value)))
+
+			switch f := t.Field.(type) {
+			case *semantic.TextFormField:
+				if f.Value != "" {
+					dict.Set(raw.NameLiteral("V"), raw.Str([]byte(f.Value)))
+				}
+			case *semantic.ChoiceFormField:
+				if len(f.Selected) > 0 {
+					if len(f.Selected) == 1 {
+						dict.Set(raw.NameLiteral("V"), raw.Str([]byte(f.Selected[0])))
+					} else {
+						arr := raw.NewArray()
+						for _, s := range f.Selected {
+							arr.Append(raw.Str([]byte(s)))
+						}
+						dict.Set(raw.NameLiteral("V"), arr)
+					}
+				}
+			case *semantic.ButtonFormField:
+				if f.IsCheck || f.IsRadio {
+					if f.Checked {
+						val := f.OnState
+						if val == "" {
+							val = "Yes"
+						}
+						dict.Set(raw.NameLiteral("V"), raw.NameLiteral(val))
+					} else {
+						dict.Set(raw.NameLiteral("V"), raw.NameLiteral("Off"))
+					}
+				}
+			case *semantic.GenericFormField:
+				if f.Value != "" {
+					dict.Set(raw.NameLiteral("V"), raw.Str([]byte(f.Value)))
+				}
+			case *semantic.SignatureFormField:
+				if f.Signature != nil {
+					sigRef := serializeSignature(f.Signature, ctx)
+					dict.Set(raw.NameLiteral("V"), raw.Ref(sigRef.Num, sigRef.Gen))
+				}
 			}
-			if t.Field.Flags != 0 {
-				dict.Set(raw.NameLiteral("Ff"), raw.NumberInt(int64(t.Field.Flags)))
+
+			if flags := t.Field.FieldFlags(); flags != 0 {
+				dict.Set(raw.NameLiteral("Ff"), raw.NumberInt(int64(flags)))
 			}
 		}
 	case *semantic.StampAnnotation:
@@ -431,6 +469,120 @@ func (s *defaultActionSerializer) Serialize(a semantic.Action, ctx Serialization
 	case semantic.ImportDataAction:
 		d.Set(raw.NameLiteral("S"), raw.NameLiteral("ImportData"))
 		d.Set(raw.NameLiteral("F"), raw.Str([]byte(act.File)))
+	case semantic.GoToRAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("GoToR"))
+		d.Set(raw.NameLiteral("F"), raw.Str([]byte(act.File)))
+		if act.DestName != "" {
+			d.Set(raw.NameLiteral("D"), raw.Str([]byte(act.DestName)))
+		} else if act.Dest != nil {
+			// For GoToR, D is [page /Fit ...] where page is an integer index
+			// We assume page index 0 if not specified, as OutlineDestination doesn't carry it.
+			// Ideally, GoToRAction should have a PageIndex field.
+			// For now, we default to 0.
+			arr := raw.NewArray(
+				raw.NumberInt(0),
+				raw.NameLiteral("XYZ"),
+				xyzDestValue(act.Dest.X),
+				xyzDestValue(act.Dest.Y),
+				xyzDestValue(act.Dest.Zoom),
+			)
+			d.Set(raw.NameLiteral("D"), arr)
+		}
+		if act.NewWindow != nil {
+			d.Set(raw.NameLiteral("NewWindow"), raw.Bool(*act.NewWindow))
+		}
+	case semantic.GoToEAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("GoToE"))
+		if act.DestName != "" {
+			d.Set(raw.NameLiteral("D"), raw.Str([]byte(act.DestName)))
+		} else if act.Dest != nil {
+			// GoToE destination is also [page /Fit ...]
+			arr := raw.NewArray(
+				raw.NumberInt(0),
+				raw.NameLiteral("XYZ"),
+				xyzDestValue(act.Dest.X),
+				xyzDestValue(act.Dest.Y),
+				xyzDestValue(act.Dest.Zoom),
+			)
+			d.Set(raw.NameLiteral("D"), arr)
+		}
+		if act.NewWindow != nil {
+			d.Set(raw.NameLiteral("NewWindow"), raw.Bool(*act.NewWindow))
+		}
+		if act.Target != nil {
+			// Target dictionary (T)
+			tDict := raw.Dict()
+			tDict.Set(raw.NameLiteral("R"), raw.NameLiteral("C")) // Relation: Child
+			tDict.Set(raw.NameLiteral("N"), raw.Str([]byte(act.Target.Name)))
+			// We might need to serialize the embedded file stream here if it's new
+			// But usually EmbeddedFiles are handled at document level.
+			// If we need to link to a specific embedded file, we use the name in the Names tree.
+			// The spec says T is a target dictionary.
+			d.Set(raw.NameLiteral("T"), tDict)
+		}
+	case semantic.HideAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("Hide"))
+		d.Set(raw.NameLiteral("T"), raw.Str([]byte(act.TargetName)))
+		d.Set(raw.NameLiteral("H"), raw.Bool(act.Hide))
+	case semantic.GoTo3DViewAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("GoTo3DView"))
+		if act.Target != nil {
+			ref := act.Target.Reference()
+			if ref.Num != 0 {
+				d.Set(raw.NameLiteral("TA"), raw.Ref(ref.Num, ref.Gen))
+			}
+		}
+		d.Set(raw.NameLiteral("V"), raw.NameLiteral(act.View))
+	case semantic.ThreadAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("Thread"))
+		if act.File != "" {
+			d.Set(raw.NameLiteral("F"), raw.Str([]byte(act.File)))
+		}
+		if act.Thread.Num != 0 {
+			d.Set(raw.NameLiteral("D"), raw.Ref(act.Thread.Num, act.Thread.Gen))
+		}
+		if act.Bead.Num != 0 {
+			d.Set(raw.NameLiteral("B"), raw.Ref(act.Bead.Num, act.Bead.Gen))
+		}
+	case semantic.RichMediaExecuteAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("RichMediaExecute"))
+		if act.Command.Num != 0 {
+			d.Set(raw.NameLiteral("TI"), raw.Ref(act.Command.Num, act.Command.Gen))
+		}
+	case semantic.SoundAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("Sound"))
+		if act.Sound != nil && len(act.Sound.Data) > 0 {
+			sRef := ctx.NextRef()
+			sDict := raw.Dict()
+			sDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Sound"))
+			sDict.Set(raw.NameLiteral("R"), raw.NumberInt(44100))
+			sDict.Set(raw.NameLiteral("C"), raw.NumberInt(1))
+			sDict.Set(raw.NameLiteral("B"), raw.NumberInt(16))
+			sDict.Set(raw.NameLiteral("E"), raw.NameLiteral("Signed"))
+			sDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(act.Sound.Data))))
+			ctx.AddObject(sRef, raw.NewStream(sDict, act.Sound.Data))
+			d.Set(raw.NameLiteral("Sound"), raw.Ref(sRef.Num, sRef.Gen))
+		}
+		if act.Volume != nil {
+			d.Set(raw.NameLiteral("Volume"), raw.NumberFloat(*act.Volume))
+		}
+		if act.Synchronous != nil {
+			d.Set(raw.NameLiteral("Synchronous"), raw.Bool(*act.Synchronous))
+		}
+		if act.Repeat != nil {
+			d.Set(raw.NameLiteral("Repeat"), raw.Bool(*act.Repeat))
+		}
+		if act.Mix != nil {
+			d.Set(raw.NameLiteral("Mix"), raw.Bool(*act.Mix))
+		}
+	case semantic.MovieAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("Movie"))
+		if act.Title != "" {
+			d.Set(raw.NameLiteral("T"), raw.Str([]byte(act.Title)))
+		}
+		if act.Operation != "" {
+			d.Set(raw.NameLiteral("Operation"), raw.NameLiteral(act.Operation))
+		}
 	}
 	return d
 }
@@ -445,34 +597,172 @@ func (s *defaultColorSpaceSerializer) Serialize(cs semantic.ColorSpace, ctx Seri
 	if cs == nil {
 		return raw.NameLiteral("DeviceRGB")
 	}
-	name := cs.ColorSpaceName()
-	if name == "ICCBased" {
-		if icc, ok := cs.(*semantic.ICCBasedColorSpace); ok {
+	switch t := cs.(type) {
+	case *semantic.ICCBasedColorSpace:
+		ref := ctx.NextRef()
+		dict := raw.Dict()
+		n := 3
+		if len(t.Range) > 0 {
+			n = len(t.Range) / 2
+		}
+		dict.Set(raw.NameLiteral("N"), raw.NumberInt(int64(n)))
+		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(t.Profile))))
+		if len(t.Range) > 0 {
+			arr := raw.NewArray()
+			for _, v := range t.Range {
+				arr.Append(raw.NumberFloat(v))
+			}
+			dict.Set(raw.NameLiteral("Range"), arr)
+		}
+		if t.Alternate != nil {
+			altName := t.Alternate.ColorSpaceName()
+			dict.Set(raw.NameLiteral("Alternate"), raw.NameLiteral(altName))
+		}
+
+		stream := raw.NewStream(dict, t.Profile)
+		ctx.AddObject(ref, stream)
+
+		return raw.NewArray(raw.NameLiteral("ICCBased"), raw.Ref(ref.Num, ref.Gen))
+
+	case *semantic.SeparationColorSpace:
+		arr := raw.NewArray(raw.NameLiteral("Separation"), raw.NameLiteral(t.Name))
+		if t.Alternate != nil {
+			arr.Append(s.Serialize(t.Alternate, ctx))
+		} else {
+			arr.Append(raw.NameLiteral("DeviceGray"))
+		}
+		// TintTransform function
+		if len(t.TintTransform) > 0 {
 			ref := ctx.NextRef()
 			dict := raw.Dict()
-			n := 3
-			if len(icc.Range) > 0 {
-				n = len(icc.Range) / 2
-			}
-			dict.Set(raw.NameLiteral("N"), raw.NumberInt(int64(n)))
-			dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(icc.Profile))))
-			if len(icc.Range) > 0 {
-				arr := raw.NewArray()
-				for _, v := range icc.Range {
-					arr.Append(raw.NumberFloat(v))
-				}
-				dict.Set(raw.NameLiteral("Range"), arr)
-			}
-			if icc.Alternate != nil {
-				altName := icc.Alternate.ColorSpaceName()
-				dict.Set(raw.NameLiteral("Alternate"), raw.NameLiteral(altName))
-			}
-
-			stream := raw.NewStream(dict, icc.Profile)
-			ctx.AddObject(ref, stream)
-
-			return raw.NewArray(raw.NameLiteral("ICCBased"), raw.Ref(ref.Num, ref.Gen))
+			dict.Set(raw.NameLiteral("FunctionType"), raw.NumberInt(4)) // PostScript calculator
+			dict.Set(raw.NameLiteral("Domain"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
+			dict.Set(raw.NameLiteral("Range"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
+			dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(t.TintTransform))))
+			ctx.AddObject(ref, raw.NewStream(dict, t.TintTransform))
+			arr.Append(raw.Ref(ref.Num, ref.Gen))
 		}
+		return arr
+
+	case *semantic.DeviceNColorSpace:
+		arr := raw.NewArray(raw.NameLiteral("DeviceN"))
+		names := raw.NewArray()
+		for _, n := range t.Names {
+			names.Append(raw.NameLiteral(n))
+		}
+		arr.Append(names)
+		if t.Alternate != nil {
+			arr.Append(s.Serialize(t.Alternate, ctx))
+		} else {
+			arr.Append(raw.NameLiteral("DeviceCMYK"))
+		}
+		if len(t.TintTransform) > 0 {
+			ref := ctx.NextRef()
+			dict := raw.Dict()
+			dict.Set(raw.NameLiteral("FunctionType"), raw.NumberInt(4))
+			dict.Set(raw.NameLiteral("Domain"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
+			dict.Set(raw.NameLiteral("Range"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
+			dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(t.TintTransform))))
+			ctx.AddObject(ref, raw.NewStream(dict, t.TintTransform))
+			arr.Append(raw.Ref(ref.Num, ref.Gen))
+		}
+		if t.Attributes != nil {
+			attr := raw.Dict()
+			if t.Attributes.Subtype != "" {
+				attr.Set(raw.NameLiteral("Subtype"), raw.NameLiteral(t.Attributes.Subtype))
+			}
+			arr.Append(attr)
+		}
+		return arr
 	}
-	return raw.NameLiteral(name)
+	return raw.NameLiteral(cs.ColorSpaceName())
+}
+
+func serializeSignature(sig *semantic.Signature, ctx SerializationContext) raw.ObjectRef {
+	ref := ctx.NextRef()
+	dict := raw.Dict()
+	dict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Sig"))
+	if sig.Filter != "" {
+		dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral(sig.Filter))
+	}
+	if sig.SubFilter != "" {
+		dict.Set(raw.NameLiteral("SubFilter"), raw.NameLiteral(sig.SubFilter))
+	}
+	if len(sig.Contents) > 0 {
+		dict.Set(raw.NameLiteral("Contents"), raw.Str(sig.Contents))
+	}
+	if len(sig.Cert) > 0 {
+		dict.Set(raw.NameLiteral("Cert"), raw.Str(sig.Cert))
+	}
+	if len(sig.ByteRange) > 0 {
+		br := raw.NewArray()
+		for _, v := range sig.ByteRange {
+			br.Append(raw.NumberInt(int64(v)))
+		}
+		dict.Set(raw.NameLiteral("ByteRange"), br)
+	}
+	if sig.Name != "" {
+		dict.Set(raw.NameLiteral("Name"), raw.Str([]byte(sig.Name)))
+	}
+	if sig.M != "" {
+		dict.Set(raw.NameLiteral("M"), raw.Str([]byte(sig.M)))
+	}
+	if sig.Location != "" {
+		dict.Set(raw.NameLiteral("Location"), raw.Str([]byte(sig.Location)))
+	}
+	if sig.Reason != "" {
+		dict.Set(raw.NameLiteral("Reason"), raw.Str([]byte(sig.Reason)))
+	}
+	if sig.ContactInfo != "" {
+		dict.Set(raw.NameLiteral("ContactInfo"), raw.Str([]byte(sig.ContactInfo)))
+	}
+	if len(sig.Reference) > 0 {
+		refs := raw.NewArray()
+		for _, r := range sig.Reference {
+			rd := raw.Dict()
+			rd.Set(raw.NameLiteral("Type"), raw.NameLiteral("SigRef"))
+			if r.TransformMethod != "" {
+				rd.Set(raw.NameLiteral("TransformMethod"), raw.NameLiteral(r.TransformMethod))
+			}
+			if r.DigestMethod != "" {
+				rd.Set(raw.NameLiteral("DigestMethod"), raw.NameLiteral(r.DigestMethod))
+			}
+			if len(r.DigestValue) > 0 {
+				rd.Set(raw.NameLiteral("DigestValue"), raw.Str(r.DigestValue))
+			}
+			if len(r.DigestLocation) > 0 {
+				dl := raw.NewArray()
+				for _, v := range r.DigestLocation {
+					dl.Append(raw.NumberInt(int64(v)))
+				}
+				rd.Set(raw.NameLiteral("DigestLocation"), dl)
+			}
+			if r.TransformParams != nil {
+				tp := raw.Dict()
+				tp.Set(raw.NameLiteral("Type"), raw.NameLiteral("TransformParams"))
+				if r.TransformParams.P != 0 {
+					tp.Set(raw.NameLiteral("P"), raw.NumberInt(int64(r.TransformParams.P)))
+				}
+				if r.TransformParams.V != "" {
+					tp.Set(raw.NameLiteral("V"), raw.NameLiteral(r.TransformParams.V))
+				}
+				if r.TransformParams.Action != "" {
+					tp.Set(raw.NameLiteral("Action"), raw.NameLiteral(r.TransformParams.Action))
+				}
+				if len(r.TransformParams.Fields) > 0 {
+					flds := raw.NewArray()
+					for _, f := range r.TransformParams.Fields {
+						flds.Append(raw.Str([]byte(f)))
+					}
+					tp.Set(raw.NameLiteral("Fields"), flds)
+				}
+				rd.Set(raw.NameLiteral("TransformParams"), tp)
+			}
+			refs.Append(rd)
+		}
+		dict.Set(raw.NameLiteral("Reference"), refs)
+	}
+
+	ctx.AddObject(ref, dict)
+	return ref
 }

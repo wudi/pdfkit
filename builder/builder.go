@@ -336,9 +336,9 @@ func (b *builderImpl) Build() (*semantic.Document, error) {
 		}
 		for _, pf := range b.pendingFields {
 			if idx, ok := pageIndexByPtr[pf.page]; ok {
-				pf.field.PageIndex = idx
+				pf.field.SetFieldPageIndex(idx)
 			} else {
-				pf.field.PageIndex = -1
+				pf.field.SetFieldPageIndex(-1)
 			}
 			b.acroForm.Fields = append(b.acroForm.Fields, pf.field)
 		}

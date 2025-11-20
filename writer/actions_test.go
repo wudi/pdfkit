@@ -227,6 +227,230 @@ func TestWriter_Actions(t *testing.T) {
 	}
 }
 
+func TestWriter_AdvancedActions(t *testing.T) {
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 100, URY: 100},
+				Annotations: []semantic.Annotation{
+					&semantic.LinkAnnotation{
+						BaseAnnotation: semantic.BaseAnnotation{
+							Subtype: "Link",
+							RectVal: semantic.Rectangle{LLX: 10, LLY: 10, URX: 50, URY: 50},
+						},
+						Action: semantic.GoToRAction{
+							File:      "external.pdf",
+							DestName:  "Chapter1",
+							NewWindow: boolPtr(true),
+						},
+					},
+					&semantic.LinkAnnotation{
+						BaseAnnotation: semantic.BaseAnnotation{
+							Subtype: "Link",
+							RectVal: semantic.Rectangle{LLX: 60, LLY: 10, URX: 100, URY: 50},
+						},
+						Action: semantic.HideAction{
+							TargetName: "MyField",
+							Hide:       true,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(context.Background(), doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+
+	// Parse back
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+
+	foundGoToR := false
+	foundHide := false
+
+	for _, obj := range rawDoc.Objects {
+		d, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		if typ, ok := d.Get(raw.NameLiteral("Type")); ok {
+			if n, ok := typ.(raw.NameObj); ok && n.Value() == "Annot" {
+				if a, ok := d.Get(raw.NameLiteral("A")); ok {
+					actionDict, _ := a.(*raw.DictObj)
+					if s, ok := actionDict.Get(raw.NameLiteral("S")); ok {
+						if name, ok := s.(raw.NameObj); ok {
+							if name.Value() == "GoToR" {
+								foundGoToR = true
+								checkActionString(t, actionDict, "F", "external.pdf")
+								checkActionString(t, actionDict, "D", "Chapter1")
+								if nw, ok := actionDict.Get(raw.NameLiteral("NewWindow")); ok {
+									if b, ok := nw.(raw.BoolObj); ok && b.Value() == true {
+										// ok
+									} else {
+										t.Errorf("GoToR NewWindow mismatch")
+									}
+								}
+							} else if name.Value() == "Hide" {
+								foundHide = true
+								checkActionString(t, actionDict, "T", "MyField")
+								if h, ok := actionDict.Get(raw.NameLiteral("H")); ok {
+									if b, ok := h.(raw.BoolObj); ok && b.Value() == true {
+										// ok
+									} else {
+										t.Errorf("Hide H mismatch")
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if !foundGoToR {
+		t.Errorf("GoToR action not found")
+	}
+	if !foundHide {
+		t.Errorf("Hide action not found")
+	}
+}
+
+func checkActionString(t *testing.T, d *raw.DictObj, key, expected string) {
+	if val, ok := d.Get(raw.NameLiteral(key)); ok {
+		if s, ok := val.(raw.StringObj); ok {
+			if string(s.Value()) != expected {
+				t.Errorf("Expected %s=%s, got %s", key, expected, s.Value())
+			}
+		} else if n, ok := val.(raw.NameObj); ok {
+			if n.Value() != expected {
+				t.Errorf("Expected %s=%s, got %s", key, expected, n.Value())
+			}
+		} else {
+			t.Errorf("Expected %s=%s, got wrong type", key, expected)
+		}
+	} else {
+		t.Errorf("Missing %s", key)
+	}
+}
+
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+func TestWriter_PageTransitionAndMoreActions(t *testing.T) {
+	duration := 1.5
+	scale := 1.0
+	base := true
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 100, URY: 100},
+				Trans: &semantic.Transition{
+					Style:     "Split",
+					Duration:  &duration,
+					Dimension: "H",
+					Motion:    "I",
+					Direction: 0,
+					Scale:     &scale,
+					Base:      &base,
+				},
+				Annotations: []semantic.Annotation{
+					&semantic.LinkAnnotation{
+						BaseAnnotation: semantic.BaseAnnotation{
+							Subtype: "Link",
+							RectVal: semantic.Rectangle{LLX: 10, LLY: 10, URX: 50, URY: 50},
+						},
+						Action: semantic.ThreadAction{
+							File: "external.pdf",
+							// Thread and Bead refs would be set if we had objects,
+							// but here we just test serialization of fields we can set.
+						},
+					},
+					&semantic.ScreenAnnotation{
+						BaseAnnotation: semantic.BaseAnnotation{
+							Subtype: "Screen",
+							RectVal: semantic.Rectangle{LLX: 60, LLY: 10, URX: 100, URY: 50},
+						},
+						Action: semantic.RichMediaExecuteAction{
+							// Command ref would be set
+						},
+					},
+				},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	if err := w.Write(context.Background(), doc, &buf, Config{Deterministic: true}); err != nil {
+		t.Fatalf("write pdf: %v", err)
+	}
+
+	// Parse back
+	rawParser := parser.NewDocumentParser(parser.Config{})
+	rawDoc, err := rawParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse raw: %v", err)
+	}
+
+	foundTrans := false
+	foundThread := false
+	foundRichMedia := false
+
+	for _, obj := range rawDoc.Objects {
+		d, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		if typ, ok := d.Get(raw.NameLiteral("Type")); ok {
+			if n, ok := typ.(raw.NameObj); ok && n.Value() == "Page" {
+				if trans, ok := d.Get(raw.NameLiteral("Trans")); ok {
+					foundTrans = true
+					transDict, _ := trans.(*raw.DictObj)
+					checkActionString(t, transDict, "S", "Split")
+					checkActionString(t, transDict, "Dm", "H")
+					checkActionString(t, transDict, "M", "I")
+					if dur, ok := transDict.Get(raw.NameLiteral("D")); ok {
+						if n, ok := dur.(raw.NumberObj); ok && n.Float() == 1.5 {
+							// ok
+						} else {
+							t.Errorf("Trans Duration mismatch")
+						}
+					}
+				}
+			} else if n, ok := typ.(raw.NameObj); ok && n.Value() == "Annot" {
+				if a, ok := d.Get(raw.NameLiteral("A")); ok {
+					actionDict, _ := a.(*raw.DictObj)
+					if s, ok := actionDict.Get(raw.NameLiteral("S")); ok {
+						if name, ok := s.(raw.NameObj); ok {
+							if name.Value() == "Thread" {
+								foundThread = true
+								checkActionString(t, actionDict, "F", "external.pdf")
+							} else if name.Value() == "RichMediaExecute" {
+								foundRichMedia = true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if !foundTrans {
+		t.Errorf("Page Transition not found")
+	}
+	if !foundThread {
+		t.Errorf("Thread action not found")
+	}
+	if !foundRichMedia {
+		t.Errorf("RichMediaExecute action not found")
+	}
 }

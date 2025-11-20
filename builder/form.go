@@ -30,14 +30,22 @@ func (b *builderImpl) Form() FormBuilder {
 
 func (fb *formBuilderImpl) SetText(name, value string) FormBuilder {
 	for i := range fb.form.Fields {
-		if fb.form.Fields[i].Name == name {
-			fb.form.Fields[i].Value = value
+		if fb.form.Fields[i].FieldName() == name {
+			if tf, ok := fb.form.Fields[i].(*semantic.TextFormField); ok {
+				tf.Value = value
+			} else if gf, ok := fb.form.Fields[i].(*semantic.GenericFormField); ok {
+				gf.Value = value
+			}
 			return fb
 		}
 	}
 	for i := range fb.parent.pendingFields {
-		if fb.parent.pendingFields[i].field.Name == name {
-			fb.parent.pendingFields[i].field.Value = value
+		if fb.parent.pendingFields[i].field.FieldName() == name {
+			if tf, ok := fb.parent.pendingFields[i].field.(*semantic.TextFormField); ok {
+				tf.Value = value
+			} else if gf, ok := fb.parent.pendingFields[i].field.(*semantic.GenericFormField); ok {
+				gf.Value = value
+			}
 			return fb
 		}
 	}
@@ -45,29 +53,52 @@ func (fb *formBuilderImpl) SetText(name, value string) FormBuilder {
 }
 
 func (fb *formBuilderImpl) SetCheckbox(name string, checked bool) FormBuilder {
-	val := "Off"
-	if checked {
-		val = "Yes" // Default export value
-	}
-
 	for i := range fb.form.Fields {
-		if fb.form.Fields[i].Name == name {
-			fb.form.Fields[i].Value = val
-			if checked {
-				fb.form.Fields[i].AppearanceState = "Yes"
-			} else {
-				fb.form.Fields[i].AppearanceState = "Off"
+		if fb.form.Fields[i].FieldName() == name {
+			if bf, ok := fb.form.Fields[i].(*semantic.ButtonFormField); ok {
+				bf.Checked = checked
+				if checked {
+					state := bf.OnState
+					if state == "" {
+						state = "Yes"
+					}
+					bf.AppearanceState = state
+				} else {
+					bf.AppearanceState = "Off"
+				}
+			} else if gf, ok := fb.form.Fields[i].(*semantic.GenericFormField); ok {
+				if checked {
+					gf.Value = "Yes"
+					gf.AppearanceState = "Yes"
+				} else {
+					gf.Value = "Off"
+					gf.AppearanceState = "Off"
+				}
 			}
 			return fb
 		}
 	}
 	for i := range fb.parent.pendingFields {
-		if fb.parent.pendingFields[i].field.Name == name {
-			fb.parent.pendingFields[i].field.Value = val
-			if checked {
-				fb.parent.pendingFields[i].field.AppearanceState = "Yes"
-			} else {
-				fb.parent.pendingFields[i].field.AppearanceState = "Off"
+		if fb.parent.pendingFields[i].field.FieldName() == name {
+			if bf, ok := fb.parent.pendingFields[i].field.(*semantic.ButtonFormField); ok {
+				bf.Checked = checked
+				if checked {
+					state := bf.OnState
+					if state == "" {
+						state = "Yes"
+					}
+					bf.AppearanceState = state
+				} else {
+					bf.AppearanceState = "Off"
+				}
+			} else if gf, ok := fb.parent.pendingFields[i].field.(*semantic.GenericFormField); ok {
+				if checked {
+					gf.Value = "Yes"
+					gf.AppearanceState = "Yes"
+				} else {
+					gf.Value = "Off"
+					gf.AppearanceState = "Off"
+				}
 			}
 			return fb
 		}
@@ -77,14 +108,22 @@ func (fb *formBuilderImpl) SetCheckbox(name string, checked bool) FormBuilder {
 
 func (fb *formBuilderImpl) SetChoice(name, value string) FormBuilder {
 	for i := range fb.form.Fields {
-		if fb.form.Fields[i].Name == name {
-			fb.form.Fields[i].Value = value
+		if fb.form.Fields[i].FieldName() == name {
+			if cf, ok := fb.form.Fields[i].(*semantic.ChoiceFormField); ok {
+				cf.Selected = []string{value}
+			} else if gf, ok := fb.form.Fields[i].(*semantic.GenericFormField); ok {
+				gf.Value = value
+			}
 			return fb
 		}
 	}
 	for i := range fb.parent.pendingFields {
-		if fb.parent.pendingFields[i].field.Name == name {
-			fb.parent.pendingFields[i].field.Value = value
+		if fb.parent.pendingFields[i].field.FieldName() == name {
+			if cf, ok := fb.parent.pendingFields[i].field.(*semantic.ChoiceFormField); ok {
+				cf.Selected = []string{value}
+			} else if gf, ok := fb.parent.pendingFields[i].field.(*semantic.GenericFormField); ok {
+				gf.Value = value
+			}
 			return fb
 		}
 	}

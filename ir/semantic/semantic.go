@@ -50,9 +50,23 @@ type Page struct {
 	UserUnit        float64
 	OutputIntents   []OutputIntent // PDF 2.0
 	AssociatedFiles []EmbeddedFile // PDF 2.0
+	Trans           *Transition    // Page transition
 	ref             raw.ObjectRef
 	OriginalRef     raw.ObjectRef
 	Dirty           bool
+}
+
+// Transition describes the visual transition when moving to the page.
+type Transition struct {
+	Style       string   // /S (Split, Blinds, Box, Wipe, Dissolve, Glitter, R, Fly, Push, Cover, Uncover, Fade)
+	Duration    *float64 // /D
+	Dimension   string   // /Dm (H, V)
+	Motion      string   // /M (I, O)
+	Direction   int      // /Di (0, 90, 180, 270, 315)
+	Scale       *float64 // /SS
+	Base        *bool    // /B
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 // ContentStream is a sequence of operations on a page.
@@ -151,9 +165,9 @@ type SoftMaskDict struct {
 
 // TransparencyGroup describes the attributes of a transparency group XObject.
 type TransparencyGroup struct {
-	CS        ColorSpace // /CS
-	Isolated  bool       // /I
-	Knockout  bool       // /K
+	CS       ColorSpace // /CS
+	Isolated bool       // /I
+	Knockout bool       // /K
 }
 
 // ColorSpace references a named colorspace.
@@ -176,7 +190,34 @@ type ICCBasedColorSpace struct {
 	Dirty       bool
 }
 
-func (cs ICCBasedColorSpace) ColorSpaceName() string { return "ICCBased" }
+func (cs *ICCBasedColorSpace) ColorSpaceName() string { return "ICCBased" }
+
+// SeparationColorSpace represents a Separation color space.
+type SeparationColorSpace struct {
+	Name          string
+	Alternate     ColorSpace
+	TintTransform []byte // Function stream or reference
+	OriginalRef   raw.ObjectRef
+	Dirty         bool
+}
+
+func (cs *SeparationColorSpace) ColorSpaceName() string { return "Separation" }
+
+// DeviceNColorSpace represents a DeviceN color space.
+type DeviceNColorSpace struct {
+	Names         []string
+	Alternate     ColorSpace
+	TintTransform []byte
+	Attributes    *DeviceNAttributes
+	OriginalRef   raw.ObjectRef
+	Dirty         bool
+}
+
+func (cs *DeviceNColorSpace) ColorSpaceName() string { return "DeviceN" }
+
+type DeviceNAttributes struct {
+	Subtype string
+}
 
 // XObject describes a referenced object (limited to simple images).
 type XObject struct {
@@ -211,15 +252,48 @@ type Pattern struct {
 	Dirty       bool
 }
 
-// Shading describes a simple axial or radial shading dictionary.
-type Shading struct {
-	ShadingType int // 2 for axial, 3 for radial
+// Shading is the interface for all shading types.
+type Shading interface {
+	ShadingType() int
+	ShadingColorSpace() ColorSpace
+	Reference() raw.ObjectRef
+	SetReference(raw.ObjectRef)
+}
+
+// BaseShading provides common fields for shadings.
+type BaseShading struct {
+	Type        int
 	ColorSpace  ColorSpace
-	Coords      []float64 // specific to type (x0 y0 x1 y1 ...)
-	Function    []byte
-	Domain      []float64
+	BBox        Rectangle
+	AntiAlias   bool
+	Ref         raw.ObjectRef
 	OriginalRef raw.ObjectRef
 	Dirty       bool
+}
+
+func (s *BaseShading) ShadingType() int              { return s.Type }
+func (s *BaseShading) ShadingColorSpace() ColorSpace { return s.ColorSpace }
+func (s *BaseShading) Reference() raw.ObjectRef      { return s.Ref }
+func (s *BaseShading) SetReference(r raw.ObjectRef)  { s.Ref = r }
+
+// FunctionShading represents function-based shadings (Type 1, 2, 3).
+type FunctionShading struct {
+	BaseShading
+	Coords   []float64
+	Domain   []float64
+	Function []byte // Function object or stream
+	Extend   []bool
+}
+
+// MeshShading represents mesh-based shadings (Type 4, 5, 6, 7).
+type MeshShading struct {
+	BaseShading
+	BitsPerCoordinate int
+	BitsPerComponent  int
+	BitsPerFlag       int
+	Decode            []float64
+	Function          []byte // Optional function for Type 4, 5, 6
+	Stream            []byte // The mesh data stream
 }
 
 // Rectangle represents a PDF rectangle.
@@ -370,7 +444,7 @@ type LinkAnnotation struct {
 // WidgetAnnotation represents a form widget annotation.
 type WidgetAnnotation struct {
 	BaseAnnotation
-	Field *FormField
+	Field FormField
 }
 
 // TextAnnotation represents a sticky note annotation.
@@ -523,6 +597,29 @@ type GenericAnnotation struct {
 	BaseAnnotation
 }
 
+// SoundAction represents a sound action.
+type SoundAction struct {
+	Sound       *EmbeddedFile
+	Volume      *float64
+	Synchronous *bool
+	Repeat      *bool
+	Mix         *bool
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (a SoundAction) ActionType() string { return "Sound" }
+
+// MovieAction represents a movie action.
+type MovieAction struct {
+	Title       string // Title of the movie annotation
+	Operation   string // Play, Stop, Pause, Resume
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (a MovieAction) ActionType() string { return "Movie" }
+
 // Action represents a PDF action.
 type Action interface {
 	ActionType() string
@@ -604,6 +701,70 @@ type ImportDataAction struct {
 
 func (a ImportDataAction) ActionType() string { return "ImportData" }
 
+// GoToRAction represents a remote go-to action.
+type GoToRAction struct {
+	File        string
+	Dest        *OutlineDestination
+	DestName    string
+	NewWindow   *bool
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (a GoToRAction) ActionType() string { return "GoToR" }
+
+// GoToEAction represents an embedded go-to action.
+type GoToEAction struct {
+	Dest        *OutlineDestination
+	DestName    string
+	NewWindow   *bool
+	Target      *EmbeddedFile // The embedded file
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (a GoToEAction) ActionType() string { return "GoToE" }
+
+// HideAction represents a hide action.
+type HideAction struct {
+	TargetName  string // Name of the field/annotation to hide
+	Hide        bool
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (a HideAction) ActionType() string { return "Hide" }
+
+// GoTo3DViewAction represents a go-to 3D view action.
+type GoTo3DViewAction struct {
+	Target      Annotation // The 3D annotation
+	View        string     // The view name
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (a GoTo3DViewAction) ActionType() string { return "GoTo3DView" }
+
+// ThreadAction represents a thread action.
+type ThreadAction struct {
+	File        string        // Optional file specification
+	Thread      raw.ObjectRef // Dictionary or integer or string
+	Bead        raw.ObjectRef // Optional bead
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (a ThreadAction) ActionType() string { return "Thread" }
+
+// RichMediaExecuteAction represents a rich media execute action.
+type RichMediaExecuteAction struct {
+	Command     raw.ObjectRef // Command dictionary
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (a RichMediaExecuteAction) ActionType() string { return "RichMediaExecute" }
+
 // OutlineItem describes a bookmark entry.
 type OutlineItem struct {
 	Title       string
@@ -638,28 +799,40 @@ type ArticleBead struct {
 	Dirty       bool
 }
 
-// AcroForm represents form-level information.
-type AcroForm struct {
-	NeedAppearances bool
-	Fields          []FormField
-	OriginalRef     raw.ObjectRef
-	Dirty           bool
+// Signature represents a digital signature dictionary (Type /Sig).
+type Signature struct {
+	Filter      string   // /Filter (e.g., Adobe.PPKLite)
+	SubFilter   string   // /SubFilter (e.g., adbe.pkcs7.detached)
+	Contents    []byte   // /Contents (hex string in PDF, bytes here)
+	Cert        []byte   // /Cert (byte string)
+	ByteRange   []int    // /ByteRange
+	Reference   []SigRef // /Reference (array of signature reference dicts)
+	Name        string   // /Name
+	M           string   // /M (Date)
+	Location    string   // /Location
+	Reason      string   // /Reason
+	ContactInfo string   // /ContactInfo
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
-// FormField is a simplified representation of a form field.
-type FormField struct {
-	Name            string
-	Value           string
-	Type            string // e.g., "Tx" for text
-	PageIndex       int
-	Rect            Rectangle
-	Flags           int
-	Appearance      []byte
-	AppearanceState string
-	Border          []float64
-	Color           []float64
-	OriginalRef     raw.ObjectRef
-	Dirty           bool
+// SigRef represents a signature reference dictionary.
+type SigRef struct {
+	Type            string              // /Type /SigRef
+	TransformMethod string              // /TransformMethod (e.g., DocMDP, UR, FieldMDP)
+	TransformParams *SigTransformParams // /TransformParams
+	DigestMethod    string              // /DigestMethod (e.g., MD5, SHA1)
+	DigestValue     []byte              // /DigestValue
+	DigestLocation  []int               // /DigestLocation
+}
+
+// SigTransformParams represents parameters for a transform method.
+type SigTransformParams struct {
+	Type   string   // /Type /TransformParams
+	P      int      // /P (Permissions for DocMDP)
+	V      string   // /V (Version)
+	Fields []string // /Fields (for FieldMDP)
+	Action string   // /Action (Include/Exclude/All)
 }
 
 // Builder produces a Semantic document from Decoded IR.

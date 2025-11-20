@@ -197,3 +197,36 @@ Status key: Not started / In progress / Done.
 - [x] Implement Blend Modes. Status: Done.
 - [x] Implement Transparency Groups. Status: Done.
 - [x] Implement Soft Masks. Status: Done.
+
+# Architecture Refactoring Plan (v2.1) - Deepening the Semantic Layer
+
+Status key: Not started / In progress / Done.
+
+## Phase 1: Polymorphic Form Fields & XFA
+- [x] Refactor `AcroForm` to support XFA stream.
+- [x] Refactor `FormField` to an interface with specific implementations:
+    - [x] `TextFormField` (Text fields)
+    - [x] `ChoiceFormField` (Combo/List boxes)
+    - [x] `ButtonFormField` (Push/Check/Radio buttons)
+    - [x] `SignatureFormField` (Digital signatures)
+- [x] Update `WidgetAnnotation` to use the new `FormField` interface.
+- [x] Update `writer` to serialize the new polymorphic field types.
+- [x] Update `builder` and `extractor` to accommodate the changes.
+
+## Phase 2: Advanced Color & Shading
+- [x] Implement `SeparationColorSpace` (Spot Colors).
+- [x] Implement `DeviceNColorSpace` (Multi-channel).
+- [x] Implement `MeshShading` (Type 4-7) for complex gradients.
+- [x] Update `writer` to serialize new color spaces and shadings.
+
+## Phase 3: Digital Signature Model
+- [x] Implement `Signature` struct in `semantic` to inspect signature details.
+- [x] Support `ByteRange`, `SubFilter`, `Cert`, and `Reference` dictionaries (PAdES prep).
+- [x] Update `writer` to use the semantic `Signature` model.
+
+## Phase 4: Completing Actions
+- [x] Implement `GoToRAction` (Remote GoTo).
+- [x] Implement `GoToEAction` (Embedded GoTo).
+- [x] Implement `HideAction`.
+- [x] Implement `TransAction` (Page Transitions).
+- [x] Implement `GoTo3DViewAction`.

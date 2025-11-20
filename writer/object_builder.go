@@ -319,6 +319,31 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 		if p.UserUnit > 0 {
 			pageDict.Set(raw.NameLiteral("UserUnit"), raw.NumberFloat(p.UserUnit))
 		}
+		if p.Trans != nil {
+			transDict := raw.Dict()
+			if p.Trans.Style != "" {
+				transDict.Set(raw.NameLiteral("S"), raw.NameLiteral(p.Trans.Style))
+			}
+			if p.Trans.Duration != nil {
+				transDict.Set(raw.NameLiteral("D"), raw.NumberFloat(*p.Trans.Duration))
+			}
+			if p.Trans.Dimension != "" {
+				transDict.Set(raw.NameLiteral("Dm"), raw.NameLiteral(p.Trans.Dimension))
+			}
+			if p.Trans.Motion != "" {
+				transDict.Set(raw.NameLiteral("M"), raw.NameLiteral(p.Trans.Motion))
+			}
+			if p.Trans.Direction != 0 {
+				transDict.Set(raw.NameLiteral("Di"), raw.NumberInt(int64(p.Trans.Direction)))
+			}
+			if p.Trans.Scale != nil {
+				transDict.Set(raw.NameLiteral("SS"), raw.NumberFloat(*p.Trans.Scale))
+			}
+			if p.Trans.Base != nil {
+				transDict.Set(raw.NameLiteral("B"), raw.Bool(*p.Trans.Base))
+			}
+			pageDict.Set(raw.NameLiteral("Trans"), transDict)
+		}
 		// Resources
 		resDict := raw.Dict()
 		fontResDict := raw.Dict()
@@ -660,14 +685,14 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 			widget := &semantic.WidgetAnnotation{
 				BaseAnnotation: semantic.BaseAnnotation{
 					Subtype:         "Widget",
-					RectVal:         f.Rect,
-					Flags:           f.Flags, // Using Field flags as Annotation flags (legacy behavior)
-					Appearance:      f.Appearance,
-					AppearanceState: f.AppearanceState,
-					Border:          f.Border,
-					Color:           f.Color,
+					RectVal:         f.FieldRect(),
+					Flags:           f.FieldFlags(), // Using Field flags as Annotation flags (legacy behavior)
+					Appearance:      f.GetAppearance(),
+					AppearanceState: f.GetAppearanceState(),
+					Border:          f.GetBorder(),
+					Color:           f.GetColor(),
 				},
-				Field: &f,
+				Field: f,
 			}
 
 			fieldRef, err := b.annotSerializer.Serialize(widget, b)
@@ -676,14 +701,14 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 			}
 
 			// Post-processing for P (Page) reference which isn't handled by serializer
-			if f.PageIndex >= 0 && f.PageIndex < len(b.pageRefs) {
-				pref := b.pageRefs[f.PageIndex]
+			if f.FieldPageIndex() >= 0 && f.FieldPageIndex() < len(b.pageRefs) {
+				pref := b.pageRefs[f.FieldPageIndex()]
 				if obj, ok := b.objects[fieldRef]; ok {
 					if dict, ok := obj.(*raw.DictObj); ok {
 						dict.Set(raw.NameLiteral("P"), raw.Ref(pref.Num, pref.Gen))
 					}
 				}
-				appendWidgetToPage(f.PageIndex, fieldRef)
+				appendWidgetToPage(f.FieldPageIndex(), fieldRef)
 			}
 
 			fieldsArr.Append(raw.Ref(fieldRef.Num, fieldRef.Gen))
@@ -1009,33 +1034,73 @@ func (b *objectBuilder) ensureShading(name string, s semantic.Shading) raw.Objec
 	}
 	ref := b.nextRef()
 	dict := raw.Dict()
-	stype := s.ShadingType
+	stype := s.ShadingType()
 	if stype == 0 {
 		stype = 2
 	}
 	dict.Set(raw.NameLiteral("ShadingType"), raw.NumberInt(int64(stype)))
-	dict.Set(raw.NameLiteral("ColorSpace"), b.csSerializer.Serialize(s.ColorSpace, b))
-	if len(s.Coords) > 0 {
-		arr := raw.NewArray()
-		for _, c := range s.Coords {
-			arr.Append(raw.NumberFloat(c))
+	dict.Set(raw.NameLiteral("ColorSpace"), b.csSerializer.Serialize(s.ShadingColorSpace(), b))
+
+	switch sh := s.(type) {
+	case *semantic.FunctionShading:
+		if len(sh.Coords) > 0 {
+			arr := raw.NewArray()
+			for _, c := range sh.Coords {
+				arr.Append(raw.NumberFloat(c))
+			}
+			dict.Set(raw.NameLiteral("Coords"), arr)
 		}
-		dict.Set(raw.NameLiteral("Coords"), arr)
-	}
-	if len(s.Domain) > 0 {
-		arr := raw.NewArray()
-		for _, d := range s.Domain {
-			arr.Append(raw.NumberFloat(d))
+		if len(sh.Domain) > 0 {
+			arr := raw.NewArray()
+			for _, d := range sh.Domain {
+				arr.Append(raw.NumberFloat(d))
+			}
+			dict.Set(raw.NameLiteral("Domain"), arr)
 		}
-		dict.Set(raw.NameLiteral("Domain"), arr)
-	}
-	content := s.Function
-	if len(content) > 0 {
-		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(content))))
-		b.objects[ref] = raw.NewStream(dict, content)
-	} else {
+		if len(sh.Extend) > 0 {
+			arr := raw.NewArray()
+			for _, e := range sh.Extend {
+				arr.Append(raw.Bool(e))
+			}
+			dict.Set(raw.NameLiteral("Extend"), arr)
+		}
+		if len(sh.Function) > 0 {
+			fRef := b.nextRef()
+			fDict := raw.Dict()
+			fDict.Set(raw.NameLiteral("FunctionType"), raw.NumberInt(4)) // Default to PostScript
+			fDict.Set(raw.NameLiteral("Domain"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
+			fDict.Set(raw.NameLiteral("Range"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
+			fDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(sh.Function))))
+			b.objects[fRef] = raw.NewStream(fDict, sh.Function)
+			dict.Set(raw.NameLiteral("Function"), raw.Ref(fRef.Num, fRef.Gen))
+		}
 		b.objects[ref] = dict
+
+	case *semantic.MeshShading:
+		dict.Set(raw.NameLiteral("BitsPerCoordinate"), raw.NumberInt(int64(sh.BitsPerCoordinate)))
+		dict.Set(raw.NameLiteral("BitsPerComponent"), raw.NumberInt(int64(sh.BitsPerComponent)))
+		dict.Set(raw.NameLiteral("BitsPerFlag"), raw.NumberInt(int64(sh.BitsPerFlag)))
+		if len(sh.Decode) > 0 {
+			arr := raw.NewArray()
+			for _, d := range sh.Decode {
+				arr.Append(raw.NumberFloat(d))
+			}
+			dict.Set(raw.NameLiteral("Decode"), arr)
+		}
+		if len(sh.Function) > 0 {
+			fRef := b.nextRef()
+			fDict := raw.Dict()
+			fDict.Set(raw.NameLiteral("FunctionType"), raw.NumberInt(4))
+			fDict.Set(raw.NameLiteral("Domain"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
+			fDict.Set(raw.NameLiteral("Range"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
+			fDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(sh.Function))))
+			b.objects[fRef] = raw.NewStream(fDict, sh.Function)
+			dict.Set(raw.NameLiteral("Function"), raw.Ref(fRef.Num, fRef.Gen))
+		}
+		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(sh.Stream))))
+		b.objects[ref] = raw.NewStream(dict, sh.Stream)
 	}
+
 	b.shadingRefs[key] = ref
 	return ref
 }

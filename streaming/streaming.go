@@ -629,41 +629,108 @@ func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
 				if shDict == nil {
 					continue
 				}
-				sh := semantic.Shading{}
+
+				stype := 0
 				if st, ok := shDict.Get(raw.NameLiteral("ShadingType")); ok {
 					if n, ok := st.(raw.NumberObj); ok {
-						sh.ShadingType = int(n.Int())
+						stype = int(n.Int())
 					}
 				}
-				if cs, ok := shDict.Get(raw.NameLiteral("ColorSpace")); ok {
-					if n, ok := cs.(raw.NameObj); ok {
-						sh.ColorSpace = &semantic.DeviceColorSpace{Name: n.Value()}
+
+				var cs semantic.ColorSpace
+				if csObj, ok := shDict.Get(raw.NameLiteral("ColorSpace")); ok {
+					if n, ok := csObj.(raw.NameObj); ok {
+						cs = &semantic.DeviceColorSpace{Name: n.Value()}
 					}
 				}
-				if coords, ok := shDict.Get(raw.NameLiteral("Coords")); ok {
-					if arr, ok := coords.(*raw.ArrayObj); ok {
-						for _, it := range arr.Items {
-							if n, ok := it.(raw.NumberObj); ok {
-								sh.Coords = append(sh.Coords, n.Float())
+
+				if stype >= 4 && stype <= 7 {
+					mesh := &semantic.MeshShading{
+						BaseShading: semantic.BaseShading{
+							Type:       stype,
+							ColorSpace: cs,
+						},
+					}
+					if bpc, ok := shDict.Get(raw.NameLiteral("BitsPerCoordinate")); ok {
+						if n, ok := bpc.(raw.NumberObj); ok {
+							mesh.BitsPerCoordinate = int(n.Int())
+						}
+					}
+					if bpc, ok := shDict.Get(raw.NameLiteral("BitsPerComponent")); ok {
+						if n, ok := bpc.(raw.NumberObj); ok {
+							mesh.BitsPerComponent = int(n.Int())
+						}
+					}
+					if bpf, ok := shDict.Get(raw.NameLiteral("BitsPerFlag")); ok {
+						if n, ok := bpf.(raw.NumberObj); ok {
+							mesh.BitsPerFlag = int(n.Int())
+						}
+					}
+					if dec, ok := shDict.Get(raw.NameLiteral("Decode")); ok {
+						if arr, ok := dec.(*raw.ArrayObj); ok {
+							for _, it := range arr.Items {
+								if n, ok := it.(raw.NumberObj); ok {
+									mesh.Decode = append(mesh.Decode, n.Float())
+								}
 							}
 						}
 					}
-				}
-				if dom, ok := shDict.Get(raw.NameLiteral("Domain")); ok {
-					if arr, ok := dom.(*raw.ArrayObj); ok {
-						for _, it := range arr.Items {
-							if n, ok := it.(raw.NumberObj); ok {
-								sh.Domain = append(sh.Domain, n.Float())
+					if ref, ok := entry.(raw.RefObj); ok {
+						if stream, ok := doc.Objects[ref.Ref()].(*raw.StreamObj); ok {
+							mesh.Stream = decodeStream(stream)
+						}
+					}
+					if fnObj, ok := shDict.Get(raw.NameLiteral("Function")); ok {
+						if ref, ok := fnObj.(raw.RefObj); ok {
+							if stream, ok := doc.Objects[ref.Ref()].(*raw.StreamObj); ok {
+								mesh.Function = decodeStream(stream)
 							}
 						}
 					}
-				}
-				if ref, ok := entry.(raw.RefObj); ok {
-					if stream, ok := doc.Objects[ref.Ref()].(*raw.StreamObj); ok {
-						sh.Function = decodeStream(stream)
+					res.Shadings[name] = mesh
+				} else {
+					fsh := &semantic.FunctionShading{
+						BaseShading: semantic.BaseShading{
+							Type:       stype,
+							ColorSpace: cs,
+						},
 					}
+					if coords, ok := shDict.Get(raw.NameLiteral("Coords")); ok {
+						if arr, ok := coords.(*raw.ArrayObj); ok {
+							for _, it := range arr.Items {
+								if n, ok := it.(raw.NumberObj); ok {
+									fsh.Coords = append(fsh.Coords, n.Float())
+								}
+							}
+						}
+					}
+					if dom, ok := shDict.Get(raw.NameLiteral("Domain")); ok {
+						if arr, ok := dom.(*raw.ArrayObj); ok {
+							for _, it := range arr.Items {
+								if n, ok := it.(raw.NumberObj); ok {
+									fsh.Domain = append(fsh.Domain, n.Float())
+								}
+							}
+						}
+					}
+					if ext, ok := shDict.Get(raw.NameLiteral("Extend")); ok {
+						if arr, ok := ext.(*raw.ArrayObj); ok {
+							for _, it := range arr.Items {
+								if b, ok := it.(raw.BoolObj); ok {
+									fsh.Extend = append(fsh.Extend, b.Value())
+								}
+							}
+						}
+					}
+					if fnObj, ok := shDict.Get(raw.NameLiteral("Function")); ok {
+						if ref, ok := fnObj.(raw.RefObj); ok {
+							if stream, ok := doc.Objects[ref.Ref()].(*raw.StreamObj); ok {
+								fsh.Function = decodeStream(stream)
+							}
+						}
+					}
+					res.Shadings[name] = fsh
 				}
-				res.Shadings[name] = sh
 			}
 		}
 	}
