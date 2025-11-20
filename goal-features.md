@@ -14,11 +14,11 @@
 - [x] **Trailer Dictionary**: Root, Encrypt, Info, ID, Previous (用于增量更新)。
 - [x] **Cross-Reference Table (xref)**:
     - [x] Classic xref table (纯文本表格).
-    - [ ] **XRef Streams**: 压缩的交叉引用流 (PDF 1.5+).
-    - [ ] **Hybrid Reference**: 混合使用传统表和流 (常见于过渡期文件).
+    - [x] **XRef Streams**: 压缩的交叉引用流 (PDF 1.5+).
+    - [x] **Hybrid Reference**: 混合使用传统表和流 (常见于过渡期文件).
 - [x] **Incremental Updates**: 能够读取和写入追加到文件末尾的修改量，保持原始签名有效。
 - [ ] **Linearization (Fast Web View)**: 支持 Hint Tables，允许字节流式加载。
-- [ ] **Object Streams**: 解析和生成压缩的对象流 (ObjStm)。
+- [x] **Object Streams**: 解析和生成压缩的对象流 (ObjStm)。
 
 #### 2. 基础对象 (Cos Objects)
 - [x] **Null, Boolean, Integer, Real**.

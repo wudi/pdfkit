@@ -7,11 +7,11 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **Trailer Dictionary**: Root, Encrypt, Info, ID, Previous (for incremental updates).
 - [x] **Cross-Reference Table (xref)**:
     - [x] Classic xref table (plain text table).
-    - [ ] **XRef Streams**: Compressed cross-reference streams (PDF 1.5+).
-    - [ ] **Hybrid Reference**: Mixed use of traditional table and streams (common in transitional files).
+    - [x] **XRef Streams**: Compressed cross-reference streams (PDF 1.5+).
+    - [x] **Hybrid Reference**: Mixed use of traditional table and streams (common in transitional files).
 - [x] **Incremental Updates**: Ability to read and write modifications appended to the end of the file, keeping original signatures valid.
 - [ ] **Linearization (Fast Web View)**: Support Hint Tables, allowing byte-streaming loading.
-- [ ] **Object Streams**: Parse and generate compressed object streams (ObjStm).
+- [x] **Object Streams**: Parse and generate compressed object streams (ObjStm).
 
 ## 2. Basic Objects (Cos Objects)
 - [x] **Primitives**: Null, Boolean, Integer, Real.
