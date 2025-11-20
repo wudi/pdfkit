@@ -28,6 +28,8 @@ type Document struct {
 	Permissions       raw.Permissions
 	Encrypted         bool
 	MetadataEncrypted bool
+	OriginalRef       raw.ObjectRef
+	Dirty             bool
 }
 
 // Decoded returns the underlying decoded document (if set).
@@ -47,6 +49,8 @@ type Page struct {
 	Annotations []Annotation
 	UserUnit    float64
 	ref         raw.ObjectRef
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 // ContentStream is a sequence of operations on a page.
@@ -100,6 +104,8 @@ type Resources struct {
 	XObjects    map[string]XObject
 	Patterns    map[string]Pattern
 	Shadings    map[string]Shading
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 // Font represents a font resource.
@@ -113,6 +119,8 @@ type Font struct {
 	DescendantFont *CIDFont
 	Descriptor     *FontDescriptor
 	ref            raw.ObjectRef
+	OriginalRef    raw.ObjectRef
+	Dirty          bool
 }
 
 // ExtGState captures graphics state defaults such as transparency.
@@ -135,9 +143,11 @@ func (cs DeviceColorSpace) ColorSpaceName() string { return cs.Name }
 
 // ICCBasedColorSpace represents an ICC-based color space.
 type ICCBasedColorSpace struct {
-	Profile   []byte
-	Alternate ColorSpace
-	Range     []float64
+	Profile     []byte
+	Alternate   ColorSpace
+	Range       []float64
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 func (cs ICCBasedColorSpace) ColorSpaceName() string { return "ICCBased" }
@@ -153,6 +163,8 @@ type XObject struct {
 	BBox             Rectangle // used for Form XObjects
 	Interpolate      bool
 	SMask            *XObject
+	OriginalRef      raw.ObjectRef
+	Dirty            bool
 }
 
 // Image is an alias for XObject for image convenience APIs.
@@ -167,6 +179,8 @@ type Pattern struct {
 	XStep       float64
 	YStep       float64
 	Content     []byte
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 // Shading describes a simple axial or radial shading dictionary.
@@ -176,6 +190,8 @@ type Shading struct {
 	Coords      []float64 // specific to type (x0 y0 x1 y1 ...)
 	Function    []byte
 	Domain      []float64
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 // Rectangle represents a PDF rectangle.
@@ -223,31 +239,43 @@ type EmbeddedFile struct {
 	Relationship string
 	Subtype      string
 	Data         []byte
+	OriginalRef  raw.ObjectRef
+	Dirty        bool
 }
 
 // DocumentInfo models /Info dictionary values.
 type DocumentInfo struct {
-	Title    string
-	Author   string
-	Subject  string
-	Creator  string
-	Producer string
-	Keywords []string
+	Title       string
+	Author      string
+	Subject     string
+	Creator     string
+	Producer    string
+	Keywords    []string
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
-type XMPMetadata struct{ Raw []byte }
+type XMPMetadata struct {
+	Raw         []byte
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
 
 type StructureTree struct {
-	RoleMap RoleMap
-	Kids    []*StructureElement
+	RoleMap     RoleMap
+	Kids        []*StructureElement
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 // StructureElement captures a tagged PDF structure element with children or marked content references.
 type StructureElement struct {
-	Type      string
-	Title     string
-	PageIndex *int
-	Kids      []StructureItem
+	Type        string
+	Title       string
+	PageIndex   *int
+	Kids        []StructureItem
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 // StructureItem represents either a child element or a marked-content reference (MCID) on a page.
@@ -263,6 +291,8 @@ type OutputIntent struct {
 	OutputConditionIdentifier string
 	Info                      string
 	DestOutputProfile         []byte
+	OriginalRef               raw.ObjectRef
+	Dirty                     bool
 }
 
 // RoleMap maps structure element names to role-mapped names.
@@ -289,6 +319,8 @@ type BaseAnnotation struct {
 	Color           []float64
 	AppearanceState string
 	Ref             raw.ObjectRef
+	OriginalRef     raw.ObjectRef
+	Dirty           bool
 }
 
 func (a *BaseAnnotation) Type() string                 { return a.Subtype }
@@ -323,25 +355,31 @@ type Action interface {
 
 // URIAction represents a URI action.
 type URIAction struct {
-	URI string
+	URI         string
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 func (a URIAction) ActionType() string { return "URI" }
 
 // GoToAction represents a GoTo action.
 type GoToAction struct {
-	Dest      *OutlineDestination
-	PageIndex int
+	Dest        *OutlineDestination
+	PageIndex   int
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 func (a GoToAction) ActionType() string { return "GoTo" }
 
 // OutlineItem describes a bookmark entry.
 type OutlineItem struct {
-	Title     string
-	PageIndex int
-	Dest      *OutlineDestination
-	Children  []OutlineItem
+	Title       string
+	PageIndex   int
+	Dest        *OutlineDestination
+	Children    []OutlineItem
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 // OutlineDestination describes an outline destination using XYZ coordinates.
@@ -354,20 +392,26 @@ type OutlineDestination struct {
 
 // ArticleThread represents an article with an ordered list of beads.
 type ArticleThread struct {
-	Title string
-	Beads []ArticleBead
+	Title       string
+	Beads       []ArticleBead
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 // ArticleBead describes a single segment of an article.
 type ArticleBead struct {
-	PageIndex int
-	Rect      Rectangle
+	PageIndex   int
+	Rect        Rectangle
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 // AcroForm represents form-level information.
 type AcroForm struct {
 	NeedAppearances bool
 	Fields          []FormField
+	OriginalRef     raw.ObjectRef
+	Dirty           bool
 }
 
 // FormField is a simplified representation of a form field.
@@ -382,6 +426,8 @@ type FormField struct {
 	AppearanceState string
 	Border          []float64
 	Color           []float64
+	OriginalRef     raw.ObjectRef
+	Dirty           bool
 }
 
 // Builder produces a Semantic document from Decoded IR.
