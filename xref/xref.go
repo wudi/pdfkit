@@ -68,7 +68,7 @@ func (t *tableResolver) Resolve(ctx context.Context, r io.ReaderAt) (Table, erro
 
 	startOffset, err := findStartXRef(reader, size)
 	if err != nil {
-		return nil, err
+		return t.tryRepair(ctx, reader, size, err)
 	}
 	t.linearized = detectLinearized(reader)
 
@@ -91,7 +91,7 @@ func (t *tableResolver) Resolve(ctx context.Context, r io.ReaderAt) (Table, erro
 
 		tbl, trailer, prev, err := parseSection(ctx, reader, off, t.cfg)
 		if err != nil {
-			return nil, err
+			return t.tryRepair(ctx, reader, size, err)
 		}
 		sections = append(sections, tbl)
 		if trailer != nil {
@@ -103,7 +103,7 @@ func (t *tableResolver) Resolve(ctx context.Context, r io.ReaderAt) (Table, erro
 				seen[xrefStmOff] = struct{}{}
 				stmTable, stmTrailer, stmPrev, err := parseXRefStream(ctx, reader, xrefStmOff, t.cfg)
 				if err != nil {
-					return nil, err
+					return t.tryRepair(ctx, reader, size, err)
 				}
 				sections = append(sections, stmTable)
 				if stmTrailer != nil {
@@ -768,4 +768,15 @@ func validateTrailer(tr *raw.DictObj, tbl Table) error {
 		return fmt.Errorf("trailer Size %d smaller than max object %d", size, maxObj)
 	}
 	return nil
+}
+
+func (t *tableResolver) tryRepair(ctx context.Context, r io.ReaderAt, size int64, originalErr error) (Table, error) {
+	if t.cfg.Recovery == nil {
+		return nil, originalErr
+	}
+	action := t.cfg.Recovery.OnError(ctx, originalErr, recovery.Location{Component: "xref"})
+	if action == recovery.ActionFix {
+		return repair(ctx, r, size)
+	}
+	return nil, originalErr
 }

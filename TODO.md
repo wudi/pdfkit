@@ -94,7 +94,7 @@ Status key: Not started / In progress / Done.
 Status key: Not started / In progress / Done.
 
 - [x] Implement recovery strategies: create `StrictStrategy` (fail fast) and `LenientStrategy` (log & continue) in `recovery/strategies.go`. Status: Done.
-- [x] Integrate recovery into scanner/parser: update `scanner` and `parser` to use the configured recovery strategy for common errors (e.g., missing delimiters, bad xrefs). Status: Done (integrated into scanner and object loader; xref repair pending).
+- [x] Integrate recovery into scanner/parser: update `scanner` and `parser` to use the configured recovery strategy for common errors (e.g., missing delimiters, bad xrefs). Status: Done (integrated into scanner and object loader; xref repair implemented).
 - [x] Add recovery tests: create tests with malformed PDFs to verify that `StrictStrategy` fails and `LenientStrategy` recovers. Status: Done.
 
 # PDF/A Enforcement plan
