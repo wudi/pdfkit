@@ -7,6 +7,7 @@ import (
 	"pdflib/recovery"
 	"strconv"
 	"unicode"
+	"unsafe"
 )
 
 type TokenType int
@@ -27,8 +28,35 @@ const (
 
 type Token struct {
 	Type  TokenType
-	Value interface{}
 	Pos   int64
+	Str   string
+	Bytes []byte
+	Int   int64
+	Gen   int
+	Float float64
+	Bool  bool
+	IsInt bool
+}
+
+func (t Token) Value() interface{} {
+	switch t.Type {
+	case TokenName, TokenKeyword, TokenDict, TokenArray:
+		return t.Str
+	case TokenString, TokenStream, TokenInlineImage:
+		return t.Bytes
+	case TokenNumber:
+		if t.IsInt {
+			return t.Int
+		}
+		return t.Float
+	case TokenBoolean:
+		return t.Bool
+	case TokenRef:
+		return struct{ Num, Gen int }{Num: int(t.Int), Gen: t.Gen}
+	case TokenNull:
+		return nil
+	}
+	return nil
 }
 
 type Scanner interface {
@@ -76,6 +104,7 @@ type pdfScanner struct {
 	readBuf       []byte
 	windowBuf     []byte
 	tempBuf       []byte
+	nameCache     map[string]string
 }
 
 // New loads entire ReaderAt into memory and returns a scanner.
@@ -95,6 +124,7 @@ func New(r ReaderAt, cfg Config) Scanner {
 		windowBuf:     window,
 		data:          window[:0],
 		tempBuf:       make([]byte, 0, 256),
+		nameCache:     make(map[string]string),
 	}
 }
 
@@ -119,11 +149,11 @@ func (s *pdfScanner) Next() (Token, error) {
 	s.lastAction = recovery.ActionFail
 	if s.fixArrayClose > 0 {
 		s.fixArrayClose--
-		return s.emit(Token{Type: TokenKeyword, Value: "]", Pos: s.pos})
+		return s.emit(Token{Type: TokenKeyword, Str: "]", Pos: s.pos})
 	}
 	if s.fixDictClose > 0 {
 		s.fixDictClose--
-		return s.emit(Token{Type: TokenKeyword, Value: ">>", Pos: s.pos})
+		return s.emit(Token{Type: TokenKeyword, Str: ">>", Pos: s.pos})
 	}
 	if err := s.skipWSAndComments(); err != nil {
 		if errors.Is(err, io.EOF) {
@@ -154,23 +184,23 @@ func (s *pdfScanner) Next() (Token, error) {
 	case '<':
 		if s.peekAhead(1) == '<' { // dictionary start
 			s.pos += 2
-			return s.emit(Token{Type: TokenDict, Value: "<<", Pos: start})
+			return s.emit(Token{Type: TokenDict, Str: "<<", Pos: start})
 		}
 		// hex string
 		return s.scanHexString()
 	case '>':
 		if s.peekAhead(1) == '>' {
 			s.pos += 2
-			return s.emit(Token{Type: TokenKeyword, Value: ">>", Pos: start})
+			return s.emit(Token{Type: TokenKeyword, Str: ">>", Pos: start})
 		}
 		s.pos++
-		return s.emit(Token{Type: TokenKeyword, Value: string(c), Pos: start})
+		return s.emit(Token{Type: TokenKeyword, Str: string(c), Pos: start})
 	case '[':
 		s.pos++
-		return s.emit(Token{Type: TokenArray, Value: "[", Pos: start})
+		return s.emit(Token{Type: TokenArray, Str: "[", Pos: start})
 	case ']':
 		s.pos++
-		return s.emit(Token{Type: TokenKeyword, Value: "]", Pos: start})
+		return s.emit(Token{Type: TokenKeyword, Str: "]", Pos: start})
 	case '(':
 		return s.scanLiteralString()
 	case '/':
@@ -185,7 +215,7 @@ func (s *pdfScanner) Next() (Token, error) {
 	}
 	// Fallback single char keyword
 	s.pos++
-	return s.emit(Token{Type: TokenKeyword, Value: string(c), Pos: start})
+	return s.emit(Token{Type: TokenKeyword, Str: string(c), Pos: start})
 }
 
 // Helpers
@@ -431,7 +461,12 @@ func (s *pdfScanner) scanName() (Token, error) {
 			return Token{}, s.recover(errors.New("name too long"), "name")
 		}
 	}
-	return s.emit(Token{Type: TokenName, Value: string(s.tempBuf), Pos: start})
+	val := string(s.tempBuf)
+	if cached, ok := s.nameCache[val]; ok {
+		return s.emit(Token{Type: TokenName, Str: cached, Pos: start})
+	}
+	s.nameCache[val] = val
+	return s.emit(Token{Type: TokenName, Str: val, Pos: start})
 }
 
 func (s *pdfScanner) hexNibble() byte {
@@ -548,7 +583,7 @@ func (s *pdfScanner) scanLiteralString() (Token, error) { /* PDF 7.3.4.2 */
 	}
 	// Copy tempBuf because it is reused
 	val := append([]byte(nil), s.tempBuf...)
-	return s.emit(Token{Type: TokenString, Value: val, Pos: start})
+	return s.emit(Token{Type: TokenString, Bytes: val, Pos: start})
 }
 
 func (s *pdfScanner) scanHexString() (Token, error) {
@@ -596,7 +631,7 @@ func (s *pdfScanner) scanHexString() (Token, error) {
 		b := fromHex(hexbuf[i+1])
 		out = append(out, (a<<4)|b)
 	}
-	return s.emit(Token{Type: TokenString, Value: out, Pos: start})
+	return s.emit(Token{Type: TokenString, Bytes: out, Pos: start})
 }
 
 func fromHex(c byte) byte {
@@ -681,7 +716,7 @@ func (s *pdfScanner) scanStream(start int64) (Token, error) {
 			s.pos += int64(idx + len(needle))
 		}
 		s.nextStreamLen = -1
-		return s.emit(Token{Type: TokenStream, Value: payload, Pos: start})
+		return s.emit(Token{Type: TokenStream, Bytes: payload, Pos: start})
 	}
 	needle := []byte("endstream")
 	idx := -1
@@ -727,7 +762,7 @@ func (s *pdfScanner) scanStream(start int64) (Token, error) {
 			}
 		}
 		s.pos = dataStart + int64(len(payload))
-		return s.emit(Token{Type: TokenStream, Value: payload, Pos: start})
+		return s.emit(Token{Type: TokenStream, Bytes: payload, Pos: start})
 	}
 	// Trim EOL before marker
 	end := int64(idx)
@@ -753,7 +788,7 @@ func (s *pdfScanner) scanStream(start int64) (Token, error) {
 	}
 	// Advance position past 'endstream'
 	s.pos = int64(idx + len(needle))
-	return s.emit(Token{Type: TokenStream, Value: payload, Pos: start})
+	return s.emit(Token{Type: TokenStream, Bytes: payload, Pos: start})
 }
 
 // scanInlineImage consumes bytes after the ID keyword until the first EOL-terminated EI delimiter.
@@ -848,7 +883,7 @@ func (s *pdfScanner) scanInlineImage(start int64) (Token, error) {
 			return Token{}, s.recover(errors.New("inline image too long"), "inline_image")
 		}
 		s.pos = best + 2
-		return s.emit(Token{Type: TokenInlineImage, Value: payload, Pos: start})
+		return s.emit(Token{Type: TokenInlineImage, Bytes: payload, Pos: start})
 	}
 	if s.cfg.MaxInlineImage > 0 && s.pos-dataStart > s.cfg.MaxInlineImage {
 		return Token{}, s.recover(errors.New("inline image too long"), "inline_image")
@@ -925,56 +960,87 @@ func (s *pdfScanner) scanKeyword() (Token, error) {
 	if err != nil {
 		return Token{}, err
 	}
-	kw := string(slice)
-	switch kw {
-	case "true", "false":
-		return Token{Type: TokenBoolean, Value: kw == "true", Pos: start}, nil
+	kwUnsafe := unsafeString(slice)
+	switch kwUnsafe {
+	case "true":
+		return Token{Type: TokenBoolean, Bool: true, Pos: start}, nil
+	case "false":
+		return Token{Type: TokenBoolean, Bool: false, Pos: start}, nil
 	case "null":
-		return Token{Type: TokenNull, Value: nil, Pos: start}, nil
-	case "obj", "endobj", "endstream":
-		return Token{Type: TokenKeyword, Value: kw, Pos: start}, nil
+		return Token{Type: TokenNull, Pos: start}, nil
+	case "obj":
+		return Token{Type: TokenKeyword, Str: "obj", Pos: start}, nil
+	case "endobj":
+		return Token{Type: TokenKeyword, Str: "endobj", Pos: start}, nil
+	case "endstream":
+		return Token{Type: TokenKeyword, Str: "endstream", Pos: start}, nil
 	case "stream":
 		return s.scanStream(start)
 	case "ID": // inline image data; caller should have parsed image dict already
 		return s.scanInlineImage(start)
 	default:
-		return Token{Type: TokenKeyword, Value: kw, Pos: start}, nil
+		if cached, ok := s.nameCache[kwUnsafe]; ok {
+			return Token{Type: TokenKeyword, Str: cached, Pos: start}, nil
+		}
+		kw := string(slice)
+		s.nameCache[kw] = kw
+		return Token{Type: TokenKeyword, Str: kw, Pos: start}, nil
 	}
 }
 
 func (s *pdfScanner) scanNumberOrRef() (Token, error) {
 	start := s.pos
 	// first number
-	num1Str := s.scanNumberString()
-	if num1Str == "" {
+	num1Buf := s.scanNumberSlice()
+	if len(num1Buf) == 0 {
 		return Token{}, errors.New("invalid number")
+	}
+	// Parse immediately to avoid buffer invalidation
+	num1Str := unsafeString(num1Buf)
+	var n1 int64
+	var f1 float64
+	var isInt1 bool
+	if i, err := strconv.ParseInt(num1Str, 10, 64); err == nil {
+		n1 = i
+		isInt1 = true
+	} else {
+		f1, _ = strconv.ParseFloat(num1Str, 64)
 	}
 
 	s.skipWSAndComments()
 	secondStart := s.pos
-	num2Str := s.scanNumberString()
-	if num2Str != "" { // possible ref
+	num2Buf := s.scanNumberSlice()
+	if len(num2Buf) > 0 { // possible ref
+		// Parse num2 immediately
+		num2Str := unsafeString(num2Buf)
+		var n2 int64
+		var isInt2 bool
+		if i, err := strconv.ParseInt(num2Str, 10, 64); err == nil {
+			n2 = i
+			isInt2 = true
+		}
+
 		s.skipWSAndComments()
 		if c, err := s.byteAt(s.pos); err == nil && c == 'R' { // it's a ref
-			s.pos++
-			n1, _ := strconv.Atoi(num1Str)
-			n2, _ := strconv.Atoi(num2Str)
-			return Token{Type: TokenRef, Value: struct{ Num, Gen int }{Num: n1, Gen: n2}, Pos: start}, nil
+			if isInt1 && isInt2 {
+				s.pos++
+				return Token{Type: TokenRef, Int: n1, Gen: int(n2), Pos: start}, nil
+			}
+			// If not ints, cannot be ref. Fallthrough.
 		}
 	}
 	// not a ref; revert if we consumed second number
-	if num2Str != "" {
+	if len(num2Buf) > 0 {
 		s.pos = secondStart
-	} // parser will read second number later
-	// produce number token from num1Str
-	if i, err := strconv.ParseInt(num1Str, 10, 64); err == nil {
-		return s.emit(Token{Type: TokenNumber, Value: i, Pos: start})
 	}
-	f, _ := strconv.ParseFloat(num1Str, 64)
-	return s.emit(Token{Type: TokenNumber, Value: f, Pos: start})
+	// produce number token from num1
+	if isInt1 {
+		return s.emit(Token{Type: TokenNumber, Int: n1, IsInt: true, Pos: start})
+	}
+	return s.emit(Token{Type: TokenNumber, Float: f1, Pos: start})
 }
 
-func (s *pdfScanner) scanNumberString() string {
+func (s *pdfScanner) scanNumberSlice() []byte {
 	start := s.pos
 	seenDigit := false
 	dotSeen := false
@@ -987,7 +1053,7 @@ func (s *pdfScanner) scanNumberString() string {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return ""
+			return nil
 		}
 		if s.pos < start {
 			break
@@ -1014,10 +1080,10 @@ func (s *pdfScanner) scanNumberString() string {
 	return s.finishNumber(start, seenDigit)
 }
 
-func (s *pdfScanner) finishNumber(start int64, seenDigit bool) string {
+func (s *pdfScanner) finishNumber(start int64, seenDigit bool) []byte {
 	if !seenDigit {
 		s.pos = start
-		return ""
+		return nil
 	}
 	length := s.pos - start
 	if s.cfg.MaxNumberLength > 0 && length > int64(s.cfg.MaxNumberLength) {
@@ -1025,9 +1091,13 @@ func (s *pdfScanner) finishNumber(start int64, seenDigit bool) string {
 	}
 	slice, err := s.slice(start, s.pos)
 	if err != nil {
-		return ""
+		return nil
 	}
-	return string(slice)
+	return slice
+}
+
+func unsafeString(b []byte) string {
+	return unsafe.String(unsafe.SliceData(b), len(b))
 }
 func (s *pdfScanner) recover(err error, loc string) error {
 	if s.cfg.Recovery == nil {
@@ -1081,7 +1151,7 @@ func (s *pdfScanner) emit(tok Token) (Token, error) {
 			}
 		}
 	case TokenKeyword:
-		if tok.Value == "]" {
+		if tok.Str == "]" {
 			if s.arrayDepth == 0 {
 				if err := s.recover(errors.New("array depth underflow"), "array"); err != nil && s.lastAction != recovery.ActionFix {
 					return Token{}, err
@@ -1094,7 +1164,7 @@ func (s *pdfScanner) emit(tok Token) (Token, error) {
 			}
 			s.arrayDepth--
 		}
-		if tok.Value == ">>" {
+		if tok.Str == ">>" {
 			if s.dictDepth == 0 {
 				if err := s.recover(errors.New("dict depth underflow"), "dict"); err != nil && s.lastAction != recovery.ActionFix {
 					return Token{}, err

@@ -137,3 +137,12 @@ Status key: Not started / In progress / Done.
 - [x] Formalize Extension Interfaces: Update `extensions/extensions.go` to define specific interfaces (`Inspector`, `Sanitizer`, `Transformer`, `Validator`) and report structures (`InspectionReport`, `SanitizationReport`, `ValidationReport`). Status: Done.
 - [x] Implement Standard Extensions: Create default implementations for Inspector (metadata/count), Sanitizer (remove JS), and Validator (wrapper around `pdfa`). Status: Done.
 - [x] Documentation: Update `design.md` to reflect any intentional deviations or update the code to match. Status: Done.
+
+# Optimization plan
+
+Status key: Not started / In progress / Done.
+
+- [x] Optimize `scanner.Token` struct: remove `interface{}` boxing to reduce GC pressure. Status: Done (replaced `Value` interface with concrete fields `Str`, `Bytes`, `Int`, `Float`, `Bool`).
+- [x] Implement string interning: intern Name objects to reduce memory usage. Status: Done (added `internPool` to `scanner` to deduplicate Name strings).
+- [x] Update consumers: update all packages (`parser`, `ir`, `xref`, `extractor`) to use the new `Token` API. Status: Done (all packages updated and tests passing).
+- [x] Verify performance: run benchmarks to quantify memory and CPU improvements. Status: Done (BenchmarkParse50MB: 77ms/op, 387MB/op, 340k allocs/op).

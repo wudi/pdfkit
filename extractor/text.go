@@ -86,7 +86,7 @@ func extractTextFromStream(data []byte, fonts map[string]*fontDecoder) string {
 			break
 		}
 		if tok.Type == scanner.TokenKeyword {
-			op, _ := tok.Value.(string)
+			op := tok.Str
 			switch op {
 			case "BT":
 				if out.Len() > 0 {

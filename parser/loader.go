@@ -132,23 +132,21 @@ func (o *objectLoader) loadAtOffset(objNum int, offset int64, gen int) (raw.Obje
 	if err != nil {
 		return nil, err
 	}
-	num, ok := toInt(tokNum.Value)
-	if tokNum.Type != scanner.TokenNumber || !ok || int(num) != objNum {
+	if tokNum.Type != scanner.TokenNumber || !tokNum.IsInt || int(tokNum.Int) != objNum {
 		return nil, errors.New("object header number mismatch")
 	}
 	tokGen, err := tr.next()
 	if err != nil {
 		return nil, err
 	}
-	genVal, ok := toInt(tokGen.Value)
-	if tokGen.Type != scanner.TokenNumber || !ok || int(genVal) != gen {
+	if tokGen.Type != scanner.TokenNumber || !tokGen.IsInt || int(tokGen.Int) != gen {
 		return nil, errors.New("object header generation mismatch")
 	}
 	tokObj, err := tr.next()
 	if err != nil {
 		return nil, err
 	}
-	if tokObj.Type != scanner.TokenKeyword || tokObj.Value != "obj" {
+	if tokObj.Type != scanner.TokenKeyword || tokObj.Str != "obj" {
 		return nil, errors.New("expected obj keyword")
 	}
 
@@ -167,9 +165,7 @@ func (o *objectLoader) loadAtOffset(objNum int, offset int64, gen int) (raw.Obje
 			tr.clearStreamLengthHint()
 		}
 		if streamTok, err := tr.next(); err == nil && streamTok.Type == scanner.TokenStream {
-			if b, ok := streamTok.Value.([]byte); ok {
-				obj = raw.NewStream(dict, b)
-			}
+			obj = raw.NewStream(dict, streamTok.Bytes)
 		} else if err == nil {
 			tr.unread(streamTok)
 		}
@@ -233,8 +229,10 @@ func (o *objectLoader) loadFromObjectStream(ctx context.Context, ref raw.ObjectR
 		if tok.Type != scanner.TokenNumber {
 			continue
 		}
-		val, _ := toInt(tok.Value)
-		pairs = append(pairs, int(val))
+		if !tok.IsInt {
+			continue
+		}
+		pairs = append(pairs, int(tok.Int))
 	}
 	// Build objects map
 	objs := make(map[int]raw.Object)
@@ -475,39 +473,29 @@ func parseObject(tr *tokenReader, rec recovery.Strategy, objNum, gen int) (raw.O
 	if err != nil {
 		return nil, err
 	}
-	if tok.Type == scanner.TokenKeyword && tok.Value == "endobj" {
+	if tok.Type == scanner.TokenKeyword && tok.Str == "endobj" {
 		return nil, errors.New("unexpected endobj")
 	}
 	switch tok.Type {
 	case scanner.TokenName:
-		if v, ok := tok.Value.(string); ok {
-			return raw.NameObj{Val: v}, nil
-		}
+		return raw.NameObj{Val: tok.Str}, nil
 	case scanner.TokenNumber:
-		if i, ok := toInt(tok.Value); ok {
-			return raw.NumberObj{I: i, IsInt: true}, nil
+		if tok.IsInt {
+			return raw.NumberObj{I: tok.Int, IsInt: true}, nil
 		}
-		if f, ok := tok.Value.(float64); ok {
-			return raw.NumberObj{F: f, IsInt: false}, nil
-		}
+		return raw.NumberObj{F: tok.Float, IsInt: false}, nil
 	case scanner.TokenBoolean:
-		if v, ok := tok.Value.(bool); ok {
-			return raw.BoolObj{V: v}, nil
-		}
+		return raw.BoolObj{V: tok.Bool}, nil
 	case scanner.TokenNull:
 		return raw.NullObj{}, nil
 	case scanner.TokenString:
-		if b, ok := tok.Value.([]byte); ok {
-			return raw.StringObj{Bytes: b}, nil
-		}
+		return raw.StringObj{Bytes: tok.Bytes}, nil
 	case scanner.TokenArray:
 		return parseArray(tr, rec, objNum, gen)
 	case scanner.TokenDict:
 		return parseDict(tr, rec, objNum, gen)
 	case scanner.TokenRef:
-		if v, ok := tok.Value.(struct{ Num, Gen int }); ok {
-			return raw.RefObj{R: raw.ObjectRef{Num: v.Num, Gen: v.Gen}}, nil
-		}
+		return raw.RefObj{R: raw.ObjectRef{Num: int(tok.Int), Gen: tok.Gen}}, nil
 	}
 	return nil, errors.New("unexpected token")
 }
@@ -519,7 +507,7 @@ func parseArray(tr *tokenReader, rec recovery.Strategy, objNum, gen int) (raw.Ob
 		if err != nil {
 			return nil, err
 		}
-		if tok.Type == scanner.TokenKeyword && tok.Value == "]" {
+		if tok.Type == scanner.TokenKeyword && tok.Str == "]" {
 			break
 		}
 		tr.unread(tok)
@@ -539,12 +527,12 @@ func parseDict(tr *tokenReader, rec recovery.Strategy, objNum, gen int) (raw.Obj
 		if err != nil {
 			return nil, err
 		}
-		if tok.Type == scanner.TokenKeyword && tok.Value == ">>" {
+		if tok.Type == scanner.TokenKeyword && tok.Str == ">>" {
 			break
 		}
 		if tok.Type != scanner.TokenName {
 			// Recovery logic for missing ">>"
-			if tok.Type == scanner.TokenKeyword && tok.Value == "endobj" {
+			if tok.Type == scanner.TokenKeyword && tok.Str == "endobj" {
 				err := errors.New("unexpected endobj in dict (missing >>?)")
 				action := rec.OnError(nil, err, recovery.Location{ObjectNum: objNum, ObjectGen: gen, Component: "Parser"})
 				if action == recovery.ActionWarn || action == recovery.ActionFix {
@@ -556,7 +544,7 @@ func parseDict(tr *tokenReader, rec recovery.Strategy, objNum, gen int) (raw.Obj
 
 			return nil, errors.New("expected name in dict")
 		}
-		key, _ := tok.Value.(string)
+		key := tok.Str
 		val, err := parseObject(tr, rec, objNum, gen)
 		if err != nil {
 			return nil, err
@@ -597,27 +585,4 @@ func (o *objectLoader) loadReferencedObject(ref raw.ObjectRef) (raw.Object, erro
 		return nil, fmt.Errorf("object %d missing for length reference", ref.Num)
 	}
 	return o.loadAtOffset(ref.Num, offset, gen)
-}
-
-func toInt(v interface{}) (int64, bool) {
-	switch n := v.(type) {
-	case int:
-		return int64(n), true
-	case int64:
-		return n, true
-	case float64:
-		return int64(n), true
-	default:
-		return 0, false
-	}
-}
-
-func copyBytes(v interface{}) []byte {
-	b, ok := v.([]byte)
-	if !ok {
-		return nil
-	}
-	out := make([]byte, len(b))
-	copy(out, b)
-	return out
 }

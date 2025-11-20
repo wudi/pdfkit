@@ -282,7 +282,7 @@ func parseSection(ctx context.Context, r io.ReaderAt, offset int64, cfg Resolver
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	if tok.Type == scanner.TokenKeyword && tok.Value == "xref" {
+	if tok.Type == scanner.TokenKeyword && tok.Str == "xref" {
 		return parseClassic(s)
 	}
 	return parseXRefStream(ctx, r, offset, cfg)
@@ -296,18 +296,21 @@ func parseClassic(s scanner.Scanner) (Table, *raw.DictObj, int64, error) {
 		if err != nil {
 			return nil, nil, 0, err
 		}
-		if tok.Type == scanner.TokenKeyword && tok.Value == "trailer" {
+		if tok.Type == scanner.TokenKeyword && tok.Str == "trailer" {
 			break
 		}
-		if tok.Type != scanner.TokenNumber {
+		if tok.Type != scanner.TokenNumber || !tok.IsInt {
 			return nil, nil, 0, errors.New("invalid xref subsection header")
 		}
-		startObj := int(toIntValue(tok.Value))
+		startObj := int(tok.Int)
 		countTok, err := s.Next()
 		if err != nil {
 			return nil, nil, 0, err
 		}
-		count := int(toIntValue(countTok.Value))
+		if countTok.Type != scanner.TokenNumber || !countTok.IsInt {
+			return nil, nil, 0, errors.New("invalid xref subsection count")
+		}
+		count := int(countTok.Int)
 		for i := 0; i < count; i++ {
 			offTok, err := s.Next()
 			if err != nil {
@@ -321,9 +324,9 @@ func parseClassic(s scanner.Scanner) (Table, *raw.DictObj, int64, error) {
 			if err != nil {
 				return nil, nil, 0, err
 			}
-			flag, _ := flagTok.Value.(string)
+			flag := flagTok.Str
 			if len(flag) > 0 && flag[0] == 'n' {
-				entries[startObj+i] = entry{offset: toIntValue(offTok.Value), gen: int(toIntValue(genTok.Value))}
+				entries[startObj+i] = entry{offset: offTok.Int, gen: int(genTok.Int)}
 			}
 		}
 	}
@@ -357,17 +360,20 @@ func parseXRefStream(ctx context.Context, r io.ReaderAt, offset int64, cfg Resol
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	if tokObjNum.Type != scanner.TokenNumber {
+	if tokObjNum.Type != scanner.TokenNumber || !tokObjNum.IsInt {
 		return nil, nil, 0, errors.New("xref stream missing object number")
 	}
-	on := int(toIntValue(tokObjNum.Value))
+	on := int(tokObjNum.Int)
 	tokGen, err := s.Next()
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	gen := int(toIntValue(tokGen.Value))
+	if tokGen.Type != scanner.TokenNumber || !tokGen.IsInt {
+		return nil, nil, 0, errors.New("xref stream missing generation number")
+	}
+	gen := int(tokGen.Int)
 	tokKW, err := s.Next()
-	if err != nil || tokKW.Type != scanner.TokenKeyword || tokKW.Value != "obj" {
+	if err != nil || tokKW.Type != scanner.TokenKeyword || tokKW.Str != "obj" {
 		return nil, nil, 0, errors.New("xref stream missing obj keyword")
 	}
 
@@ -384,7 +390,7 @@ func parseXRefStream(ctx context.Context, r io.ReaderAt, offset int64, cfg Resol
 	if err != nil || streamTok.Type != scanner.TokenStream {
 		return nil, nil, 0, errors.New("xref stream payload missing")
 	}
-	streamData := streamTok.Value.([]byte)
+	streamData := streamTok.Bytes
 	if fTok, ok := dict.Get(raw.NameObj{Val: "Filter"}); ok {
 		filterNames, filterParams := toFilters(fTok, dict)
 		p := filters.NewPipeline([]filters.Decoder{
@@ -498,22 +504,18 @@ func parseObject(tr *streamTokenReader) (raw.Object, error) {
 	}
 	switch tok.Type {
 	case scanner.TokenName:
-		return raw.NameObj{Val: tok.Value.(string)}, nil
+		return raw.NameObj{Val: tok.Str}, nil
 	case scanner.TokenNumber:
-		switch v := tok.Value.(type) {
-		case int:
-			return raw.NumberObj{I: int64(v), IsInt: true}, nil
-		case int64:
-			return raw.NumberObj{I: v, IsInt: true}, nil
-		case float64:
-			return raw.NumberObj{F: v, IsInt: false}, nil
+		if tok.IsInt {
+			return raw.NumberObj{I: tok.Int, IsInt: true}, nil
 		}
+		return raw.NumberObj{F: tok.Float, IsInt: false}, nil
 	case scanner.TokenBoolean:
-		return raw.BoolObj{V: tok.Value.(bool)}, nil
+		return raw.BoolObj{V: tok.Bool}, nil
 	case scanner.TokenNull:
 		return raw.NullObj{}, nil
 	case scanner.TokenString:
-		return raw.StringObj{Bytes: tok.Value.([]byte)}, nil
+		return raw.StringObj{Bytes: tok.Bytes}, nil
 	case scanner.TokenArray:
 		arr := raw.NewArray()
 		for {
@@ -521,7 +523,7 @@ func parseObject(tr *streamTokenReader) (raw.Object, error) {
 			if err != nil {
 				return nil, err
 			}
-			if t.Type == scanner.TokenKeyword && t.Value == "]" {
+			if t.Type == scanner.TokenKeyword && t.Str == "]" {
 				break
 			}
 			tr.unread(t)
@@ -539,13 +541,13 @@ func parseObject(tr *streamTokenReader) (raw.Object, error) {
 			if err != nil {
 				return nil, err
 			}
-			if t.Type == scanner.TokenKeyword && t.Value == ">>" {
+			if t.Type == scanner.TokenKeyword && t.Str == ">>" {
 				break
 			}
 			if t.Type != scanner.TokenName {
 				return nil, errors.New("expected name in dict")
 			}
-			key := raw.NameObj{Val: t.Value.(string)}
+			key := raw.NameObj{Val: t.Str}
 			val, err := parseObject(tr)
 			if err != nil {
 				return nil, err
@@ -554,8 +556,7 @@ func parseObject(tr *streamTokenReader) (raw.Object, error) {
 		}
 		return d, nil
 	case scanner.TokenRef:
-		v := tok.Value.(struct{ Num, Gen int })
-		return raw.RefObj{R: raw.ObjectRef{Num: v.Num, Gen: v.Gen}}, nil
+		return raw.RefObj{R: raw.ObjectRef{Num: int(tok.Int), Gen: tok.Gen}}, nil
 	}
 	return nil, fmt.Errorf("unexpected token %v", tok.Type)
 }
@@ -678,19 +679,6 @@ func findStartXRef(r io.ReaderAt, size int64) (int64, error) {
 	return val, nil
 }
 
-func toIntValue(v interface{}) int64 {
-	switch n := v.(type) {
-	case int:
-		return int64(n)
-	case int64:
-		return n
-	case float64:
-		return int64(n)
-	default:
-		return 0
-	}
-}
-
 func detectLinearized(r io.ReaderAt) bool {
 	s := scanner.New(r, scanner.Config{})
 	// Skip header
@@ -707,7 +695,7 @@ func detectLinearized(r io.ReaderAt) bool {
 			return false
 		}
 		tokObj, err := s.Next()
-		if err != nil || tokObj.Type != scanner.TokenKeyword || tokObj.Value != "obj" {
+		if err != nil || tokObj.Type != scanner.TokenKeyword || tokObj.Str != "obj" {
 			return false
 		}
 		tr := &streamTokenReader{s: s}

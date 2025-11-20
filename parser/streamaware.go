@@ -37,7 +37,7 @@ func (w *streamAware) Next() (scanner.Token, error) {
 			w.buf = append(w.buf, kt)
 			// End of dict
 			if kt.Type == scanner.TokenKeyword {
-				if s, ok := kt.Value.(string); ok && s == ">>" {
+				if kt.Str == ">>" {
 					break
 				}
 			}
@@ -45,16 +45,15 @@ func (w *streamAware) Next() (scanner.Token, error) {
 			if kt.Type != scanner.TokenName {
 				continue
 			}
-			key, _ := kt.Value.(string)
+			key := kt.Str
 			vt, err := w.s.Next()
 			if err != nil {
 				return scanner.Token{}, err
 			}
 			w.buf = append(w.buf, vt)
 			if key == "Length" {
-				switch v := vt.Value.(type) {
-				case int64:
-					length = v
+				if vt.Type == scanner.TokenNumber && vt.IsInt {
+					length = vt.Int
 				}
 			}
 		}

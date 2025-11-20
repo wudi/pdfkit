@@ -45,11 +45,10 @@ func (p *parserImpl) Parse(ctx context.Context, r io.ReaderAt) (*Document, error
 		if tok.Type != scanner.TokenNumber {
 			continue
 		}
-		objNum64, ok := toInt(tok.Value)
-		if !ok {
+		if !tok.IsInt {
 			continue
 		}
-		objNum := int(objNum64)
+		objNum := int(tok.Int)
 
 		genTok, err := tr.next()
 		if err != nil {
@@ -62,17 +61,16 @@ func (p *parserImpl) Parse(ctx context.Context, r io.ReaderAt) (*Document, error
 			tr.unread(genTok)
 			continue
 		}
-		gen64, ok := toInt(genTok.Value)
-		if !ok {
+		if !genTok.IsInt {
 			continue
 		}
-		gen := int(gen64)
+		gen := int(genTok.Int)
 
 		kwTok, err := tr.next()
 		if err != nil {
 			return nil, err
 		}
-		if kwTok.Type != scanner.TokenKeyword || kwTok.Value != "obj" {
+		if kwTok.Type != scanner.TokenKeyword || kwTok.Str != "obj" {
 			tr.unread(kwTok)
 			tr.unread(genTok)
 			continue
@@ -92,7 +90,7 @@ func (p *parserImpl) Parse(ctx context.Context, r io.ReaderAt) (*Document, error
 		if dict, ok := obj.(*DictObj); ok {
 			if streamTok, err := tr.next(); err == nil {
 				if streamTok.Type == scanner.TokenStream {
-					obj = NewStream(dict, copyBytes(streamTok.Value))
+					obj = NewStream(dict, streamTok.Bytes)
 				} else {
 					// Not a stream; put it back for outer loop.
 					tr.unread(streamTok)
@@ -102,7 +100,7 @@ func (p *parserImpl) Parse(ctx context.Context, r io.ReaderAt) (*Document, error
 
 		// Consume optional endobj
 		if t, err := tr.next(); err == nil {
-			if t.Type != scanner.TokenKeyword || t.Value != "endobj" {
+			if t.Type != scanner.TokenKeyword || t.Str != "endobj" {
 				tr.unread(t)
 			}
 		}
@@ -120,34 +118,24 @@ func parseObject(tr *tokenReader) (Object, error) {
 	}
 	switch tok.Type {
 	case scanner.TokenName:
-		if v, ok := tok.Value.(string); ok {
-			return NameObj{Val: v}, nil
-		}
+		return NameObj{Val: tok.Str}, nil
 	case scanner.TokenNumber:
-		if i, ok := toInt(tok.Value); ok {
-			return NumberObj{I: i, IsInt: true}, nil
+		if tok.IsInt {
+			return NumberObj{I: tok.Int, IsInt: true}, nil
 		}
-		if f, ok := tok.Value.(float64); ok {
-			return NumberObj{F: f, IsInt: false}, nil
-		}
+		return NumberObj{F: tok.Float, IsInt: false}, nil
 	case scanner.TokenBoolean:
-		if v, ok := tok.Value.(bool); ok {
-			return BoolObj{V: v}, nil
-		}
+		return BoolObj{V: tok.Bool}, nil
 	case scanner.TokenNull:
 		return NullObj{}, nil
 	case scanner.TokenString:
-		if b, ok := tok.Value.([]byte); ok {
-			return StringObj{Bytes: b}, nil
-		}
+		return StringObj{Bytes: tok.Bytes}, nil
 	case scanner.TokenArray:
 		return parseArray(tr)
 	case scanner.TokenDict:
 		return parseDict(tr)
 	case scanner.TokenRef:
-		if v, ok := tok.Value.(struct{ Num, Gen int }); ok {
-			return RefObj{R: ObjectRef{Num: v.Num, Gen: v.Gen}}, nil
-		}
+		return RefObj{R: ObjectRef{Num: int(tok.Int), Gen: tok.Gen}}, nil
 	}
 	return nil, fmt.Errorf("unexpected token: %v", tok.Type)
 }
@@ -159,7 +147,7 @@ func parseArray(tr *tokenReader) (Object, error) {
 		if err != nil {
 			return nil, err
 		}
-		if tok.Type == scanner.TokenKeyword && tok.Value == "]" {
+		if tok.Type == scanner.TokenKeyword && tok.Str == "]" {
 			break
 		}
 		tr.unread(tok)
@@ -179,13 +167,13 @@ func parseDict(tr *tokenReader) (Object, error) {
 		if err != nil {
 			return nil, err
 		}
-		if tok.Type == scanner.TokenKeyword && tok.Value == ">>" {
+		if tok.Type == scanner.TokenKeyword && tok.Str == ">>" {
 			break
 		}
 		if tok.Type != scanner.TokenName {
 			return nil, fmt.Errorf("expected name in dict, got %v", tok.Type)
 		}
-		key, _ := tok.Value.(string)
+		key := tok.Str
 		val, err := parseObject(tr)
 		if err != nil {
 			return nil, err
@@ -211,27 +199,4 @@ func (r *tokenReader) next() (scanner.Token, error) {
 
 func (r *tokenReader) unread(tok scanner.Token) {
 	r.buf = append(r.buf, tok)
-}
-
-func toInt(v interface{}) (int64, bool) {
-	switch n := v.(type) {
-	case int:
-		return int64(n), true
-	case int64:
-		return n, true
-	case float64:
-		return int64(n), true
-	default:
-		return 0, false
-	}
-}
-
-func copyBytes(v interface{}) []byte {
-	b, ok := v.([]byte)
-	if !ok {
-		return nil
-	}
-	out := make([]byte, len(b))
-	copy(out, b)
-	return out
 }

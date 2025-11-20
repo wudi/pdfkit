@@ -186,7 +186,7 @@ func TestTokenReaderLengthHintWithNestedDecodeParms(t *testing.T) {
 	if streamTok.Type != scanner.TokenStream {
 		t.Fatalf("expected stream token, got %v", streamTok.Type)
 	}
-	if payload, _ := streamTok.Value.([]byte); len(payload) != 6 {
-		t.Fatalf("expected 6-byte stream, got %d", len(payload))
+	if len(streamTok.Bytes) != 6 {
+		t.Fatalf("expected 6-byte stream, got %d", len(streamTok.Bytes))
 	}
 }

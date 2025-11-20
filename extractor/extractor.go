@@ -218,36 +218,26 @@ func parseObject(tr *tokenReader) (raw.Object, error) {
 	}
 	switch tok.Type {
 	case scanner.TokenName:
-		if v, ok := tok.Value.(string); ok {
-			return raw.NameObj{Val: v}, nil
-		}
+		return raw.NameObj{Val: tok.Str}, nil
 	case scanner.TokenNumber:
-		if i, ok := toInt(tok.Value); ok {
-			return raw.NumberObj{I: i, IsInt: true}, nil
+		if tok.IsInt {
+			return raw.NumberObj{I: tok.Int, IsInt: true}, nil
 		}
-		if f, ok := tok.Value.(float64); ok {
-			return raw.NumberObj{F: f, IsInt: false}, nil
-		}
+		return raw.NumberObj{F: tok.Float, IsInt: false}, nil
 	case scanner.TokenBoolean:
-		if v, ok := tok.Value.(bool); ok {
-			return raw.BoolObj{V: v}, nil
-		}
+		return raw.BoolObj{V: tok.Bool}, nil
 	case scanner.TokenNull:
 		return raw.NullObj{}, nil
 	case scanner.TokenString:
-		if b, ok := tok.Value.([]byte); ok {
-			return raw.StringObj{Bytes: b}, nil
-		}
+		return raw.StringObj{Bytes: tok.Bytes}, nil
 	case scanner.TokenArray:
 		return parseArray(tr)
 	case scanner.TokenDict:
 		return parseDict(tr)
 	case scanner.TokenRef:
-		if v, ok := tok.Value.(struct{ Num, Gen int }); ok {
-			return raw.RefObj{R: raw.ObjectRef{Num: v.Num, Gen: v.Gen}}, nil
-		}
+		return raw.RefObj{R: raw.ObjectRef{Num: int(tok.Int), Gen: tok.Gen}}, nil
 	case scanner.TokenKeyword:
-		if tok.Value == "stream" {
+		if tok.Str == "stream" {
 			return nil, fmt.Errorf("unexpected stream keyword inside object stream")
 		}
 	}
@@ -261,7 +251,7 @@ func parseArray(tr *tokenReader) (raw.Object, error) {
 		if err != nil {
 			return nil, err
 		}
-		if tok.Type == scanner.TokenKeyword && tok.Value == "]" {
+		if tok.Type == scanner.TokenKeyword && tok.Str == "]" {
 			break
 		}
 		tr.unread(tok)
@@ -281,13 +271,13 @@ func parseDict(tr *tokenReader) (raw.Object, error) {
 		if err != nil {
 			return nil, err
 		}
-		if tok.Type == scanner.TokenKeyword && tok.Value == ">>" {
+		if tok.Type == scanner.TokenKeyword && tok.Str == ">>" {
 			break
 		}
 		if tok.Type != scanner.TokenName {
 			return nil, fmt.Errorf("expected name in dict, got %v", tok.Type)
 		}
-		key, _ := tok.Value.(string)
+		key := tok.Str
 		val, err := parseObject(tr)
 		if err != nil {
 			return nil, err
@@ -295,19 +285,6 @@ func parseDict(tr *tokenReader) (raw.Object, error) {
 		d.Set(raw.NameObj{Val: key}, val)
 	}
 	return d, nil
-}
-
-func toInt(v interface{}) (int64, bool) {
-	switch n := v.(type) {
-	case int:
-		return int64(n), true
-	case int64:
-		return n, true
-	case float64:
-		return int64(n), true
-	default:
-		return 0, false
-	}
 }
 
 func rootCatalog(doc *raw.Document) *raw.DictObj {
