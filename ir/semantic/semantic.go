@@ -247,6 +247,8 @@ type XObject struct {
 	BitsPerComponent int
 	Data             []byte
 	BBox             Rectangle // used for Form XObjects
+	Matrix           []float64 // /Matrix (optional)
+	Resources        *Resources // /Resources (for Form XObjects)
 	Interpolate      bool
 	SMask            *XObject
 	Group            *TransparencyGroup // /Group (for Form XObjects)

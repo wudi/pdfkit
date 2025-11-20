@@ -7,6 +7,7 @@ type AcroForm struct {
 	NeedAppearances bool
 	XFA             []byte // XML Data Stream
 	Fields          []FormField
+	DefaultResources *Resources // DR entry
 	OriginalRef     raw.ObjectRef
 	Dirty           bool
 }
@@ -45,6 +46,8 @@ type BaseFormField struct {
 	AppearanceState string
 	Border          []float64
 	Color           []float64
+	DefaultAppearance string // DA entry
+	Quadding          int    // Q entry: 0=Left, 1=Center, 2=Right
 	Ref             raw.ObjectRef
 	OriginalRef     raw.ObjectRef
 	Dirty           bool
@@ -61,6 +64,8 @@ func (f *BaseFormField) GetAppearance() []byte        { return f.Appearance }
 func (f *BaseFormField) GetAppearanceState() string   { return f.AppearanceState }
 func (f *BaseFormField) GetBorder() []float64         { return f.Border }
 func (f *BaseFormField) GetColor() []float64          { return f.Color }
+func (f *BaseFormField) GetDefaultAppearance() string { return f.DefaultAppearance }
+func (f *BaseFormField) GetQuadding() int             { return f.Quadding }
 func (f *BaseFormField) Reference() raw.ObjectRef     { return f.Ref }
 func (f *BaseFormField) SetReference(r raw.ObjectRef) { f.Ref = r }
 func (f *BaseFormField) IsDirty() bool                { return f.Dirty }
