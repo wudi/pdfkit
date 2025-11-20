@@ -446,37 +446,219 @@ func parseOperations(data []byte) []semantic.Operation {
 	return ops
 }
 
+func parseFont(doc *raw.Document, obj raw.Object) *semantic.Font {
+	_, fontDict := resolveDict(doc, obj)
+	if fontDict == nil {
+		return nil
+	}
+	font := &semantic.Font{}
+	if subtype, ok := fontDict.Get(raw.NameLiteral("Subtype")); ok {
+		if n, ok := subtype.(raw.NameObj); ok {
+			font.Subtype = n.Value()
+		}
+	}
+	if base, ok := fontDict.Get(raw.NameLiteral("BaseFont")); ok {
+		if n, ok := base.(raw.NameObj); ok {
+			font.BaseFont = n.Value()
+		}
+	}
+	if enc, ok := fontDict.Get(raw.NameLiteral("Encoding")); ok {
+		if n, ok := enc.(raw.NameObj); ok {
+			font.Encoding = n.Value()
+		}
+	}
+
+	if font.Subtype == "Type3" {
+		if cp, ok := fontDict.Get(raw.NameLiteral("CharProcs")); ok {
+			if cpDict, ok := cp.(*raw.DictObj); ok {
+				font.CharProcs = make(map[string][]byte)
+				for name, streamObj := range cpDict.KV {
+					if ref, ok := streamObj.(raw.RefObj); ok {
+						if s, ok := doc.Objects[ref.Ref()].(*raw.StreamObj); ok {
+							font.CharProcs[name] = decodeStream(s)
+						}
+					} else if s, ok := streamObj.(*raw.StreamObj); ok {
+						font.CharProcs[name] = decodeStream(s)
+					}
+				}
+			}
+		}
+		if fm, ok := fontDict.Get(raw.NameLiteral("FontMatrix")); ok {
+			if arr, ok := fm.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if n, ok := it.(raw.NumberObj); ok {
+						font.FontMatrix = append(font.FontMatrix, n.Float())
+					}
+				}
+			}
+		}
+		if bbox, ok := fontDict.Get(raw.NameLiteral("FontBBox")); ok {
+			if rect, ok := rectFromArray(bbox); ok {
+				font.FontBBox = semantic.Rectangle{LLX: rect[0], LLY: rect[1], URX: rect[2], URY: rect[3]}
+			}
+		}
+		if res, ok := fontDict.Get(raw.NameLiteral("Resources")); ok {
+			font.Resources = resourcesFromDict(doc, res)
+		}
+	}
+	return font
+}
+
+func parseColorSpace(doc *raw.Document, obj raw.Object) semantic.ColorSpace {
+	if n, ok := obj.(raw.NameObj); ok {
+		return &semantic.DeviceColorSpace{Name: n.Value()}
+	}
+	return nil
+}
+
+func parseXObject(doc *raw.Document, obj raw.Object) *semantic.XObject {
+	ref, xoDict := resolveDict(doc, obj)
+	if xoDict == nil {
+		return nil
+	}
+	if subtype, ok := xoDict.Get(raw.NameLiteral("Subtype")); ok {
+		if sn, ok := subtype.(raw.NameObj); ok {
+			switch sn.Value() {
+			case "Image":
+				if stream, ok := doc.Objects[ref].(*raw.StreamObj); ok {
+					xo := semantic.XObject{Subtype: "Image"}
+					if w, ok := xoDict.Get(raw.NameLiteral("Width")); ok {
+						if n, ok := w.(raw.NumberObj); ok {
+							xo.Width = int(n.Int())
+						}
+					}
+					if h, ok := xoDict.Get(raw.NameLiteral("Height")); ok {
+						if n, ok := h.(raw.NumberObj); ok {
+							xo.Height = int(n.Int())
+						}
+					}
+					if bpc, ok := xoDict.Get(raw.NameLiteral("BitsPerComponent")); ok {
+						if n, ok := bpc.(raw.NumberObj); ok {
+							xo.BitsPerComponent = int(n.Int())
+						}
+					}
+					if cs, ok := xoDict.Get(raw.NameLiteral("ColorSpace")); ok {
+						if n, ok := cs.(raw.NameObj); ok {
+							xo.ColorSpace = &semantic.DeviceColorSpace{Name: n.Value()}
+						}
+					}
+					xo.Data = decodeStream(stream)
+					return &xo
+				}
+			case "Form":
+				if stream, ok := doc.Objects[ref].(*raw.StreamObj); ok {
+					xo := semantic.XObject{Subtype: "Form"}
+					if bboxObj, ok := xoDict.Get(raw.NameLiteral("BBox")); ok {
+						if rect, ok := rectFromArray(bboxObj); ok {
+							xo.BBox = semantic.Rectangle{LLX: rect[0], LLY: rect[1], URX: rect[2], URY: rect[3]}
+						}
+					}
+					xo.Data = decodeStream(stream)
+					return &xo
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func parsePattern(doc *raw.Document, obj raw.Object) semantic.Pattern {
+	ref, pd := resolveDict(doc, obj)
+	if pd == nil {
+		return nil
+	}
+
+	pt := 1 // Default to Tiling
+	if ptObj, ok := pd.Get(raw.NameLiteral("PatternType")); ok {
+		if n, ok := ptObj.(raw.NumberObj); ok {
+			pt = int(n.Int())
+		}
+	}
+
+	base := semantic.BasePattern{
+		Type: pt,
+		Ref:  ref,
+	}
+	if mat, ok := pd.Get(raw.NameLiteral("Matrix")); ok {
+		if arr, ok := mat.(*raw.ArrayObj); ok {
+			for _, it := range arr.Items {
+				if n, ok := it.(raw.NumberObj); ok {
+					base.Matrix = append(base.Matrix, n.Float())
+				}
+			}
+		}
+	}
+
+	if pt == 1 {
+		p := &semantic.TilingPattern{BasePattern: base}
+		if paint, ok := pd.Get(raw.NameLiteral("PaintType")); ok {
+			if n, ok := paint.(raw.NumberObj); ok {
+				p.PaintType = int(n.Int())
+			}
+		}
+		if tt, ok := pd.Get(raw.NameLiteral("TilingType")); ok {
+			if n, ok := tt.(raw.NumberObj); ok {
+				p.TilingType = int(n.Int())
+			}
+		}
+		if bbox, ok := pd.Get(raw.NameLiteral("BBox")); ok {
+			if rect, ok := rectFromArray(bbox); ok {
+				p.BBox = semantic.Rectangle{LLX: rect[0], LLY: rect[1], URX: rect[2], URY: rect[3]}
+			}
+		}
+		if xs, ok := pd.Get(raw.NameLiteral("XStep")); ok {
+			if n, ok := xs.(raw.NumberObj); ok {
+				p.XStep = n.Float()
+			}
+		}
+		if ys, ok := pd.Get(raw.NameLiteral("YStep")); ok {
+			if n, ok := ys.(raw.NumberObj); ok {
+				p.YStep = n.Float()
+			}
+		}
+		if resObj, ok := pd.Get(raw.NameLiteral("Resources")); ok {
+			p.Resources = resourcesFromDict(doc, resObj)
+		}
+		if stream, ok := doc.Objects[ref].(*raw.StreamObj); ok {
+			p.Content = decodeStream(stream)
+		}
+		return p
+	} else if pt == 2 {
+		p := &semantic.ShadingPattern{BasePattern: base}
+		if shObj, ok := pd.Get(raw.NameLiteral("Shading")); ok {
+			p.Shading = parseShading(doc, shObj)
+		}
+		if gsObj, ok := pd.Get(raw.NameLiteral("ExtGState")); ok {
+			p.ExtGState = parseExtGState(doc, gsObj)
+		}
+		return p
+	}
+	return nil
+}
+
 func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
-	_, dict := resolveDict(doc, obj)
+	ref, dict := resolveDict(doc, obj)
 	if dict == nil {
 		return nil
 	}
-	res := &semantic.Resources{}
-	if fontsObj, ok := dict.Get(raw.NameLiteral("Font")); ok {
-		if fdict, ok := fontsObj.(*raw.DictObj); ok {
+	res := &semantic.Resources{OriginalRef: ref}
+	if fontObj, ok := dict.Get(raw.NameLiteral("Font")); ok {
+		if fontDict, ok := fontObj.(*raw.DictObj); ok {
 			res.Fonts = make(map[string]*semantic.Font)
-			for name, entry := range fdict.KV {
-				_, fontDict := resolveDict(doc, entry)
-				if fontDict == nil {
-					continue
+			for name, entry := range fontDict.KV {
+				if f := parseFont(doc, entry); f != nil {
+					res.Fonts[name] = f
 				}
-				font := &semantic.Font{}
-				if subtype, ok := fontDict.Get(raw.NameLiteral("Subtype")); ok {
-					if n, ok := subtype.(raw.NameObj); ok {
-						font.Subtype = n.Value()
-					}
+			}
+		}
+	}
+	if xObj, ok := dict.Get(raw.NameLiteral("XObject")); ok {
+		if xDict, ok := xObj.(*raw.DictObj); ok {
+			res.XObjects = make(map[string]semantic.XObject)
+			for name, entry := range xDict.KV {
+				if xo := parseXObject(doc, entry); xo != nil {
+					res.XObjects[name] = *xo
 				}
-				if base, ok := fontDict.Get(raw.NameLiteral("BaseFont")); ok {
-					if n, ok := base.(raw.NameObj); ok {
-						font.BaseFont = n.Value()
-					}
-				}
-				if enc, ok := fontDict.Get(raw.NameLiteral("Encoding")); ok {
-					if n, ok := enc.(raw.NameObj); ok {
-						font.Encoding = n.Value()
-					}
-				}
-				res.Fonts[name] = font
 			}
 		}
 	}
@@ -484,62 +666,8 @@ func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
 		if csDict, ok := csObj.(*raw.DictObj); ok {
 			res.ColorSpaces = make(map[string]semantic.ColorSpace)
 			for name, entry := range csDict.KV {
-				if n, ok := entry.(raw.NameObj); ok {
-					res.ColorSpaces[name] = &semantic.DeviceColorSpace{Name: n.Value()}
-				}
-			}
-		}
-	}
-	if xoObj, ok := dict.Get(raw.NameLiteral("XObject")); ok {
-		if xoDict, ok := xoObj.(*raw.DictObj); ok {
-			res.XObjects = make(map[string]semantic.XObject)
-			for name, entry := range xoDict.KV {
-				ref, xoDict := resolveDict(doc, entry)
-				if xoDict == nil {
-					continue
-				}
-				if subtype, ok := xoDict.Get(raw.NameLiteral("Subtype")); ok {
-					if sn, ok := subtype.(raw.NameObj); ok {
-						switch sn.Value() {
-						case "Image":
-							if stream, ok := doc.Objects[ref].(*raw.StreamObj); ok {
-								xo := semantic.XObject{Subtype: "Image"}
-								if w, ok := xoDict.Get(raw.NameLiteral("Width")); ok {
-									if n, ok := w.(raw.NumberObj); ok {
-										xo.Width = int(n.Int())
-									}
-								}
-								if h, ok := xoDict.Get(raw.NameLiteral("Height")); ok {
-									if n, ok := h.(raw.NumberObj); ok {
-										xo.Height = int(n.Int())
-									}
-								}
-								if bpc, ok := xoDict.Get(raw.NameLiteral("BitsPerComponent")); ok {
-									if n, ok := bpc.(raw.NumberObj); ok {
-										xo.BitsPerComponent = int(n.Int())
-									}
-								}
-								if cs, ok := xoDict.Get(raw.NameLiteral("ColorSpace")); ok {
-									if n, ok := cs.(raw.NameObj); ok {
-										xo.ColorSpace = &semantic.DeviceColorSpace{Name: n.Value()}
-									}
-								}
-								xo.Data = decodeStream(stream)
-								res.XObjects[name] = xo
-							}
-						case "Form":
-							if stream, ok := doc.Objects[ref].(*raw.StreamObj); ok {
-								xo := semantic.XObject{Subtype: "Form"}
-								if bboxObj, ok := xoDict.Get(raw.NameLiteral("BBox")); ok {
-									if rect, ok := rectFromArray(bboxObj); ok {
-										xo.BBox = semantic.Rectangle{LLX: rect[0], LLY: rect[1], URX: rect[2], URY: rect[3]}
-									}
-								}
-								xo.Data = decodeStream(stream)
-								res.XObjects[name] = xo
-							}
-						}
-					}
+				if cs := parseColorSpace(doc, entry); cs != nil {
+					res.ColorSpaces[name] = cs
 				}
 			}
 		}
@@ -548,30 +676,9 @@ func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
 		if gsDict, ok := gsObj.(*raw.DictObj); ok {
 			res.ExtGStates = make(map[string]semantic.ExtGState)
 			for name, entry := range gsDict.KV {
-				_, gs := resolveDict(doc, entry)
-				if gs == nil {
-					continue
+				if state := parseExtGState(doc, entry); state != nil {
+					res.ExtGStates[name] = *state
 				}
-				state := semantic.ExtGState{}
-				if lw, ok := gs.Get(raw.NameLiteral("LW")); ok {
-					if n, ok := lw.(raw.NumberObj); ok {
-						val := n.Float()
-						state.LineWidth = &val
-					}
-				}
-				if ca, ok := gs.Get(raw.NameLiteral("CA")); ok {
-					if n, ok := ca.(raw.NumberObj); ok {
-						val := n.Float()
-						state.StrokeAlpha = &val
-					}
-				}
-				if ca, ok := gs.Get(raw.NameLiteral("ca")); ok {
-					if n, ok := ca.(raw.NumberObj); ok {
-						val := n.Float()
-						state.FillAlpha = &val
-					}
-				}
-				res.ExtGStates[name] = state
 			}
 		}
 	}
@@ -579,45 +686,9 @@ func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
 		if patDict, ok := patObj.(*raw.DictObj); ok {
 			res.Patterns = make(map[string]semantic.Pattern)
 			for name, entry := range patDict.KV {
-				ref, pd := resolveDict(doc, entry)
-				if pd == nil {
-					continue
+				if p := parsePattern(doc, entry); p != nil {
+					res.Patterns[name] = p
 				}
-				p := semantic.Pattern{}
-				if pt, ok := pd.Get(raw.NameLiteral("PatternType")); ok {
-					if n, ok := pt.(raw.NumberObj); ok {
-						p.PatternType = int(n.Int())
-					}
-				}
-				if paint, ok := pd.Get(raw.NameLiteral("PaintType")); ok {
-					if n, ok := paint.(raw.NumberObj); ok {
-						p.PaintType = int(n.Int())
-					}
-				}
-				if tt, ok := pd.Get(raw.NameLiteral("TilingType")); ok {
-					if n, ok := tt.(raw.NumberObj); ok {
-						p.TilingType = int(n.Int())
-					}
-				}
-				if bbox, ok := pd.Get(raw.NameLiteral("BBox")); ok {
-					if rect, ok := rectFromArray(bbox); ok {
-						p.BBox = semantic.Rectangle{LLX: rect[0], LLY: rect[1], URX: rect[2], URY: rect[3]}
-					}
-				}
-				if xs, ok := pd.Get(raw.NameLiteral("XStep")); ok {
-					if n, ok := xs.(raw.NumberObj); ok {
-						p.XStep = n.Float()
-					}
-				}
-				if ys, ok := pd.Get(raw.NameLiteral("YStep")); ok {
-					if n, ok := ys.(raw.NumberObj); ok {
-						p.YStep = n.Float()
-					}
-				}
-				if stream, ok := doc.Objects[ref].(*raw.StreamObj); ok {
-					p.Content = decodeStream(stream)
-				}
-				res.Patterns[name] = p
 			}
 		}
 	}
@@ -625,111 +696,18 @@ func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
 		if sd, ok := shadingObj.(*raw.DictObj); ok {
 			res.Shadings = make(map[string]semantic.Shading)
 			for name, entry := range sd.KV {
-				_, shDict := resolveDict(doc, entry)
-				if shDict == nil {
-					continue
+				if sh := parseShading(doc, entry); sh != nil {
+					res.Shadings[name] = sh
 				}
-
-				stype := 0
-				if st, ok := shDict.Get(raw.NameLiteral("ShadingType")); ok {
-					if n, ok := st.(raw.NumberObj); ok {
-						stype = int(n.Int())
-					}
-				}
-
-				var cs semantic.ColorSpace
-				if csObj, ok := shDict.Get(raw.NameLiteral("ColorSpace")); ok {
-					if n, ok := csObj.(raw.NameObj); ok {
-						cs = &semantic.DeviceColorSpace{Name: n.Value()}
-					}
-				}
-
-				if stype >= 4 && stype <= 7 {
-					mesh := &semantic.MeshShading{
-						BaseShading: semantic.BaseShading{
-							Type:       stype,
-							ColorSpace: cs,
-						},
-					}
-					if bpc, ok := shDict.Get(raw.NameLiteral("BitsPerCoordinate")); ok {
-						if n, ok := bpc.(raw.NumberObj); ok {
-							mesh.BitsPerCoordinate = int(n.Int())
-						}
-					}
-					if bpc, ok := shDict.Get(raw.NameLiteral("BitsPerComponent")); ok {
-						if n, ok := bpc.(raw.NumberObj); ok {
-							mesh.BitsPerComponent = int(n.Int())
-						}
-					}
-					if bpf, ok := shDict.Get(raw.NameLiteral("BitsPerFlag")); ok {
-						if n, ok := bpf.(raw.NumberObj); ok {
-							mesh.BitsPerFlag = int(n.Int())
-						}
-					}
-					if dec, ok := shDict.Get(raw.NameLiteral("Decode")); ok {
-						if arr, ok := dec.(*raw.ArrayObj); ok {
-							for _, it := range arr.Items {
-								if n, ok := it.(raw.NumberObj); ok {
-									mesh.Decode = append(mesh.Decode, n.Float())
-								}
-							}
-						}
-					}
-					if ref, ok := entry.(raw.RefObj); ok {
-						if stream, ok := doc.Objects[ref.Ref()].(*raw.StreamObj); ok {
-							mesh.Stream = decodeStream(stream)
-						}
-					}
-					if fnObj, ok := shDict.Get(raw.NameLiteral("Function")); ok {
-						if ref, ok := fnObj.(raw.RefObj); ok {
-							if stream, ok := doc.Objects[ref.Ref()].(*raw.StreamObj); ok {
-								mesh.Function = decodeStream(stream)
-							}
-						}
-					}
-					res.Shadings[name] = mesh
-				} else {
-					fsh := &semantic.FunctionShading{
-						BaseShading: semantic.BaseShading{
-							Type:       stype,
-							ColorSpace: cs,
-						},
-					}
-					if coords, ok := shDict.Get(raw.NameLiteral("Coords")); ok {
-						if arr, ok := coords.(*raw.ArrayObj); ok {
-							for _, it := range arr.Items {
-								if n, ok := it.(raw.NumberObj); ok {
-									fsh.Coords = append(fsh.Coords, n.Float())
-								}
-							}
-						}
-					}
-					if dom, ok := shDict.Get(raw.NameLiteral("Domain")); ok {
-						if arr, ok := dom.(*raw.ArrayObj); ok {
-							for _, it := range arr.Items {
-								if n, ok := it.(raw.NumberObj); ok {
-									fsh.Domain = append(fsh.Domain, n.Float())
-								}
-							}
-						}
-					}
-					if ext, ok := shDict.Get(raw.NameLiteral("Extend")); ok {
-						if arr, ok := ext.(*raw.ArrayObj); ok {
-							for _, it := range arr.Items {
-								if b, ok := it.(raw.BoolObj); ok {
-									fsh.Extend = append(fsh.Extend, b.Value())
-								}
-							}
-						}
-					}
-					if fnObj, ok := shDict.Get(raw.NameLiteral("Function")); ok {
-						if ref, ok := fnObj.(raw.RefObj); ok {
-							if stream, ok := doc.Objects[ref.Ref()].(*raw.StreamObj); ok {
-								fsh.Function = decodeStream(stream)
-							}
-						}
-					}
-					res.Shadings[name] = fsh
+			}
+		}
+	}
+	if propObj, ok := dict.Get(raw.NameLiteral("Properties")); ok {
+		if pd, ok := propObj.(*raw.DictObj); ok {
+			res.Properties = make(map[string]semantic.PropertyList)
+			for name, entry := range pd.KV {
+				if p := parseProperties(doc, entry); p != nil {
+					res.Properties[name] = p
 				}
 			}
 		}
@@ -1208,4 +1186,400 @@ type readerAtAdapter struct{ ReaderAt }
 
 func (r readerAtAdapter) ReadAt(p []byte, off int64) (int, error) {
 	return r.ReaderAt.ReadAt(p, off)
+}
+
+func parseFunction(doc *raw.Document, obj raw.Object) semantic.Function {
+	var ref raw.ObjectRef
+	var dict raw.Dictionary
+	var stream *raw.StreamObj
+
+	switch v := obj.(type) {
+	case raw.RefObj:
+		ref = v.Ref()
+		resolved := doc.Objects[ref]
+		if d, ok := resolved.(*raw.DictObj); ok {
+			dict = d
+		} else if s, ok := resolved.(*raw.StreamObj); ok {
+			stream = s
+			dict = s.Dict
+		}
+	case *raw.DictObj:
+		dict = v
+	case *raw.StreamObj:
+		stream = v
+		dict = v.Dict
+	}
+
+	if dict == nil {
+		return nil
+	}
+
+	ft := -1
+	if t, ok := dict.Get(raw.NameLiteral("FunctionType")); ok {
+		if n, ok := t.(raw.NumberObj); ok {
+			ft = int(n.Int())
+		}
+	}
+
+	base := semantic.BaseFunction{
+		Type: ft,
+		Ref:  ref,
+	}
+
+	if dom, ok := dict.Get(raw.NameLiteral("Domain")); ok {
+		if arr, ok := dom.(*raw.ArrayObj); ok {
+			for _, it := range arr.Items {
+				if n, ok := it.(raw.NumberObj); ok {
+					base.Domain = append(base.Domain, n.Float())
+				}
+			}
+		}
+	}
+	if rng, ok := dict.Get(raw.NameLiteral("Range")); ok {
+		if arr, ok := rng.(*raw.ArrayObj); ok {
+			for _, it := range arr.Items {
+				if n, ok := it.(raw.NumberObj); ok {
+					base.Range = append(base.Range, n.Float())
+				}
+			}
+		}
+	}
+
+	switch ft {
+	case 0: // Sampled
+		if stream == nil {
+			return nil
+		}
+		f := &semantic.SampledFunction{BaseFunction: base}
+		if sz, ok := dict.Get(raw.NameLiteral("Size")); ok {
+			if arr, ok := sz.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if n, ok := it.(raw.NumberObj); ok {
+						f.Size = append(f.Size, int(n.Int()))
+					}
+				}
+			}
+		}
+		if bps, ok := dict.Get(raw.NameLiteral("BitsPerSample")); ok {
+			if n, ok := bps.(raw.NumberObj); ok {
+				f.BitsPerSample = int(n.Int())
+			}
+		}
+		if ord, ok := dict.Get(raw.NameLiteral("Order")); ok {
+			if n, ok := ord.(raw.NumberObj); ok {
+				f.Order = int(n.Int())
+			}
+		} else {
+			f.Order = 1
+		}
+		if enc, ok := dict.Get(raw.NameLiteral("Encode")); ok {
+			if arr, ok := enc.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if n, ok := it.(raw.NumberObj); ok {
+						f.Encode = append(f.Encode, n.Float())
+					}
+				}
+			}
+		}
+		if dec, ok := dict.Get(raw.NameLiteral("Decode")); ok {
+			if arr, ok := dec.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if n, ok := it.(raw.NumberObj); ok {
+						f.Decode = append(f.Decode, n.Float())
+					}
+				}
+			}
+		}
+		f.Samples = decodeStream(stream)
+		return f
+
+	case 2: // Exponential
+		f := &semantic.ExponentialFunction{BaseFunction: base}
+		if c0, ok := dict.Get(raw.NameLiteral("C0")); ok {
+			if arr, ok := c0.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if n, ok := it.(raw.NumberObj); ok {
+						f.C0 = append(f.C0, n.Float())
+					}
+				}
+			}
+		} else {
+			f.C0 = []float64{0.0}
+		}
+		if c1, ok := dict.Get(raw.NameLiteral("C1")); ok {
+			if arr, ok := c1.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if n, ok := it.(raw.NumberObj); ok {
+						f.C1 = append(f.C1, n.Float())
+					}
+				}
+			} else {
+				f.C1 = []float64{1.0}
+			}
+		}
+		if n, ok := dict.Get(raw.NameLiteral("N")); ok {
+			if num, ok := n.(raw.NumberObj); ok {
+				f.N = num.Float()
+			}
+		}
+		return f
+
+	case 3: // Stitching
+		f := &semantic.StitchingFunction{BaseFunction: base}
+		if fns, ok := dict.Get(raw.NameLiteral("Functions")); ok {
+			if arr, ok := fns.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if sub := parseFunction(doc, it); sub != nil {
+						f.Functions = append(f.Functions, sub)
+					}
+				}
+			}
+		}
+		if bds, ok := dict.Get(raw.NameLiteral("Bounds")); ok {
+			if arr, ok := bds.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if n, ok := it.(raw.NumberObj); ok {
+						f.Bounds = append(f.Bounds, n.Float())
+					}
+				}
+			}
+		}
+		if enc, ok := dict.Get(raw.NameLiteral("Encode")); ok {
+			if arr, ok := enc.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if n, ok := it.(raw.NumberObj); ok {
+						f.Encode = append(f.Encode, n.Float())
+					}
+				}
+			}
+		}
+		return f
+
+	case 4: // PostScript
+		if stream == nil {
+			return nil
+		}
+		f := &semantic.PostScriptFunction{BaseFunction: base}
+		f.Code = decodeStream(stream)
+		return f
+	}
+
+	return nil
+}
+
+func parseShading(doc *raw.Document, obj raw.Object) semantic.Shading {
+	_, shDict := resolveDict(doc, obj)
+	if shDict == nil {
+		return nil
+	}
+
+	stype := 0
+	if st, ok := shDict.Get(raw.NameLiteral("ShadingType")); ok {
+		if n, ok := st.(raw.NumberObj); ok {
+			stype = int(n.Int())
+		}
+	}
+
+	var cs semantic.ColorSpace
+	if csObj, ok := shDict.Get(raw.NameLiteral("ColorSpace")); ok {
+		if n, ok := csObj.(raw.NameObj); ok {
+			cs = &semantic.DeviceColorSpace{Name: n.Value()}
+		}
+	}
+
+	if stype >= 4 && stype <= 7 {
+		mesh := &semantic.MeshShading{
+			BaseShading: semantic.BaseShading{
+				Type:       stype,
+				ColorSpace: cs,
+			},
+		}
+		if bpc, ok := shDict.Get(raw.NameLiteral("BitsPerCoordinate")); ok {
+			if n, ok := bpc.(raw.NumberObj); ok {
+				mesh.BitsPerCoordinate = int(n.Int())
+			}
+		}
+		if bpc, ok := shDict.Get(raw.NameLiteral("BitsPerComponent")); ok {
+			if n, ok := bpc.(raw.NumberObj); ok {
+				mesh.BitsPerComponent = int(n.Int())
+			}
+		}
+		if bpf, ok := shDict.Get(raw.NameLiteral("BitsPerFlag")); ok {
+			if n, ok := bpf.(raw.NumberObj); ok {
+				mesh.BitsPerFlag = int(n.Int())
+			}
+		}
+		if dec, ok := shDict.Get(raw.NameLiteral("Decode")); ok {
+			if arr, ok := dec.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if n, ok := it.(raw.NumberObj); ok {
+						mesh.Decode = append(mesh.Decode, n.Float())
+					}
+				}
+			}
+		}
+		if ref, ok := obj.(raw.RefObj); ok {
+			if stream, ok := doc.Objects[ref.Ref()].(*raw.StreamObj); ok {
+				mesh.Stream = decodeStream(stream)
+			}
+		}
+		if fnObj, ok := shDict.Get(raw.NameLiteral("Function")); ok {
+			mesh.Function = parseFunction(doc, fnObj)
+		}
+		return mesh
+	} else {
+		fsh := &semantic.FunctionShading{
+			BaseShading: semantic.BaseShading{
+				Type:       stype,
+				ColorSpace: cs,
+			},
+		}
+		if coords, ok := shDict.Get(raw.NameLiteral("Coords")); ok {
+			if arr, ok := coords.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if n, ok := it.(raw.NumberObj); ok {
+						fsh.Coords = append(fsh.Coords, n.Float())
+					}
+				}
+			}
+		}
+		if dom, ok := shDict.Get(raw.NameLiteral("Domain")); ok {
+			if arr, ok := dom.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if n, ok := it.(raw.NumberObj); ok {
+						fsh.Domain = append(fsh.Domain, n.Float())
+					}
+				}
+			}
+		}
+		if ext, ok := shDict.Get(raw.NameLiteral("Extend")); ok {
+			if arr, ok := ext.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if b, ok := it.(raw.BoolObj); ok {
+						fsh.Extend = append(fsh.Extend, b.Value())
+					}
+				}
+			}
+		}
+		if fnObj, ok := shDict.Get(raw.NameLiteral("Function")); ok {
+			if arr, ok := fnObj.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if f := parseFunction(doc, it); f != nil {
+						fsh.Function = append(fsh.Function, f)
+					}
+				}
+			} else {
+				if f := parseFunction(doc, fnObj); f != nil {
+					fsh.Function = append(fsh.Function, f)
+				}
+			}
+		}
+		return fsh
+	}
+}
+
+func parseExtGState(doc *raw.Document, obj raw.Object) *semantic.ExtGState {
+	_, gs := resolveDict(doc, obj)
+	if gs == nil {
+		return nil
+	}
+	state := &semantic.ExtGState{}
+	if lw, ok := gs.Get(raw.NameLiteral("LW")); ok {
+		if n, ok := lw.(raw.NumberObj); ok {
+			val := n.Float()
+			state.LineWidth = &val
+		}
+	}
+	if ca, ok := gs.Get(raw.NameLiteral("CA")); ok {
+		if n, ok := ca.(raw.NumberObj); ok {
+			val := n.Float()
+			state.StrokeAlpha = &val
+		}
+	}
+	if ca, ok := gs.Get(raw.NameLiteral("ca")); ok {
+		if n, ok := ca.(raw.NumberObj); ok {
+			val := n.Float()
+			state.FillAlpha = &val
+		}
+	}
+	return state
+}
+
+func parseProperties(doc *raw.Document, obj raw.Object) semantic.PropertyList {
+	ref, dict := resolveDict(doc, obj)
+	if dict == nil {
+		return nil
+	}
+
+	typ := ""
+	if t, ok := dict.Get(raw.NameLiteral("Type")); ok {
+		if n, ok := t.(raw.NameObj); ok {
+			typ = n.Value()
+		}
+	}
+
+	if typ == "OCG" {
+		ocg := &semantic.OptionalContentGroup{
+			BasePropertyList: semantic.BasePropertyList{Ref: ref},
+		}
+		if name, ok := dict.Get(raw.NameLiteral("Name")); ok {
+			if s, ok := name.(raw.StringObj); ok {
+				ocg.Name = string(s.Value())
+			}
+		}
+		if intent, ok := dict.Get(raw.NameLiteral("Intent")); ok {
+			if n, ok := intent.(raw.NameObj); ok {
+				ocg.Intent = []string{n.Value()}
+			} else if arr, ok := intent.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					if n, ok := it.(raw.NameObj); ok {
+						ocg.Intent = append(ocg.Intent, n.Value())
+					}
+				}
+			}
+		}
+		if usage, ok := dict.Get(raw.NameLiteral("Usage")); ok {
+			ocg.Usage = parseOCUsage(doc, usage)
+		}
+		return ocg
+	} else if typ == "OCMD" {
+		ocmd := &semantic.OptionalContentMembership{
+			BasePropertyList: semantic.BasePropertyList{Ref: ref},
+		}
+		if ocgs, ok := dict.Get(raw.NameLiteral("OCGs")); ok {
+			addOCG := func(o raw.Object) {
+				if pl := parseProperties(doc, o); pl != nil {
+					if g, ok := pl.(*semantic.OptionalContentGroup); ok {
+						ocmd.OCGs = append(ocmd.OCGs, g)
+					}
+				}
+			}
+			if arr, ok := ocgs.(*raw.ArrayObj); ok {
+				for _, it := range arr.Items {
+					addOCG(it)
+				}
+			} else {
+				addOCG(ocgs)
+			}
+		}
+		if p, ok := dict.Get(raw.NameLiteral("P")); ok {
+			if n, ok := p.(raw.NameObj); ok {
+				ocmd.Policy = n.Value()
+			}
+		}
+		return ocmd
+	}
+
+	return nil
+}
+
+func parseOCUsage(doc *raw.Document, obj raw.Object) *semantic.OCUsage {
+	_, dict := resolveDict(doc, obj)
+	if dict == nil {
+		return nil
+	}
+	u := &semantic.OCUsage{}
+	// Parsing usage dictionaries is complex, skipping detailed parsing for now
+	// to focus on structure.
+	return u
 }

@@ -230,3 +230,28 @@ Status key: Not started / In progress / Done.
 - [x] Implement `HideAction`.
 - [x] Implement `TransAction` (Page Transitions).
 - [x] Implement `GoTo3DViewAction`.
+
+# Architecture Refactoring Plan (v2.3) - Zero Compromise Semantics
+
+Status key: Not started / In progress / Done.
+
+## Phase 1: Semantic Functions
+- [x] Create `Function` interface in `semantic` (Type 0, 2, 3, 4).
+- [x] Implement `SampledFunction` (Type 0).
+- [x] Implement `ExponentialFunction` (Type 2).
+- [x] Implement `StitchingFunction` (Type 3).
+- [x] Implement `PostScriptFunction` (Type 4).
+- [x] Update `Shading`, `ColorSpace`, and `ExtGState` to use `Function` instead of `[]byte`.
+- [x] Update `writer` to serialize semantic functions.
+
+## Phase 2: Polymorphic Patterns
+- [x] Refactor `Pattern` struct to an interface.
+- [x] Implement `TilingPattern` (Type 1).
+- [x] Implement `ShadingPattern` (Type 2).
+- [x] Update `Resources` to use `Pattern` interface.
+- [x] Update `writer` to serialize polymorphic patterns.
+
+## Phase 3: Advanced Fonts & Optional Content
+- [x] Enhance `Font` model to support Type 3 specific fields (`CharProcs`, `FontMatrix`, `Resources`).
+- [x] Implement `OptionalContentGroup` (OCG) and `OptionalContentMembership` (OCMD).
+- [x] Update `Resources` to map `Properties` to semantic OCGs.

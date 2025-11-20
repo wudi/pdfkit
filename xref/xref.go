@@ -275,7 +275,7 @@ func (m *mergedTable) maxObjectNumber() int {
 
 func parseSection(ctx context.Context, r io.ReaderAt, offset int64, cfg ResolverConfig) (Table, *raw.DictObj, int64, error) {
 	s := scanner.New(r, scanner.Config{Recovery: cfg.Recovery})
-	if err := s.Seek(offset); err != nil {
+	if err := s.SeekTo(offset); err != nil {
 		return nil, nil, 0, err
 	}
 	tok, err := s.Next()
@@ -352,7 +352,7 @@ func parseXRefStream(ctx context.Context, r io.ReaderAt, offset int64, cfg Resol
 		return nil, nil, 0, errors.New("xref stream offset out of range")
 	}
 	s := scanner.New(r, scanner.Config{Recovery: cfg.Recovery})
-	if err := s.Seek(offset); err != nil {
+	if err := s.SeekTo(offset); err != nil {
 		return nil, nil, 0, err
 	}
 	// Expect "<obj> <gen> obj"

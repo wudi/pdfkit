@@ -70,4 +70,4 @@ func (w *streamAware) Next() (scanner.Token, error) {
 
 // Position proxies underlying scanner position.
 func (w *streamAware) Position() int64         { return w.s.Position() }
-func (w *streamAware) Seek(offset int64) error { return w.s.Seek(offset) }
+func (w *streamAware) SeekTo(offset int64) error { return w.s.SeekTo(offset) }

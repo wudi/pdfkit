@@ -366,6 +366,22 @@ func fontKey(base, encoding, subtype string, font *semantic.Font) string {
 				}
 			}
 		}
+		if subtype == "Type3" {
+			h.Write([]byte(fmt.Sprintf("%v", font.FontMatrix)))
+			h.Write([]byte(fmt.Sprintf("%v", font.FontBBox)))
+			keys := make([]string, 0, len(font.CharProcs))
+			for k := range font.CharProcs {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				h.Write([]byte(k))
+				h.Write(font.CharProcs[k])
+			}
+			if font.Resources != nil {
+				h.Write([]byte(fmt.Sprintf("%p", font.Resources)))
+			}
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -392,9 +408,21 @@ func xoKey(name string, xo semantic.XObject) string {
 func patternKey(name string, p semantic.Pattern) string {
 	h := sha256.New()
 	h.Write([]byte(name))
-	h.Write([]byte(fmt.Sprintf("%d-%d-%d", p.PatternType, p.PaintType, p.TilingType)))
-	h.Write([]byte(fmt.Sprintf("%f-%f-%f-%f-%f-%f", p.BBox.LLX, p.BBox.LLY, p.BBox.URX, p.BBox.URY, p.XStep, p.YStep)))
-	h.Write(p.Content)
+	h.Write([]byte(fmt.Sprintf("%d", p.PatternType())))
+
+	switch pat := p.(type) {
+	case *semantic.TilingPattern:
+		h.Write([]byte(fmt.Sprintf("-%d-%d", pat.PaintType, pat.TilingType)))
+		h.Write([]byte(fmt.Sprintf("%f-%f-%f-%f-%f-%f", pat.BBox.LLX, pat.BBox.LLY, pat.BBox.URX, pat.BBox.URY, pat.XStep, pat.YStep)))
+		h.Write(pat.Content)
+	case *semantic.ShadingPattern:
+		if pat.Shading != nil {
+			h.Write([]byte(shadingKey(name+":Shading", pat.Shading)))
+		}
+		if pat.ExtGState != nil {
+			h.Write([]byte("ExtGState"))
+		}
+	}
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -415,14 +443,21 @@ func shadingKey(name string, s semantic.Shading) string {
 		for _, d := range sh.Domain {
 			h.Write([]byte(fmt.Sprintf("%f", d)))
 		}
-		h.Write(sh.Function)
+		if len(sh.Function) > 0 {
+			for _, f := range sh.Function {
+				h.Write([]byte(fmt.Sprintf("%d", f.FunctionType())))
+				// Ideally we should hash the function content too, but for now type is better than crashing
+			}
+		}
 	case *semantic.MeshShading:
 		h.Write([]byte(fmt.Sprintf("%d-%d-%d", sh.BitsPerCoordinate, sh.BitsPerComponent, sh.BitsPerFlag)))
 		for _, d := range sh.Decode {
 			h.Write([]byte(fmt.Sprintf("%f", d)))
 		}
 		h.Write(sh.Stream)
-		h.Write(sh.Function)
+		if sh.Function != nil {
+			h.Write([]byte(fmt.Sprintf("%d", sh.Function.FunctionType())))
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

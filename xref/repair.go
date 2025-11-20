@@ -68,7 +68,7 @@ func repair(ctx context.Context, r io.ReaderAt, size int64) (Table, error) {
 
 				// Mismatch, but tokGen could be the start of an object.
 				// Backtrack to tokGen to ensure we don't miss "1 2 0 obj" where we parsed "1 2 ..."
-				if err := s.Seek(tokGen.Pos); err != nil {
+				if err := s.SeekTo(tokGen.Pos); err != nil {
 					return nil, err
 				}
 				continue

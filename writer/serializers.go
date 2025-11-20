@@ -587,10 +587,12 @@ func (s *defaultActionSerializer) Serialize(a semantic.Action, ctx Serialization
 	return d
 }
 
-type defaultColorSpaceSerializer struct{}
+type defaultColorSpaceSerializer struct {
+	funcSerializer FunctionSerializer
+}
 
-func newColorSpaceSerializer() ColorSpaceSerializer {
-	return &defaultColorSpaceSerializer{}
+func newColorSpaceSerializer(fs FunctionSerializer) ColorSpaceSerializer {
+	return &defaultColorSpaceSerializer{funcSerializer: fs}
 }
 
 func (s *defaultColorSpaceSerializer) Serialize(cs semantic.ColorSpace, ctx SerializationContext) raw.Object {
@@ -632,14 +634,8 @@ func (s *defaultColorSpaceSerializer) Serialize(cs semantic.ColorSpace, ctx Seri
 			arr.Append(raw.NameLiteral("DeviceGray"))
 		}
 		// TintTransform function
-		if len(t.TintTransform) > 0 {
-			ref := ctx.NextRef()
-			dict := raw.Dict()
-			dict.Set(raw.NameLiteral("FunctionType"), raw.NumberInt(4)) // PostScript calculator
-			dict.Set(raw.NameLiteral("Domain"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
-			dict.Set(raw.NameLiteral("Range"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
-			dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(t.TintTransform))))
-			ctx.AddObject(ref, raw.NewStream(dict, t.TintTransform))
+		if t.TintTransform != nil {
+			ref := s.funcSerializer.Serialize(t.TintTransform, ctx)
 			arr.Append(raw.Ref(ref.Num, ref.Gen))
 		}
 		return arr
@@ -656,14 +652,8 @@ func (s *defaultColorSpaceSerializer) Serialize(cs semantic.ColorSpace, ctx Seri
 		} else {
 			arr.Append(raw.NameLiteral("DeviceCMYK"))
 		}
-		if len(t.TintTransform) > 0 {
-			ref := ctx.NextRef()
-			dict := raw.Dict()
-			dict.Set(raw.NameLiteral("FunctionType"), raw.NumberInt(4))
-			dict.Set(raw.NameLiteral("Domain"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
-			dict.Set(raw.NameLiteral("Range"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
-			dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(t.TintTransform))))
-			ctx.AddObject(ref, raw.NewStream(dict, t.TintTransform))
+		if t.TintTransform != nil {
+			ref := s.funcSerializer.Serialize(t.TintTransform, ctx)
 			arr.Append(raw.Ref(ref.Num, ref.Gen))
 		}
 		if t.Attributes != nil {

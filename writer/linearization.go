@@ -619,7 +619,7 @@ func (l *linearizer) extractRefs(obj raw.Object) []raw.ObjectRef {
 
 func (w *impl) writeLinearized(ctx Context, doc *semantic.Document, out WriterAt, cfg Config) error {
 	// 1. Build objects
-	builder := newObjectBuilder(doc, cfg, 1, w.annotSerializer, w.actionSerializer, w.csSerializer)
+	builder := newObjectBuilder(doc, cfg, 1, w.annotSerializer, w.actionSerializer, w.csSerializer, w.funcSerializer)
 	objects, catalogRef, infoRef, encryptRef, err := builder.Build()
 	if err != nil {
 		return err

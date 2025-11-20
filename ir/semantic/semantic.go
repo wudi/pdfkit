@@ -120,13 +120,14 @@ type Resources struct {
 	XObjects    map[string]XObject
 	Patterns    map[string]Pattern
 	Shadings    map[string]Shading
+	Properties  map[string]PropertyList
 	OriginalRef raw.ObjectRef
 	Dirty       bool
 }
 
 // Font represents a font resource.
 type Font struct {
-	Subtype        string // Type1 (default), TrueType, Type0
+	Subtype        string // Type1 (default), TrueType, Type0, Type3
 	BaseFont       string
 	Encoding       string
 	Widths         map[int]int // character code -> width
@@ -134,9 +135,15 @@ type Font struct {
 	CIDSystemInfo  *CIDSystemInfo
 	DescendantFont *CIDFont
 	Descriptor     *FontDescriptor
-	ref            raw.ObjectRef
-	OriginalRef    raw.ObjectRef
-	Dirty          bool
+	// Type 3 specific fields
+	CharProcs  map[string][]byte
+	FontMatrix []float64
+	Resources  *Resources
+	FontBBox   Rectangle
+
+	ref         raw.ObjectRef
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 // ExtGState captures graphics state defaults such as transparency.
@@ -196,7 +203,7 @@ func (cs *ICCBasedColorSpace) ColorSpaceName() string { return "ICCBased" }
 type SeparationColorSpace struct {
 	Name          string
 	Alternate     ColorSpace
-	TintTransform []byte // Function stream or reference
+	TintTransform Function // Function object
 	OriginalRef   raw.ObjectRef
 	Dirty         bool
 }
@@ -207,7 +214,7 @@ func (cs *SeparationColorSpace) ColorSpaceName() string { return "Separation" }
 type DeviceNColorSpace struct {
 	Names         []string
 	Alternate     ColorSpace
-	TintTransform []byte
+	TintTransform Function // Function object
 	Attributes    *DeviceNAttributes
 	OriginalRef   raw.ObjectRef
 	Dirty         bool
@@ -239,17 +246,42 @@ type XObject struct {
 // Image is an alias for XObject for image convenience APIs.
 type Image = XObject
 
-// Pattern describes a simple tiling pattern stream.
-type Pattern struct {
-	PatternType int // defaults to 1 (tiling)
-	PaintType   int // defaults to 1 (colored)
-	TilingType  int // defaults to 1
-	BBox        Rectangle
-	XStep       float64
-	YStep       float64
-	Content     []byte
+// Pattern represents a PDF pattern.
+type Pattern interface {
+	PatternType() int
+	Reference() raw.ObjectRef
+	SetReference(raw.ObjectRef)
+}
+
+type BasePattern struct {
+	Type        int
+	Matrix      []float64 // Optional transformation matrix
+	Ref         raw.ObjectRef
 	OriginalRef raw.ObjectRef
 	Dirty       bool
+}
+
+func (p *BasePattern) PatternType() int             { return p.Type }
+func (p *BasePattern) Reference() raw.ObjectRef     { return p.Ref }
+func (p *BasePattern) SetReference(r raw.ObjectRef) { p.Ref = r }
+
+// TilingPattern (Type 1)
+type TilingPattern struct {
+	BasePattern
+	PaintType  int // 1 = Colored, 2 = Uncolored
+	TilingType int // 1 = Constant, 2 = No Distortion, 3 = Constant Spacing
+	BBox       Rectangle
+	XStep      float64
+	YStep      float64
+	Resources  *Resources
+	Content    []byte
+}
+
+// ShadingPattern (Type 2)
+type ShadingPattern struct {
+	BasePattern
+	Shading   Shading
+	ExtGState *ExtGState
 }
 
 // Shading is the interface for all shading types.
@@ -281,7 +313,7 @@ type FunctionShading struct {
 	BaseShading
 	Coords   []float64
 	Domain   []float64
-	Function []byte // Function object or stream
+	Function []Function // Function object or array of functions
 	Extend   []bool
 }
 
@@ -292,8 +324,8 @@ type MeshShading struct {
 	BitsPerComponent  int
 	BitsPerFlag       int
 	Decode            []float64
-	Function          []byte // Optional function for Type 4, 5, 6
-	Stream            []byte // The mesh data stream
+	Function          Function // Optional function for Type 4, 5, 6
+	Stream            []byte   // The mesh data stream
 }
 
 // Rectangle represents a PDF rectangle.
@@ -838,4 +870,141 @@ type SigTransformParams struct {
 // Builder produces a Semantic document from Decoded IR.
 type Builder interface {
 	Build(ctx context.Context, dec *decoded.DecodedDocument) (*Document, error)
+}
+
+// Function represents a PDF function.
+type Function interface {
+	FunctionType() int
+	FunctionDomain() []float64
+	FunctionRange() []float64
+	Reference() raw.ObjectRef
+	SetReference(raw.ObjectRef)
+}
+
+type BaseFunction struct {
+	Type        int
+	Domain      []float64
+	Range       []float64
+	Ref         raw.ObjectRef
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (f *BaseFunction) FunctionType() int            { return f.Type }
+func (f *BaseFunction) FunctionDomain() []float64    { return f.Domain }
+func (f *BaseFunction) FunctionRange() []float64     { return f.Range }
+func (f *BaseFunction) Reference() raw.ObjectRef     { return f.Ref }
+func (f *BaseFunction) SetReference(r raw.ObjectRef) { f.Ref = r }
+
+// SampledFunction (Type 0)
+type SampledFunction struct {
+	BaseFunction
+	Size          []int
+	BitsPerSample int
+	Order         int // Default 1
+	Encode        []float64
+	Decode        []float64
+	Samples       []byte
+}
+
+// ExponentialFunction (Type 2)
+type ExponentialFunction struct {
+	BaseFunction
+	C0 []float64
+	C1 []float64
+	N  float64
+}
+
+// StitchingFunction (Type 3)
+type StitchingFunction struct {
+	BaseFunction
+	Functions []Function
+	Bounds    []float64
+	Encode    []float64
+}
+
+// PostScriptFunction (Type 4)
+type PostScriptFunction struct {
+	BaseFunction
+	Code []byte
+}
+
+// PropertyList is a marker interface for objects that can be in the Properties resource dictionary.
+type PropertyList interface {
+	PropertyListType() string
+	Reference() raw.ObjectRef
+	SetReference(raw.ObjectRef)
+}
+
+type BasePropertyList struct {
+	Ref         raw.ObjectRef
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (p *BasePropertyList) Reference() raw.ObjectRef     { return p.Ref }
+func (p *BasePropertyList) SetReference(r raw.ObjectRef) { p.Ref = r }
+
+// OptionalContentGroup (OCG)
+type OptionalContentGroup struct {
+	BasePropertyList
+	Name   string
+	Intent []string // e.g. /View, /Design
+	Usage  *OCUsage
+}
+
+func (g *OptionalContentGroup) PropertyListType() string { return "OCG" }
+
+// OptionalContentMembership (OCMD)
+type OptionalContentMembership struct {
+	BasePropertyList
+	OCGs   []*OptionalContentGroup
+	Policy string // /AllOn, /AnyOn, /AnyOff, /AllOff
+}
+
+func (m *OptionalContentMembership) PropertyListType() string { return "OCMD" }
+
+// OCUsage describes usage application dictionaries for OCGs.
+type OCUsage struct {
+	CreatorInfo *OCCreatorInfo
+	Language    *OCLanguage
+	Export      *OCExport
+	Zoom        *OCZoom
+	Print       *OCPrint
+	View        *OCView
+	User        *OCUser
+}
+
+type OCCreatorInfo struct {
+	Creator string
+	Subtype string
+}
+
+type OCLanguage struct {
+	Lang      string
+	Preferred bool
+}
+
+type OCExport struct {
+	ExportState bool // /ON or /OFF
+}
+
+type OCZoom struct {
+	Min float64
+	Max float64 // 0 means infinity
+}
+
+type OCPrint struct {
+	Subtype    string // /Print
+	PrintState bool   // /ON or /OFF
+}
+
+type OCView struct {
+	ViewState bool // /ON or /OFF
+}
+
+type OCUser struct {
+	Type string // /User
+	Name string
+	User []string
 }

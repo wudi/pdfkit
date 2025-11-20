@@ -1257,8 +1257,8 @@ func TestWriter_PatternResources(t *testing.T) {
 				MediaBox: semantic.Rectangle{URX: 10, URY: 10},
 				Resources: &semantic.Resources{
 					Patterns: map[string]semantic.Pattern{
-						"P1": {
-							PatternType: 1,
+						"P1": &semantic.TilingPattern{
+							BasePattern: semantic.BasePattern{Type: 1},
 							PaintType:   1,
 							TilingType:  1,
 							BBox:        semantic.Rectangle{LLX: 0, LLY: 0, URX: 2, URY: 2},
@@ -2810,12 +2810,12 @@ func TestWriter_AdvancedColorAndShading(t *testing.T) {
 						"CS_Sep": &semantic.SeparationColorSpace{
 							Name:          "PantoneOrange",
 							Alternate:     &semantic.DeviceColorSpace{Name: "DeviceCMYK"},
-							TintTransform: []byte("...function..."),
+							TintTransform: &semantic.PostScriptFunction{Code: []byte("...function...")},
 						},
 						"CS_DevN": &semantic.DeviceNColorSpace{
 							Names:         []string{"Orange", "Green"},
 							Alternate:     &semantic.DeviceColorSpace{Name: "DeviceCMYK"},
-							TintTransform: []byte("...function..."),
+							TintTransform: &semantic.PostScriptFunction{Code: []byte("...function...")},
 							Attributes:    &semantic.DeviceNAttributes{Subtype: "DeviceN"},
 						},
 					},

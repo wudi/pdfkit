@@ -124,7 +124,7 @@ func TestRemainingAnnotationsSerialization(t *testing.T) {
 		},
 	}
 
-	builder := newObjectBuilder(doc, Config{}, 1, nil, nil, nil)
+	builder := newObjectBuilder(doc, Config{}, 1, nil, nil, nil, nil)
 	objects, _, _, _, err := builder.Build()
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)

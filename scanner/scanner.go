@@ -62,7 +62,7 @@ func (t Token) Value() interface{} {
 type Scanner interface {
 	Next() (Token, error)
 	Position() int64
-	Seek(offset int64) error
+	SeekTo(offset int64) error
 	SetNextStreamLength(n int64)
 }
 
@@ -129,7 +129,7 @@ func New(r ReaderAt, cfg Config) Scanner {
 }
 
 func (s *pdfScanner) Position() int64 { return s.pos }
-func (s *pdfScanner) Seek(offset int64) error {
+func (s *pdfScanner) SeekTo(offset int64) error {
 	if offset < 0 {
 		return errors.New("seek out of range")
 	}

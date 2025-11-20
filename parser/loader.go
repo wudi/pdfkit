@@ -152,7 +152,7 @@ func (o *objectLoader) loadAtOffset(objNum int, offset int64, gen int) (raw.Obje
 		o.scanner = scanner.New(o.reader, cfg)
 	}
 	s := o.scanner
-	if err := s.Seek(offset); err != nil {
+	if err := s.SeekTo(offset); err != nil {
 		return nil, err
 	}
 	tr := newTokenReader(s)

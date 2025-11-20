@@ -61,6 +61,7 @@ type WriterBuilder struct {
 	annotSerializer  AnnotationSerializer
 	actionSerializer ActionSerializer
 	csSerializer     ColorSpaceSerializer
+	funcSerializer   FunctionSerializer
 }
 
 func (b *WriterBuilder) WithInterceptor(i Interceptor) *WriterBuilder {
@@ -83,12 +84,18 @@ func (b *WriterBuilder) WithColorSpaceSerializer(s ColorSpaceSerializer) *Writer
 	return b
 }
 
+func (b *WriterBuilder) WithFunctionSerializer(s FunctionSerializer) *WriterBuilder {
+	b.funcSerializer = s
+	return b
+}
+
 func (b *WriterBuilder) Build() Writer {
 	return &impl{
 		interceptors:     b.interceptors,
 		annotSerializer:  b.annotSerializer,
 		actionSerializer: b.actionSerializer,
 		csSerializer:     b.csSerializer,
+		funcSerializer:   b.funcSerializer,
 	}
 }
 

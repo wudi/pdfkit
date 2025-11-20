@@ -25,9 +25,10 @@ type objectBuilder struct {
 	annotSerializer  AnnotationSerializer
 	actionSerializer ActionSerializer
 	csSerializer     ColorSpaceSerializer
+	funcSerializer   FunctionSerializer
 }
 
-func newObjectBuilder(doc *semantic.Document, cfg Config, startObjNum int, as AnnotationSerializer, actS ActionSerializer, csS ColorSpaceSerializer) *objectBuilder {
+func newObjectBuilder(doc *semantic.Document, cfg Config, startObjNum int, as AnnotationSerializer, actS ActionSerializer, csS ColorSpaceSerializer, fs FunctionSerializer) *objectBuilder {
 	b := &objectBuilder{
 		doc:         doc,
 		cfg:         cfg,
@@ -48,10 +49,15 @@ func newObjectBuilder(doc *semantic.Document, cfg Config, startObjNum int, as An
 	} else {
 		b.annotSerializer = newAnnotationSerializer(b.actionSerializer)
 	}
+	if fs != nil {
+		b.funcSerializer = fs
+	} else {
+		b.funcSerializer = newFunctionSerializer()
+	}
 	if csS != nil {
 		b.csSerializer = csS
 	} else {
-		b.csSerializer = newColorSpaceSerializer()
+		b.csSerializer = newColorSpaceSerializer(b.funcSerializer)
 	}
 	return b
 }
@@ -283,6 +289,7 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 	unionXObjects := raw.Dict()
 	unionPatterns := raw.Dict()
 	unionShadings := raw.Dict()
+	unionProperties := raw.Dict()
 	procEntries := map[string]bool{"PDF": true, "Text": true}
 	procSet := raw.NewArray(raw.NameLiteral("PDF"), raw.NameLiteral("Text"))
 	addProc := func(name string) {
@@ -480,6 +487,19 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 				resDict.Set(raw.NameLiteral("Shading"), shDict)
 			}
 		}
+		if p.Resources != nil && len(p.Resources.Properties) > 0 {
+			propDict := raw.Dict()
+			for name, prop := range p.Resources.Properties {
+				ref := b.ensurePropertyList(name, prop)
+				propDict.Set(raw.NameLiteral(name), raw.Ref(ref.Num, ref.Gen))
+				if _, ok := unionProperties.KV[name]; !ok {
+					unionProperties.Set(raw.NameLiteral(name), raw.Ref(ref.Num, ref.Gen))
+				}
+			}
+			if propDict.Len() > 0 {
+				resDict.Set(raw.NameLiteral("Properties"), propDict)
+			}
+		}
 		if procSet.Len() > 0 {
 			resDict.Set(raw.NameLiteral("ProcSet"), procSet)
 		}
@@ -538,6 +558,9 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 		}
 		if unionShadings.Len() > 0 {
 			pagesRes.Set(raw.NameLiteral("Shading"), unionShadings)
+		}
+		if unionProperties.Len() > 0 {
+			pagesRes.Set(raw.NameLiteral("Properties"), unionProperties)
 		}
 		if procSet.Len() > 0 {
 			pagesRes.Set(raw.NameLiteral("ProcSet"), procSet)
@@ -912,6 +935,42 @@ func (b *objectBuilder) ensureFont(font *semantic.Font) raw.ObjectRef {
 		if uref := b.addToUnicode(font); uref != nil {
 			fontDict.Set(raw.NameLiteral("ToUnicode"), raw.Ref(uref.Num, uref.Gen))
 		}
+	} else if subtype == "Type3" {
+		if len(font.FontMatrix) > 0 {
+			arr := raw.NewArray()
+			for _, v := range font.FontMatrix {
+				arr.Append(raw.NumberFloat(v))
+			}
+			fontDict.Set(raw.NameLiteral("FontMatrix"), arr)
+		}
+		if len(font.CharProcs) > 0 {
+			cpDict := raw.Dict()
+			for name, stream := range font.CharProcs {
+				sDict := raw.Dict()
+				sDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(stream))))
+				sRef := b.nextRef()
+				b.objects[sRef] = raw.NewStream(sDict, stream)
+				cpDict.Set(raw.NameLiteral(name), raw.Ref(sRef.Num, sRef.Gen))
+			}
+			fontDict.Set(raw.NameLiteral("CharProcs"), cpDict)
+		}
+		if cropSet(font.FontBBox) {
+			fontDict.Set(raw.NameLiteral("FontBBox"), rectArray(font.FontBBox))
+		}
+		if font.Resources != nil {
+			if resDict := b.serializeResources(font.Resources); resDict != nil {
+				fontDict.Set(raw.NameLiteral("Resources"), resDict)
+			}
+		}
+		if len(font.Widths) > 0 {
+			first, last, widthsArr := encodeWidths(font.Widths)
+			fontDict.Set(raw.NameLiteral("FirstChar"), raw.NumberInt(int64(first)))
+			fontDict.Set(raw.NameLiteral("LastChar"), raw.NumberInt(int64(last)))
+			fontDict.Set(raw.NameLiteral("Widths"), widthsArr)
+		}
+		if encoding != "" {
+			fontDict.Set(raw.NameLiteral("Encoding"), raw.NameLiteral(encoding))
+		}
 	} else {
 		if encoding != "" {
 			fontDict.Set(raw.NameLiteral("Encoding"), raw.NameLiteral(encoding))
@@ -996,33 +1055,45 @@ func (b *objectBuilder) ensurePattern(name string, p semantic.Pattern) raw.Objec
 	ref := b.nextRef()
 	dict := raw.Dict()
 	dict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Pattern"))
-	pt := p.PatternType
+	pt := p.PatternType()
 	if pt == 0 {
 		pt = 1
 	}
 	dict.Set(raw.NameLiteral("PatternType"), raw.NumberInt(int64(pt)))
-	paint := p.PaintType
-	if paint == 0 {
-		paint = 1
+
+	switch pat := p.(type) {
+	case *semantic.TilingPattern:
+		paint := pat.PaintType
+		if paint == 0 {
+			paint = 1
+		}
+		dict.Set(raw.NameLiteral("PaintType"), raw.NumberInt(int64(paint)))
+		tiling := pat.TilingType
+		if tiling == 0 {
+			tiling = 1
+		}
+		dict.Set(raw.NameLiteral("TilingType"), raw.NumberInt(int64(tiling)))
+		if cropSet(pat.BBox) {
+			dict.Set(raw.NameLiteral("BBox"), rectArray(pat.BBox))
+		}
+		if pat.XStep > 0 {
+			dict.Set(raw.NameLiteral("XStep"), raw.NumberFloat(pat.XStep))
+		}
+		if pat.YStep > 0 {
+			dict.Set(raw.NameLiteral("YStep"), raw.NumberFloat(pat.YStep))
+		}
+		content := pat.Content
+		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(content))))
+		b.objects[ref] = raw.NewStream(dict, content)
+
+	case *semantic.ShadingPattern:
+		if pat.Shading != nil {
+			shRef := b.ensureShading(name+":Shading", pat.Shading)
+			dict.Set(raw.NameLiteral("Shading"), raw.Ref(shRef.Num, shRef.Gen))
+		}
+		b.objects[ref] = dict
 	}
-	dict.Set(raw.NameLiteral("PaintType"), raw.NumberInt(int64(paint)))
-	tiling := p.TilingType
-	if tiling == 0 {
-		tiling = 1
-	}
-	dict.Set(raw.NameLiteral("TilingType"), raw.NumberInt(int64(tiling)))
-	if cropSet(p.BBox) {
-		dict.Set(raw.NameLiteral("BBox"), rectArray(p.BBox))
-	}
-	if p.XStep > 0 {
-		dict.Set(raw.NameLiteral("XStep"), raw.NumberFloat(p.XStep))
-	}
-	if p.YStep > 0 {
-		dict.Set(raw.NameLiteral("YStep"), raw.NumberFloat(p.YStep))
-	}
-	content := p.Content
-	dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(content))))
-	b.objects[ref] = raw.NewStream(dict, content)
+
 	b.patternRefs[key] = ref
 	return ref
 }
@@ -1065,14 +1136,17 @@ func (b *objectBuilder) ensureShading(name string, s semantic.Shading) raw.Objec
 			dict.Set(raw.NameLiteral("Extend"), arr)
 		}
 		if len(sh.Function) > 0 {
-			fRef := b.nextRef()
-			fDict := raw.Dict()
-			fDict.Set(raw.NameLiteral("FunctionType"), raw.NumberInt(4)) // Default to PostScript
-			fDict.Set(raw.NameLiteral("Domain"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
-			fDict.Set(raw.NameLiteral("Range"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
-			fDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(sh.Function))))
-			b.objects[fRef] = raw.NewStream(fDict, sh.Function)
-			dict.Set(raw.NameLiteral("Function"), raw.Ref(fRef.Num, fRef.Gen))
+			if len(sh.Function) == 1 {
+				fRef := b.funcSerializer.Serialize(sh.Function[0], b)
+				dict.Set(raw.NameLiteral("Function"), raw.Ref(fRef.Num, fRef.Gen))
+			} else {
+				arr := raw.NewArray()
+				for _, f := range sh.Function {
+					fRef := b.funcSerializer.Serialize(f, b)
+					arr.Append(raw.Ref(fRef.Num, fRef.Gen))
+				}
+				dict.Set(raw.NameLiteral("Function"), arr)
+			}
 		}
 		b.objects[ref] = dict
 
@@ -1087,14 +1161,8 @@ func (b *objectBuilder) ensureShading(name string, s semantic.Shading) raw.Objec
 			}
 			dict.Set(raw.NameLiteral("Decode"), arr)
 		}
-		if len(sh.Function) > 0 {
-			fRef := b.nextRef()
-			fDict := raw.Dict()
-			fDict.Set(raw.NameLiteral("FunctionType"), raw.NumberInt(4))
-			fDict.Set(raw.NameLiteral("Domain"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
-			fDict.Set(raw.NameLiteral("Range"), raw.NewArray(raw.NumberFloat(0), raw.NumberFloat(1)))
-			fDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(sh.Function))))
-			b.objects[fRef] = raw.NewStream(fDict, sh.Function)
+		if sh.Function != nil {
+			fRef := b.funcSerializer.Serialize(sh.Function, b)
 			dict.Set(raw.NameLiteral("Function"), raw.Ref(fRef.Num, fRef.Gen))
 		}
 		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(sh.Stream))))
@@ -1140,4 +1208,165 @@ func (b *objectBuilder) buildOutlines(items []semantic.OutlineItem, parent raw.O
 	first = refs[0]
 	last = refs[len(refs)-1]
 	return first, last, count
+}
+
+func (b *objectBuilder) serializeResources(res *semantic.Resources) raw.Dictionary {
+	if res == nil {
+		return nil
+	}
+	resDict := raw.Dict()
+
+	if len(res.Fonts) > 0 {
+		d := raw.Dict()
+		for name, font := range res.Fonts {
+			ref := b.ensureFont(font)
+			d.Set(raw.NameLiteral(name), raw.Ref(ref.Num, ref.Gen))
+		}
+		resDict.Set(raw.NameLiteral("Font"), d)
+	}
+	if len(res.XObjects) > 0 {
+		d := raw.Dict()
+		for name, xo := range res.XObjects {
+			ref := b.ensureXObject(name, xo)
+			d.Set(raw.NameLiteral(name), raw.Ref(ref.Num, ref.Gen))
+		}
+		resDict.Set(raw.NameLiteral("XObject"), d)
+	}
+	if len(res.ExtGStates) > 0 {
+		d := raw.Dict()
+		// ExtGState serialization is currently inline in Build. 
+		// We should probably refactor ensureExtGState but for now let's duplicate or leave it?
+		// The logic in Build is complex (unions).
+		// For Type 3 / Patterns, we just need to serialize them.
+		// Let's implement a simple inline serialization here matching Build's logic but without unions.
+		for name, gs := range res.ExtGStates {
+			entry := raw.Dict()
+			if gs.LineWidth != nil {
+				entry.Set(raw.NameLiteral("LW"), raw.NumberFloat(*gs.LineWidth))
+			}
+			if gs.StrokeAlpha != nil {
+				entry.Set(raw.NameLiteral("CA"), raw.NumberFloat(*gs.StrokeAlpha))
+			}
+			if gs.FillAlpha != nil {
+				entry.Set(raw.NameLiteral("ca"), raw.NumberFloat(*gs.FillAlpha))
+			}
+			if gs.BlendMode != "" {
+				entry.Set(raw.NameLiteral("BM"), raw.NameLiteral(gs.BlendMode))
+			}
+			if gs.AlphaSource != nil {
+				entry.Set(raw.NameLiteral("AIS"), raw.Bool(*gs.AlphaSource))
+			}
+			if gs.TextKnockout != nil {
+				entry.Set(raw.NameLiteral("TK"), raw.Bool(*gs.TextKnockout))
+			}
+			if gs.Overprint != nil {
+				entry.Set(raw.NameLiteral("OP"), raw.Bool(*gs.Overprint))
+			}
+			if gs.OverprintFill != nil {
+				entry.Set(raw.NameLiteral("op"), raw.Bool(*gs.OverprintFill))
+			}
+			if gs.OverprintMode != nil {
+				entry.Set(raw.NameLiteral("OPM"), raw.NumberInt(int64(*gs.OverprintMode)))
+			}
+			if gs.SoftMask != nil {
+				smDict := raw.Dict()
+				smDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Mask"))
+				smDict.Set(raw.NameLiteral("S"), raw.NameLiteral(gs.SoftMask.Subtype))
+				if gs.SoftMask.Group != nil {
+					gRef := b.ensureXObject("SMaskGroup", *gs.SoftMask.Group)
+					smDict.Set(raw.NameLiteral("G"), raw.Ref(gRef.Num, gRef.Gen))
+				}
+				if len(gs.SoftMask.BackdropColor) > 0 {
+					bc := raw.NewArray()
+					for _, c := range gs.SoftMask.BackdropColor {
+						bc.Append(raw.NumberFloat(c))
+					}
+					smDict.Set(raw.NameLiteral("BC"), bc)
+				}
+				if gs.SoftMask.Transfer != "" {
+					smDict.Set(raw.NameLiteral("TR"), raw.NameLiteral(gs.SoftMask.Transfer))
+				}
+				entry.Set(raw.NameLiteral("SMask"), smDict)
+			}
+			d.Set(raw.NameLiteral(name), entry)
+		}
+		resDict.Set(raw.NameLiteral("ExtGState"), d)
+	}
+	if len(res.ColorSpaces) > 0 {
+		d := raw.Dict()
+		for name, cs := range res.ColorSpaces {
+			obj := b.csSerializer.Serialize(cs, b)
+			d.Set(raw.NameLiteral(name), obj)
+		}
+		resDict.Set(raw.NameLiteral("ColorSpace"), d)
+	}
+	if len(res.Patterns) > 0 {
+		d := raw.Dict()
+		for name, pat := range res.Patterns {
+			ref := b.ensurePattern(name, pat)
+			d.Set(raw.NameLiteral(name), raw.Ref(ref.Num, ref.Gen))
+		}
+		resDict.Set(raw.NameLiteral("Pattern"), d)
+	}
+	if len(res.Shadings) > 0 {
+		d := raw.Dict()
+		for name, sh := range res.Shadings {
+			ref := b.ensureShading(name, sh)
+			d.Set(raw.NameLiteral(name), raw.Ref(ref.Num, ref.Gen))
+		}
+		resDict.Set(raw.NameLiteral("Shading"), d)
+	}
+	if len(res.Properties) > 0 {
+		d := raw.Dict()
+		for name, prop := range res.Properties {
+			ref := b.ensurePropertyList(name, prop)
+			d.Set(raw.NameLiteral(name), raw.Ref(ref.Num, ref.Gen))
+		}
+		resDict.Set(raw.NameLiteral("Properties"), d)
+	}
+
+	return resDict
+}
+
+func (b *objectBuilder) ensurePropertyList(name string, pl semantic.PropertyList) raw.ObjectRef {
+	ref := b.nextRef()
+	dict := raw.Dict()
+
+	switch p := pl.(type) {
+	case *semantic.OptionalContentGroup:
+		dict.Set(raw.NameLiteral("Type"), raw.NameLiteral("OCG"))
+		dict.Set(raw.NameLiteral("Name"), raw.Str([]byte(p.Name)))
+		if len(p.Intent) > 0 {
+			if len(p.Intent) == 1 {
+				dict.Set(raw.NameLiteral("Intent"), raw.NameLiteral(p.Intent[0]))
+			} else {
+				arr := raw.NewArray()
+				for _, i := range p.Intent {
+					arr.Append(raw.NameLiteral(i))
+				}
+				dict.Set(raw.NameLiteral("Intent"), arr)
+			}
+		}
+		// Usage serialization skipped for now
+	case *semantic.OptionalContentMembership:
+		dict.Set(raw.NameLiteral("Type"), raw.NameLiteral("OCMD"))
+		if len(p.OCGs) > 0 {
+			if len(p.OCGs) == 1 {
+				gRef := b.ensurePropertyList("", p.OCGs[0])
+				dict.Set(raw.NameLiteral("OCGs"), raw.Ref(gRef.Num, gRef.Gen))
+			} else {
+				arr := raw.NewArray()
+				for _, g := range p.OCGs {
+					gRef := b.ensurePropertyList("", g)
+					arr.Append(raw.Ref(gRef.Num, gRef.Gen))
+				}
+				dict.Set(raw.NameLiteral("OCGs"), arr)
+			}
+		}
+		if p.Policy != "" {
+			dict.Set(raw.NameLiteral("P"), raw.NameLiteral(p.Policy))
+		}
+	}
+	b.objects[ref] = dict
+	return ref
 }
