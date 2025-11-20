@@ -437,6 +437,63 @@ type GoToAction struct {
 
 func (a GoToAction) ActionType() string { return "GoTo" }
 
+// JavaScriptAction represents a JavaScript action.
+type JavaScriptAction struct {
+	JS          string
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (a JavaScriptAction) ActionType() string { return "JavaScript" }
+
+// NamedAction represents a named action (e.g., NextPage, PrevPage).
+type NamedAction struct {
+	Name        string
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (a NamedAction) ActionType() string { return "Named" }
+
+// LaunchAction represents a launch action (launching an application or opening a file).
+type LaunchAction struct {
+	File        string
+	NewWindow   *bool
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (a LaunchAction) ActionType() string { return "Launch" }
+
+// SubmitFormAction represents a submit-form action.
+type SubmitFormAction struct {
+	URL         string
+	Flags       int
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (a SubmitFormAction) ActionType() string { return "SubmitForm" }
+
+// ResetFormAction represents a reset-form action.
+type ResetFormAction struct {
+	Fields      []string // List of field names to reset (or exclude)
+	Flags       int
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (a ResetFormAction) ActionType() string { return "ResetForm" }
+
+// ImportDataAction represents an import-data action.
+type ImportDataAction struct {
+	File        string
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (a ImportDataAction) ActionType() string { return "ImportData" }
+
 // OutlineItem describes a bookmark entry.
 type OutlineItem struct {
 	Title       string

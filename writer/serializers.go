@@ -247,6 +247,44 @@ func (s *defaultActionSerializer) Serialize(a semantic.Action, ctx Serialization
 		if pref := ctx.PageRef(act.PageIndex); pref != nil {
 			d.Set(raw.NameLiteral("D"), serializeDestination(act.Dest, *pref))
 		}
+	case semantic.JavaScriptAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("JavaScript"))
+		d.Set(raw.NameLiteral("JS"), raw.Str([]byte(act.JS)))
+	case semantic.NamedAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("Named"))
+		d.Set(raw.NameLiteral("N"), raw.NameLiteral(act.Name))
+	case semantic.LaunchAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("Launch"))
+		if act.File != "" {
+			d.Set(raw.NameLiteral("F"), raw.Str([]byte(act.File)))
+		}
+		if act.NewWindow != nil {
+			d.Set(raw.NameLiteral("NewWindow"), raw.Bool(*act.NewWindow))
+		}
+	case semantic.SubmitFormAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("SubmitForm"))
+		fDict := raw.Dict()
+		fDict.Set(raw.NameLiteral("FS"), raw.NameLiteral("URL"))
+		fDict.Set(raw.NameLiteral("F"), raw.Str([]byte(act.URL)))
+		d.Set(raw.NameLiteral("F"), fDict)
+		if act.Flags != 0 {
+			d.Set(raw.NameLiteral("Flags"), raw.NumberInt(int64(act.Flags)))
+		}
+	case semantic.ResetFormAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("ResetForm"))
+		if len(act.Fields) > 0 {
+			arr := raw.NewArray()
+			for _, f := range act.Fields {
+				arr.Append(raw.Str([]byte(f)))
+			}
+			d.Set(raw.NameLiteral("Fields"), arr)
+		}
+		if act.Flags != 0 {
+			d.Set(raw.NameLiteral("Flags"), raw.NumberInt(int64(act.Flags)))
+		}
+	case semantic.ImportDataAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("ImportData"))
+		d.Set(raw.NameLiteral("F"), raw.Str([]byte(act.File)))
 	}
 	return d
 }

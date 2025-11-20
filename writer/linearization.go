@@ -415,8 +415,8 @@ func (l *linearizer) generateHintStream(offsets map[int]int64, lengths map[int]i
 	bw.write(uint64(minLength), 32)
 
 	bw.write(uint64(bitsLength), 16)
-	bw.write(uint64(p1ContentOffset), 32) // Content stream offset
-	bw.write(0, 16)                       // Bits for content stream offset
+	bw.write(uint64(p1ContentOffset), 32)  // Content stream offset
+	bw.write(0, 16)                        // Bits for content stream offset
 	bw.write(uint64(minContentLength), 32) // Content stream length
 	bw.write(0, 16)                        // Bits for content stream length
 	bw.write(uint64(bitsNShared), 16)

@@ -185,10 +185,10 @@ Status key: Not started / In progress / Done.
 - [ ] Implement Other Annotations: `Stamp`, `Ink`, `Popup`, `FileAttachment`, `Sound`, `Movie`, `Screen`, `PrinterMark`, `TrapNet`, `Watermark`, `3D`, `Redact`, `Projection`. Status: Not started.
 
 ## Phase 2: Expanded Action Support
-- [ ] Implement JavaScript Action. Status: Not started.
-- [ ] Implement Named Action. Status: Not started.
-- [ ] Implement Launch Action. Status: Not started.
-- [ ] Implement SubmitForm/ResetForm/ImportData Actions. Status: Not started.
+- [x] Implement JavaScript Action. Status: Done.
+- [x] Implement Named Action. Status: Done.
+- [x] Implement Launch Action. Status: Done.
+- [x] Implement SubmitForm/ResetForm/ImportData Actions. Status: Done.
 
 ## Phase 3: Advanced Graphics
 - [ ] Implement Blend Modes. Status: Not started.
