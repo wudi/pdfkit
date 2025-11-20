@@ -1,7 +1,6 @@
 package contentstream
 
 import (
-	"fmt"
 	"math"
 
 	"pdflib/coords"

@@ -285,3 +285,22 @@ Status key: Not started / In progress / Done.
 ## Phase 5: PDF 2.0 Envelope Support
 - [x] Refactor `semantic.Document` to support `Payload` (nested document).
 - [x] Update `parser` to detect and handle "Collection" / "EncryptedPayload".
+
+## v2.5 Architecture Refactoring (Zero Compromise Completion)
+- [x] **Phase 1: Color Management System (CMS)**
+    - [x] Create `cmm` package (ICC, CxF, Transform).
+    - [x] Update `ir/semantic` for Spectral Colors.
+    - [x] Integrate `cmm` into `pdfa` and `contentstream`.
+- [ ] **Phase 2: Advanced Tagging & Accessibility**
+    - [ ] Implement PDF 2.0 Namespaces in `semantic`.
+    - [ ] Make `contentstream/editor` tag-aware (StructTree repair).
+    - [ ] Implement `RoleMap` and `ClassMap` logic.
+- [ ] **Phase 3: Geospatial & Engineering**
+    - [ ] Create `geo` package (Viewports, Measure).
+    - [ ] Update `ir/semantic` for GeoPDF support.
+- [ ] **Phase 4: Compliance Engines**
+    - [ ] Refactor `pdfa` to `compliance`.
+    - [ ] Add `pdfx`, `pdfua`, `pdfvt` sub-packages.
+- [ ] **Phase 5: Advanced Text**
+    - [ ] Implement `ReplaceText` with reshaping in `editor`.
+    - [ ] Support Vertical Writing mode.

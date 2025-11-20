@@ -227,6 +227,15 @@ type DeviceNAttributes struct {
 	Subtype string
 }
 
+// SpectrallyDefinedColorSpace represents a CxF-based color space (PDF 2.0).
+type SpectrallyDefinedColorSpace struct {
+	Data        []byte // CxF XML
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (cs *SpectrallyDefinedColorSpace) ColorSpaceName() string { return "SpectrallyDefined" }
+
 // XObject describes a referenced object (limited to simple images).
 type XObject struct {
 	Subtype string // e.g., Image, Form

@@ -1,6 +1,7 @@
 package pdfa
 
 import (
+	"pdflib/cmm"
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
 )
@@ -97,6 +98,19 @@ func (e *enforcerImpl) Validate(ctx Context, doc *semantic.Document, level Level
 			Description: "OutputIntent is required",
 			Location:    "Catalog",
 		})
+	} else {
+		// Validate OutputIntent profile
+		for _, intent := range doc.OutputIntents {
+			if intent.DestOutputProfile != nil {
+				if _, err := cmm.NewICCProfile(intent.DestOutputProfile); err != nil {
+					report.Violations = append(report.Violations, Violation{
+						Code:        "INT002",
+						Description: "Invalid OutputIntent ICC profile: " + err.Error(),
+						Location:    "OutputIntent",
+					})
+				}
+			}
+		}
 	}
 
 	// 3. Font embedding required

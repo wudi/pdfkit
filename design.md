@@ -129,6 +129,13 @@ The library provides both **high-level convenience APIs** for typical PDF tasks 
 | `recovery`       | Error recovery strategies for malformed PDFs                      |
 | `builder`        | High-level fluent API for PDF construction                        |
 | `layout`         | Layout engine for converting structured content (Markdown/HTML) to PDF |
+| `scripting`      | JavaScript execution environment and PDF DOM implementation       |
+| `contentstream/editor` | Spatial indexing (QuadTree) and content redaction/editing |
+| `security/validation` | Digital signature validation, LTV, and revocation checking |
+| `xfa`            | XML Forms Architecture parsing and layout engine                  |
+| `cmm`            | Color Management Module (ICC, CxF) [Planned v2.5]                 |
+| `geo`            | Geospatial PDF support [Planned v2.5]                             |
+| `compliance`     | Unified compliance engine (PDF/A, PDF/X, PDF/UA) [Planned v2.5]   |
 
 ### 4.2 Module Dependencies
 
@@ -1764,6 +1771,96 @@ func (a *ErrorAccumulator) HasErrors() bool {
     a.mu.Lock()
     defer a.mu.Unlock()
     return len(a.errors) > 0
+}
+```
+
+---
+
+## 16. Advanced Features Architecture (v2.4+)
+
+### 16.1 Scripting Engine
+
+```go
+package scripting
+
+// Engine executes JavaScript against the PDF DOM
+type Engine interface {
+    // Execute runs a script
+    Execute(ctx context.Context, script string) (interface{}, error)
+    
+    // RegisterObject registers a host object (e.g., 'this', 'app')
+    RegisterObject(name string, obj interface{})
+}
+
+// PDFDOM represents the document object model exposed to JS
+type PDFDOM interface {
+    GetField(name string) Field
+    GetPageNum() int
+    // ... standard Acrobat API methods
+}
+```
+
+### 16.2 Content Editor & Spatial Indexing
+
+```go
+package editor
+
+// Editor allows physical modification of page content
+type Editor interface {
+    // RemoveRect removes all content within a given rectangle
+    RemoveRect(page *semantic.Page, rect semantic.Rectangle) error
+    
+    // ReplaceText replaces text at a specific location
+    ReplaceText(page *semantic.Page, rect semantic.Rectangle, newText string) error
+}
+
+// QuadTree provides spatial indexing for content operations
+type QuadTree struct {
+    Root *QuadNode
+    Bounds semantic.Rectangle
+}
+
+// Tracer executes content streams virtually to calculate bounding boxes
+type Tracer interface {
+    Trace(stream []byte, resources *semantic.Resources) ([]BoundingBox, error)
+}
+```
+
+### 16.3 Digital Signature Validation (LTV)
+
+```go
+package validation
+
+// Validator validates digital signatures
+type Validator interface {
+    // Validate checks the signature against the document
+    Validate(sig *semantic.Signature) (*ValidationResult, error)
+}
+
+// ChainBuilder builds and validates certificate chains
+type ChainBuilder interface {
+    Build(cert *x509.Certificate, intermediates []*x509.Certificate) ([][]*x509.Certificate, error)
+}
+
+// RevocationChecker checks OCSP and CRL status
+type RevocationChecker interface {
+    Check(cert *x509.Certificate, issuer *x509.Certificate) (RevocationStatus, error)
+}
+```
+
+### 16.4 XFA Support
+
+```go
+package xfa
+
+// Parser parses XFA XML data
+type Parser interface {
+    Parse(xmlData []byte) (*Form, error)
+}
+
+// LayoutEngine renders XFA forms to PDF pages
+type LayoutEngine interface {
+    Layout(form *Form) ([]*semantic.Page, error)
 }
 ```
 
