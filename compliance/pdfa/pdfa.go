@@ -210,4 +210,3 @@ func checkCancelled(ctx compliance.Context) error {
 type ValidationCancelledError struct{}
 
 func (e *ValidationCancelledError) Error() string { return "validation cancelled" }
-

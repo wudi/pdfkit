@@ -32,12 +32,12 @@ func (m *LTVManagerImpl) AddValidationInfo(ctx context.Context, doc *semantic.Do
 	// or use raw access.
 
 	// 2. Add Certs to /Certs array in DSS
-	
+
 	// 3. Add OCSPs to /OCSPs array in DSS
-	
+
 	// 4. Add CRLs to /CRLs array in DSS
-	
+
 	// 5. Create VRI dictionary for specific signature (optional but recommended)
-	
+
 	return nil
 }

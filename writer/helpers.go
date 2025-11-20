@@ -610,14 +610,14 @@ func buildStructureTree(tree *semantic.StructureTree, pageRefs []raw.ObjectRef, 
 				// We need to find the page.
 				// If MCR is present, use MCR.Pg.
 				// If not, use elem.Pg.
-				
+
 				var pg *semantic.Page
 				if kid.MCR != nil {
 					pg = kid.MCR.Pg
 				} else {
 					pg = elem.Pg
 				}
-				
+
 				if pg != nil {
 					// Find page ref
 					// We need to map *semantic.Page to raw.ObjectRef

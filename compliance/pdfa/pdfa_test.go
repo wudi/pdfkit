@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"pdflib/ir/semantic"
 	"pdflib/compliance/pdfa"
+	"pdflib/ir/semantic"
 	"pdflib/writer"
 )
 

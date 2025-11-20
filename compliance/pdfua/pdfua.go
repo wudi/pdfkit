@@ -39,7 +39,7 @@ func (e *enforcerImpl) Validate(ctx compliance.Context, doc *semantic.Document) 
 		Standard:   "PDF/UA-1",
 		Violations: []compliance.Violation{},
 	}
-	
+
 	// PDF/UA requires Tagged PDF
 	if doc.StructTree == nil {
 		report.Violations = append(report.Violations, compliance.Violation{

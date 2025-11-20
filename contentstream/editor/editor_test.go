@@ -66,7 +66,7 @@ func TestReplaceText(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ArrayOperand for TJ")
 	}
-	
+
 	// "World" has 5 characters.
 	if len(arr.Values) < 5 {
 		t.Errorf("expected at least 5 elements in TJ array, got %d", len(arr.Values))

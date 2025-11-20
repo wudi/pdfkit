@@ -129,5 +129,3 @@ func (h *HubImpl) Execute(ctx Context, doc *semantic.Document) error {
 func (h *HubImpl) Extensions(phase Phase) []Extension {
 	return append([]Extension(nil), h.exts[phase]...)
 }
-
-

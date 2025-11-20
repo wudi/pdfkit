@@ -4,29 +4,29 @@ import "pdflib/ir/raw"
 
 // StructureTree is the root of the logical structure.
 type StructureTree struct {
-	Type        string // /StructTreeRoot
-	K           []*StructureElement
-	IDTree      map[string]*StructureElement
-	ParentTree  map[int][]interface{} // PageIndex -> []StructureItem
+	Type              string // /StructTreeRoot
+	K                 []*StructureElement
+	IDTree            map[string]*StructureElement
+	ParentTree        map[int][]interface{} // PageIndex -> []StructureItem
 	ParentTreeNextKey int
-	RoleMap     RoleMap
-	ClassMap    ClassMap
-	Namespaces  []*Namespace // PDF 2.0
-	OriginalRef raw.ObjectRef
-	Dirty       bool
+	RoleMap           RoleMap
+	ClassMap          ClassMap
+	Namespaces        []*Namespace // PDF 2.0
+	OriginalRef       raw.ObjectRef
+	Dirty             bool
 }
 
 // StructureElement represents a node in the structure tree.
 type StructureElement struct {
-	Type            string // /StructElem
-	S               string // Structure type (e.g., P, H1)
+	Type            string            // /StructElem
+	S               string            // Structure type (e.g., P, H1)
 	P               *StructureElement // Parent
 	ID              string
-	Pg              *Page // Page containing the content
-	K               []StructureItem // Children
+	Pg              *Page            // Page containing the content
+	K               []StructureItem  // Children
 	A               *AttributeObject // Attributes
-	C               *ClassMap // Classes
-	R               int // Revision number
+	C               *ClassMap        // Classes
+	R               int              // Revision number
 	Title           string
 	Lang            string
 	Alt             string
@@ -42,16 +42,16 @@ type StructureElement struct {
 // It can be another StructureElement, a Marked Content ID (MCID), or an Object Reference (MCR).
 type StructureItem struct {
 	Element *StructureElement
-	MCID    int // -1 if not an MCID
-	MCR     *MCR // Marked Content Reference
+	MCID    int           // -1 if not an MCID
+	MCR     *MCR          // Marked Content Reference
 	ObjRef  raw.ObjectRef // For OBJR
 }
 
 // MCR (Marked Content Reference)
 type MCR struct {
-	Pg      *Page
-	MCID    int
-	Stm     raw.ObjectRef // Optional stream containing the marked content
+	Pg   *Page
+	MCID int
+	Stm  raw.ObjectRef // Optional stream containing the marked content
 }
 
 // RoleMap maps structure types to standard types.

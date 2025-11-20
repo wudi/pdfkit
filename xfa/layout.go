@@ -19,24 +19,24 @@ func NewLayoutEngine() *LayoutEngineImpl {
 func (e *LayoutEngineImpl) Render(ctx context.Context, form *Form) ([]*semantic.Page, error) {
 	// 1. Merge Data into Template (Data Binding)
 	// This involves traversing the Template and Datasets and resolving bindings.
-	
+
 	// 2. Layout Calculation
 	// XFA is flow-based (like HTML). We need to flow content into pages.
 	// This is the hard part: handling page breaks, growing fields, etc.
-	
+
 	pages := []*semantic.Page{}
-	
+
 	// Create a new page
 	currentPage := &semantic.Page{
 		MediaBox: semantic.Rectangle{LLX: 0, LLY: 0, URX: 612, URY: 792}, // Default Letter
 	}
 	pages = append(pages, currentPage)
-	
+
 	// Traverse Template.Subform and render elements
 	if form.Template != nil && form.Template.Subform != nil {
 		e.renderSubform(ctx, form.Template.Subform, currentPage)
 	}
-	
+
 	return pages, nil
 }
 
@@ -49,7 +49,7 @@ func (e *LayoutEngineImpl) renderSubform(ctx context.Context, subform *Subform, 
 			// and append operations to page.Contents
 		}
 	}
-	
+
 	for _, child := range subform.Subforms {
 		e.renderSubform(ctx, &child, page)
 	}

@@ -805,8 +805,8 @@ func (p *pageBuilderImpl) DrawTable(table Table, opts TableOptions) PageBuilder 
 			if rowElem != nil && mcidPtr != nil {
 				cellElem := &semantic.StructureElement{Type: tag, Pg: cur.page}
 				cellElem.K = append(cellElem.K, semantic.StructureItem{
-					MCID:      *mcidPtr,
-					Element:   nil,
+					MCID:    *mcidPtr,
+					Element: nil,
 				})
 				rowElem.K = append(rowElem.K, semantic.StructureItem{Element: cellElem})
 			}

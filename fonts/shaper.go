@@ -36,7 +36,7 @@ func ShapeText(text string, font *semantic.Font) ([]ShapedGlyph, error) {
 
 	shaper := &shaping.HarfbuzzShaper{}
 	runes := []rune(text)
-	
+
 	// Detect script (simplified)
 	// In a real implementation, we'd use a proper script detector
 	script := language.Latin
@@ -51,7 +51,7 @@ func ShapeText(text string, font *semantic.Font) ([]ShapedGlyph, error) {
 	if strings.HasSuffix(font.Encoding, "V") {
 		dir = di.DirectionTTB
 	}
-	
+
 	// Use a standard size for shaping, we'll normalize to 1000 units later
 	// 1000 * 64 (fixed point)
 	size := fixed.Int26_6(1000 * 64)
@@ -66,9 +66,9 @@ func ShapeText(text string, font *semantic.Font) ([]ShapedGlyph, error) {
 		Script:    script,
 		Language:  language.DefaultLanguage(),
 	}
-	
+
 	output := shaper.Shape(input)
-	
+
 	var result []ShapedGlyph
 	for _, g := range output.Glyphs {
 		// Convert fixed point to float
@@ -79,7 +79,7 @@ func ShapeText(text string, font *semantic.Font) ([]ShapedGlyph, error) {
 		// If I set size to 1000 * 64, then 1 em = 1000 units.
 		// The output advances are in fixed point units.
 		// So if advance is 64000, that's 1000 units.
-		
+
 		xAdv := float64(g.XAdvance) / 64.0
 		yAdv := float64(g.YAdvance) / 64.0
 		xOff := float64(g.XOffset) / 64.0
@@ -93,7 +93,7 @@ func ShapeText(text string, font *semantic.Font) ([]ShapedGlyph, error) {
 			YOffset:  yOff,
 		})
 	}
-	
+
 	return result, nil
 }
 

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"pdflib/ir/semantic"
 	"pdflib/compliance/pdfa"
+	"pdflib/ir/semantic"
 )
 
 // BasicInspector implements a simple document inspector.

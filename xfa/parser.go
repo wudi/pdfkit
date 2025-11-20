@@ -43,12 +43,12 @@ type Template struct {
 }
 
 type Subform struct {
-	Name     string     `xml:"name,attr"`
-	Layout   string     `xml:"layout,attr"` // e.g., "tb" (top-to-bottom)
-	Fields   []Field    `xml:"field"`
-	Subforms []Subform  `xml:"subform"`
-	Draws    []Draw     `xml:"draw"`
-	Content  []Area     `xml:"area"`
+	Name     string    `xml:"name,attr"`
+	Layout   string    `xml:"layout,attr"` // e.g., "tb" (top-to-bottom)
+	Fields   []Field   `xml:"field"`
+	Subforms []Subform `xml:"subform"`
+	Draws    []Draw    `xml:"draw"`
+	Content  []Area    `xml:"area"`
 }
 
 type Field struct {
@@ -57,7 +57,7 @@ type Field struct {
 }
 
 type UI struct {
-	TextEdit *struct{} `xml:"textEdit"`
+	TextEdit    *struct{} `xml:"textEdit"`
 	CheckButton *struct{} `xml:"checkButton"`
 	// ... other UI elements
 }
