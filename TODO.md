@@ -295,9 +295,9 @@ Status key: Not started / In progress / Done.
     - [x] Implement PDF 2.0 Namespaces in `semantic`.
     - [x] Make `contentstream/editor` tag-aware (StructTree repair).
     - [x] Implement `RoleMap` and `ClassMap` logic.
-- [ ] **Phase 3: Geospatial & Engineering**
-    - [ ] Create `geo` package (Viewports, Measure).
-    - [ ] Update `ir/semantic` for GeoPDF support.
+- [x] **Phase 3: Geospatial & Engineering**
+    - [x] Create `geo` package (Viewports, Measure).
+    - [x] Update `ir/semantic` for GeoPDF support.
 - [ ] **Phase 4: Compliance Engines**
     - [ ] Refactor `pdfa` to `compliance`.
     - [ ] Add `pdfx`, `pdfua`, `pdfvt` sub-packages.

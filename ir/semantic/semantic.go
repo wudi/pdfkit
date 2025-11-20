@@ -3,6 +3,7 @@ package semantic
 import (
 	"context"
 
+	"pdflib/geo"
 	"pdflib/ir/decoded"
 	"pdflib/ir/raw"
 )
@@ -51,6 +52,7 @@ type Page struct {
 	UserUnit        float64
 	OutputIntents   []OutputIntent // PDF 2.0
 	AssociatedFiles []EmbeddedFile // PDF 2.0
+	Viewports       []geo.Viewport // PDF 2.0 / GeoPDF
 	Trans           *Transition    // Page transition
 	ref             raw.ObjectRef
 	OriginalRef     raw.ObjectRef
