@@ -648,6 +648,10 @@ func readAll(r io.ReaderAt) []byte {
 	return buf.Bytes()
 }
 
+func FindStartXRef(r io.ReaderAt, size int64) (int64, error) {
+	return findStartXRef(r, size)
+}
+
 func findStartXRef(r io.ReaderAt, size int64) (int64, error) {
 	const tailSize = 2048
 	off := size - tailSize

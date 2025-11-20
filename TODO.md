@@ -146,3 +146,11 @@ Status key: Not started / In progress / Done.
 - [x] Implement string interning: intern Name objects to reduce memory usage. Status: Done (added `internPool` to `scanner` to deduplicate Name strings).
 - [x] Update consumers: update all packages (`parser`, `ir`, `xref`, `extractor`) to use the new `Token` API. Status: Done (all packages updated and tests passing).
 - [x] Verify performance: run benchmarks to quantify memory and CPU improvements. Status: Done (BenchmarkParse50MB: 77ms/op, 387MB/op, 340k allocs/op).
+
+# Future Roadmap (v2.0)
+
+Status key: Not started / In progress / Done.
+
+- [x] Digital Signatures: Implement `Sig` dictionary, byte range calculation, and cryptographic signing (RSA/SHA-256) to support digitally signed PDFs. Status: Done (implemented `writer.Sign` with incremental updates, ByteRange calculation, and `security.RSASigner` with full PKCS#7 detached signature support).
+- [ ] Form Filling API: Create a high-level API in `builder` to fill AcroForm fields (text, checkbox, radio) and flatten forms. Status: Not started.
+- [ ] HTML/Markdown to PDF: Implement a layout engine that converts HTML/Markdown input into PDF pages using the `builder` API. Status: Not started.
