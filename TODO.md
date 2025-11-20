@@ -185,7 +185,7 @@ Status key: Not started / In progress / Done.
 - [x] Implement Stamp Annotation. Status: Done.
 - [x] Implement Ink Annotation. Status: Done.
 - [x] Implement FileAttachment Annotation. Status: Done.
-- [ ] Implement Other Annotations: `Popup`, `Sound`, `Movie`, `Screen`, `PrinterMark`, `TrapNet`, `Watermark`, `3D`, `Redact`, `Projection`. Status: Not started.
+- [x] Implement Other Annotations: `Popup`, `Sound`, `Movie`, `Screen`, `PrinterMark`, `TrapNet`, `Watermark`, `3D`, `Redact`, `Projection`. Status: Done.
 
 ## Phase 2: Expanded Action Support
 - [x] Implement JavaScript Action. Status: Done.

@@ -452,6 +452,72 @@ type FileAttachmentAnnotation struct {
 	Name string // Icon name (e.g., "Graph", "PushPin", "Paperclip", "Tag")
 }
 
+// PopupAnnotation represents a popup annotation.
+type PopupAnnotation struct {
+	BaseAnnotation
+	Parent Annotation // The parent annotation with which this popup is associated
+	Open   bool       // Whether the popup window should be open by default
+}
+
+// SoundAnnotation represents a sound annotation.
+type SoundAnnotation struct {
+	BaseAnnotation
+	Sound EmbeddedFile // The sound to be played
+	Name  string       // Icon name (e.g., "Speaker", "Mic")
+}
+
+// MovieAnnotation represents a movie annotation.
+type MovieAnnotation struct {
+	BaseAnnotation
+	Title string       // The title of the movie
+	Movie EmbeddedFile // The movie file
+}
+
+// ScreenAnnotation represents a screen annotation.
+type ScreenAnnotation struct {
+	BaseAnnotation
+	Title  string // The title of the screen annotation
+	Action Action // The action to be performed
+}
+
+// PrinterMarkAnnotation represents a printer's mark annotation.
+type PrinterMarkAnnotation struct {
+	BaseAnnotation
+}
+
+// TrapNetAnnotation represents a trapping network annotation.
+type TrapNetAnnotation struct {
+	BaseAnnotation
+	LastModified string // The date and time of the last modification
+	Version      []int  // The version of the trapping network
+}
+
+// WatermarkAnnotation represents a watermark annotation.
+type WatermarkAnnotation struct {
+	BaseAnnotation
+	FixedPrint bool // Whether the watermark should be printed at a fixed size and position
+}
+
+// ThreeDAnnotation represents a 3D annotation.
+type ThreeDAnnotation struct {
+	BaseAnnotation
+	ThreeD EmbeddedFile // The 3D artwork
+	View   string       // The initial view of the 3D artwork
+}
+
+// RedactAnnotation represents a redaction annotation.
+type RedactAnnotation struct {
+	BaseAnnotation
+	OverlayText string    // The text to be displayed on the redacted area
+	Repeat      []float64 // The repeat interval for the overlay text
+}
+
+// ProjectionAnnotation represents a projection annotation.
+type ProjectionAnnotation struct {
+	BaseAnnotation
+	ProjectionType string // The type of projection
+}
+
 // GenericAnnotation represents an annotation not covered by specific types.
 type GenericAnnotation struct {
 	BaseAnnotation

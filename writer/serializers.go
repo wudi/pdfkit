@@ -221,6 +221,115 @@ func (s *defaultAnnotationSerializer) Serialize(a semantic.Annotation, ctx Seria
 
 			dict.Set(raw.NameLiteral("FS"), fDict)
 		}
+	case *semantic.PopupAnnotation:
+		if t.Open {
+			dict.Set(raw.NameLiteral("Open"), raw.Bool(true))
+		}
+		if t.Parent != nil {
+			pRef := t.Parent.Reference()
+			if pRef.Num != 0 {
+				dict.Set(raw.NameLiteral("Parent"), raw.Ref(pRef.Num, pRef.Gen))
+			}
+		}
+	case *semantic.SoundAnnotation:
+		if t.Name != "" {
+			dict.Set(raw.NameLiteral("Name"), raw.NameLiteral(t.Name))
+		}
+		if len(t.Sound.Data) > 0 {
+			soundRef := ctx.NextRef()
+			soundDict := raw.Dict()
+			soundDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Sound"))
+			// Basic sound parameters, could be expanded
+			soundDict.Set(raw.NameLiteral("R"), raw.NumberInt(44100)) // Rate
+			soundDict.Set(raw.NameLiteral("C"), raw.NumberInt(1))     // Channels
+			soundDict.Set(raw.NameLiteral("B"), raw.NumberInt(16))    // Bits
+			soundDict.Set(raw.NameLiteral("E"), raw.NameLiteral("Signed"))
+			soundDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(t.Sound.Data))))
+			ctx.AddObject(soundRef, raw.NewStream(soundDict, t.Sound.Data))
+			dict.Set(raw.NameLiteral("Sound"), raw.Ref(soundRef.Num, soundRef.Gen))
+		}
+	case *semantic.MovieAnnotation:
+		if t.Title != "" {
+			dict.Set(raw.NameLiteral("T"), raw.Str([]byte(t.Title)))
+		}
+		if len(t.Movie.Data) > 0 {
+			// Movie dictionary is complex, simplified here
+			movieDict := raw.Dict()
+			// FileSpec for the movie
+			fsRef := ctx.NextRef()
+			fsDict := raw.Dict()
+			fsDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("EmbeddedFile"))
+			fsDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(t.Movie.Data))))
+			ctx.AddObject(fsRef, raw.NewStream(fsDict, t.Movie.Data))
+
+			fDict := raw.Dict()
+			fDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Filespec"))
+			fDict.Set(raw.NameLiteral("F"), raw.Str([]byte(t.Movie.Name)))
+			efDict := raw.Dict()
+			efDict.Set(raw.NameLiteral("F"), raw.Ref(fsRef.Num, fsRef.Gen))
+			fDict.Set(raw.NameLiteral("EF"), efDict)
+
+			movieDict.Set(raw.NameLiteral("F"), fDict)
+			dict.Set(raw.NameLiteral("Movie"), movieDict)
+		}
+	case *semantic.ScreenAnnotation:
+		if t.Title != "" {
+			dict.Set(raw.NameLiteral("T"), raw.Str([]byte(t.Title)))
+		}
+		if t.Action != nil {
+			if act := s.actionSerializer.Serialize(t.Action, ctx); act != nil {
+				dict.Set(raw.NameLiteral("A"), act)
+			}
+		}
+	case *semantic.PrinterMarkAnnotation:
+		// No specific fields for now
+	case *semantic.TrapNetAnnotation:
+		if t.LastModified != "" {
+			dict.Set(raw.NameLiteral("LastModified"), raw.Str([]byte(t.LastModified)))
+		}
+		if len(t.Version) > 0 {
+			ver := raw.NewArray()
+			for _, v := range t.Version {
+				ver.Append(raw.NumberInt(int64(v)))
+			}
+			dict.Set(raw.NameLiteral("Version"), ver)
+		}
+	case *semantic.WatermarkAnnotation:
+		if t.FixedPrint {
+			dict.Set(raw.NameLiteral("FixedPrint"), raw.Bool(true))
+		}
+	case *semantic.ThreeDAnnotation:
+		if len(t.ThreeD.Data) > 0 {
+			streamRef := ctx.NextRef()
+			streamDict := raw.Dict()
+			streamDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("3D"))
+			streamDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral("U3D")) // Assuming U3D for now
+			streamDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(t.ThreeD.Data))))
+			ctx.AddObject(streamRef, raw.NewStream(streamDict, t.ThreeD.Data))
+			dict.Set(raw.NameLiteral("3DD"), raw.Ref(streamRef.Num, streamRef.Gen))
+		}
+		if t.View != "" {
+			// Simplified view handling
+			viewDict := raw.Dict()
+			viewDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("3DView"))
+			viewDict.Set(raw.NameLiteral("XN"), raw.Str([]byte(t.View)))
+			dict.Set(raw.NameLiteral("3DV"), viewDict)
+		}
+	case *semantic.RedactAnnotation:
+		if t.OverlayText != "" {
+			dict.Set(raw.NameLiteral("OverlayText"), raw.Str([]byte(t.OverlayText)))
+		}
+		if len(t.Repeat) > 0 {
+			rep := raw.NewArray()
+			for _, v := range t.Repeat {
+				rep.Append(raw.NumberFloat(v))
+			}
+			dict.Set(raw.NameLiteral("Repeat"), rep)
+		}
+	case *semantic.ProjectionAnnotation:
+		if t.ProjectionType != "" {
+			dict.Set(raw.NameLiteral("ProjectionType"), raw.NameLiteral(t.ProjectionType))
+		}
 	}
 
 	if base.Contents != "" {
