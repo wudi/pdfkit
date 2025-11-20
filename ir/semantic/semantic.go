@@ -405,31 +405,6 @@ type XMPMetadata struct {
 	Dirty       bool
 }
 
-type StructureTree struct {
-	RoleMap     RoleMap
-	Kids        []*StructureElement
-	OriginalRef raw.ObjectRef
-	Dirty       bool
-}
-
-// StructureElement captures a tagged PDF structure element with children or marked content references.
-type StructureElement struct {
-	Type            string
-	Title           string
-	PageIndex       *int
-	Kids            []StructureItem
-	AssociatedFiles []EmbeddedFile // PDF 2.0
-	OriginalRef     raw.ObjectRef
-	Dirty           bool
-}
-
-// StructureItem represents either a child element or a marked-content reference (MCID) on a page.
-type StructureItem struct {
-	Element   *StructureElement
-	MCID      *int
-	PageIndex *int
-}
-
 // OutputIntent models color output intent metadata.
 type OutputIntent struct {
 	S                         string
@@ -439,9 +414,6 @@ type OutputIntent struct {
 	OriginalRef               raw.ObjectRef
 	Dirty                     bool
 }
-
-// RoleMap maps structure element names to role-mapped names.
-type RoleMap map[string]string
 
 // Annotation represents a page annotation.
 type Annotation interface {

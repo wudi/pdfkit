@@ -667,14 +667,6 @@ func (p *pageBuilderImpl) DrawTable(table Table, opts TableOptions) PageBuilder 
 		}
 		return width
 	}
-	pageIndex := func(pb *pageBuilderImpl) int {
-		for i, page := range pb.parent.pages {
-			if page == pb.page {
-				return i
-			}
-		}
-		return pb.page.Index
-	}
 	clonePage := func() *pageBuilderImpl {
 		next := pbFromBuilder(cur.parent.NewPage(cur.page.MediaBox.URX, cur.page.MediaBox.URY))
 		if next == nil {
@@ -694,7 +686,7 @@ func (p *pageBuilderImpl) DrawTable(table Table, opts TableOptions) PageBuilder 
 	if opts.Tagged {
 		cur.parent.marked = true
 		tableElem = &semantic.StructureElement{Type: "Table"}
-		cur.parent.ensureStructTree().Kids = append(cur.parent.ensureStructTree().Kids, tableElem)
+		cur.parent.ensureStructTree().K = append(cur.parent.ensureStructTree().K, tableElem)
 	}
 	var renderRow func(row TableRow, height float64, isHeader bool, allowBreak bool)
 	var renderHeaders func()
@@ -716,11 +708,9 @@ func (p *pageBuilderImpl) DrawTable(table Table, opts TableOptions) PageBuilder 
 			}
 		}
 		rowElem := (*semantic.StructureElement)(nil)
-		pageIdx := pageIndex(cur)
 		if tableElem != nil {
-			pageCopy := pageIdx
-			rowElem = &semantic.StructureElement{Type: "TR", PageIndex: &pageCopy}
-			tableElem.Kids = append(tableElem.Kids, semantic.StructureItem{Element: rowElem})
+			rowElem = &semantic.StructureElement{Type: "TR", Pg: cur.page}
+			tableElem.K = append(tableElem.K, semantic.StructureItem{Element: rowElem})
 		}
 		x := opts.X
 		for col := 0; col < len(table.Columns) && col < len(row.Cells); col++ {
@@ -813,13 +803,12 @@ func (p *pageBuilderImpl) DrawTable(table Table, opts TableOptions) PageBuilder 
 				MCID:     mcidPtr,
 			})
 			if rowElem != nil && mcidPtr != nil {
-				cellPage := pageIdx
-				cellElem := &semantic.StructureElement{Type: tag, PageIndex: &cellPage}
-				cellElem.Kids = append(cellElem.Kids, semantic.StructureItem{
-					MCID:      mcidPtr,
-					PageIndex: &cellPage,
+				cellElem := &semantic.StructureElement{Type: tag, Pg: cur.page}
+				cellElem.K = append(cellElem.K, semantic.StructureItem{
+					MCID:      *mcidPtr,
+					Element:   nil,
 				})
-				rowElem.Kids = append(rowElem.Kids, semantic.StructureItem{Element: cellElem})
+				rowElem.K = append(rowElem.K, semantic.StructureItem{Element: cellElem})
 			}
 			x += width
 			col += span - 1

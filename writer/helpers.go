@@ -584,8 +584,8 @@ func buildStructureTree(tree *semantic.StructureTree, pageRefs []raw.ObjectRef, 
 		if elem.Title != "" {
 			dict.Set(raw.NameLiteral("T"), raw.Str([]byte(elem.Title)))
 		}
-		if elem.PageIndex != nil {
-			if pg := pageRefAt(pageRefs, *elem.PageIndex); pg != nil {
+		if elem.Pg != nil {
+			if pg := pageRefAt(pageRefs, elem.Pg.Index); pg != nil {
 				dict.Set(raw.NameLiteral("Pg"), raw.Ref(pg.Num, pg.Gen))
 			}
 		}
@@ -593,7 +593,7 @@ func buildStructureTree(tree *semantic.StructureTree, pageRefs []raw.ObjectRef, 
 			dict.Set(raw.NameLiteral("P"), raw.Ref(parent.Num, parent.Gen))
 		}
 		kArr := raw.NewArray()
-		for _, kid := range elem.Kids {
+		for _, kid := range elem.K {
 			if kid.Element != nil {
 				childRef := buildElem(kid.Element, ref)
 				if childRef != nil {
@@ -601,22 +601,38 @@ func buildStructureTree(tree *semantic.StructureTree, pageRefs []raw.ObjectRef, 
 				}
 				continue
 			}
-			if kid.MCID != nil {
-				pageIdx := kid.PageIndex
-				if pageIdx == nil {
-					pageIdx = elem.PageIndex
+			if kid.MCID != -1 {
+				// Use elem.Pg if kid.Element is nil (which it is here)
+				// StructureItem doesn't have PageIndex directly anymore, it's inferred or in MCR
+				// But wait, StructureItem definition in semantic.go:
+				// type StructureItem struct { Element *StructureElement; MCID int; MCR *MCR; ObjRef raw.ObjectRef }
+				// It does NOT have PageIndex.
+				// We need to find the page.
+				// If MCR is present, use MCR.Pg.
+				// If not, use elem.Pg.
+				
+				var pg *semantic.Page
+				if kid.MCR != nil {
+					pg = kid.MCR.Pg
+				} else {
+					pg = elem.Pg
 				}
-				if pageIdx != nil {
-					if pg := pageRefAt(pageRefs, *pageIdx); pg != nil {
+				
+				if pg != nil {
+					// Find page ref
+					// We need to map *semantic.Page to raw.ObjectRef
+					// pageRefs is []raw.ObjectRef, indexed by page index.
+					// So we need pg.Index.
+					if pgRef := pageRefAt(pageRefs, pg.Index); pgRef != nil {
 						mcr := raw.Dict()
 						mcr.Set(raw.NameLiteral("Type"), raw.NameLiteral("MCR"))
-						mcr.Set(raw.NameLiteral("Pg"), raw.Ref(pg.Num, pg.Gen))
-						mcr.Set(raw.NameLiteral("MCID"), raw.NumberInt(int64(*kid.MCID)))
+						mcr.Set(raw.NameLiteral("Pg"), raw.Ref(pgRef.Num, pgRef.Gen))
+						mcr.Set(raw.NameLiteral("MCID"), raw.NumberInt(int64(kid.MCID)))
 						kArr.Append(mcr)
-						if _, ok := parentTree[*pageIdx]; !ok {
-							parentTree[*pageIdx] = make(map[int]raw.ObjectRef)
+						if _, ok := parentTree[pg.Index]; !ok {
+							parentTree[pg.Index] = make(map[int]raw.ObjectRef)
 						}
-						parentTree[*pageIdx][*kid.MCID] = ref
+						parentTree[pg.Index][kid.MCID] = ref
 					}
 				}
 			}
@@ -628,7 +644,7 @@ func buildStructureTree(tree *semantic.StructureTree, pageRefs []raw.ObjectRef, 
 		return &ref
 	}
 	kids := raw.NewArray()
-	for _, kid := range tree.Kids {
+	for _, kid := range tree.K {
 		ref := buildElem(kid, raw.ObjectRef{})
 		if ref != nil {
 			kids.Append(raw.Ref(ref.Num, ref.Gen))

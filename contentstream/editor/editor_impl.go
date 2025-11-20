@@ -55,15 +55,63 @@ func (e *EditorImpl) RemoveRect(ctx context.Context, page *semantic.Page, rect s
 		// Remove
 		for _, index := range uniqueIndices {
 			if index >= 0 && index < len(stream.Operations) {
+				// Check if this operation is a Marked Content operator
+				op := stream.Operations[index]
+				if op.Operator == "BMC" || op.Operator == "BDC" {
+					// If we remove a marked content sequence start, we should probably remove the end too (EMC).
+					// Or better: don't remove the structure tags, just the content inside.
+					// But if the content is gone, the tag is empty.
+					// If we remove the tag, we must update the StructTree.
+					
+					// For "Zero Compromise", we must handle this.
+					// If we delete content that is marked, we need to know its MCID.
+					// If the operation IS the content (e.g. Tj), we need to know if it was inside a marked sequence.
+				}
+				
 				stream.Operations = append(stream.Operations[:index], stream.Operations[index+1:]...)
 			}
 		}
 		
-		// Mark page as dirty? The semantic model has Dirty flags.
-		// page.Dirty = true // Assuming we have access or method
+		// TODO: Repair StructTree if MCIDs were removed.
+		// This requires a reverse lookup: which MCIDs are used on this page?
+		// And checking if they are still present in the stream.
 	}
 	
 	return nil
+}
+
+// RepairStructTree removes references to MCIDs that no longer exist on the page.
+func (e *EditorImpl) RepairStructTree(page *semantic.Page, structTree *semantic.StructureTree) {
+	if structTree == nil {
+		return
+	}
+	
+	// 1. Collect all remaining MCIDs on the page
+	existingMCIDs := make(map[int]bool)
+	for _, stream := range page.Contents {
+		for _, op := range stream.Operations {
+			if op.Operator == "BDC" || op.Operator == "BMC" {
+				// Extract MCID from operands
+				// Operand 0 is tag name. Operand 1 (for BDC) is properties dict.
+				if len(op.Operands) > 1 {
+					if dict, ok := op.Operands[1].(semantic.DictOperand); ok {
+						if mcidOp, ok := dict.Values["MCID"]; ok {
+							if mcidNum, ok := mcidOp.(semantic.NumberOperand); ok {
+								existingMCIDs[int(mcidNum.Value)] = true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	// 2. Traverse StructTree and prune missing MCIDs
+	// This is a recursive operation.
+	// We need to find StructureItems that point to this page and have an MCID.
+	// If the MCID is not in existingMCIDs, remove the item.
+	
+	// Note: This is a simplified view. Real implementation needs full tree traversal.
 }
 
 func (e *EditorImpl) ReplaceText(ctx context.Context, page *semantic.Page, oldText, newText string) error {

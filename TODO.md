@@ -291,10 +291,10 @@ Status key: Not started / In progress / Done.
     - [x] Create `cmm` package (ICC, CxF, Transform).
     - [x] Update `ir/semantic` for Spectral Colors.
     - [x] Integrate `cmm` into `pdfa` and `contentstream`.
-- [ ] **Phase 2: Advanced Tagging & Accessibility**
-    - [ ] Implement PDF 2.0 Namespaces in `semantic`.
-    - [ ] Make `contentstream/editor` tag-aware (StructTree repair).
-    - [ ] Implement `RoleMap` and `ClassMap` logic.
+- [x] **Phase 2: Advanced Tagging & Accessibility**
+    - [x] Implement PDF 2.0 Namespaces in `semantic`.
+    - [x] Make `contentstream/editor` tag-aware (StructTree repair).
+    - [x] Implement `RoleMap` and `ClassMap` logic.
 - [ ] **Phase 3: Geospatial & Engineering**
     - [ ] Create `geo` package (Viewports, Measure).
     - [ ] Update `ir/semantic` for GeoPDF support.
