@@ -1,41 +1,148 @@
 package cmm
 
-import "errors"
+import (
+	"encoding/binary"
+	"errors"
+)
 
 // ICCProfile implements Profile for ICC data.
 type ICCProfile struct {
-	data []byte
+	data   []byte
+	header iccHeader
+	tags   map[string]iccTag
+}
+
+type iccHeader struct {
+	Size       uint32
+	CMMType    uint32
+	Version    uint32
+	Class      uint32
+	ColorSpace uint32
+	PCS        uint32
+	Date       [12]byte
+	Signature  uint32
+	Platform   uint32
+	Flags      uint32
+	DevMfgr    uint32
+	DevModel   uint32
+	Attributes uint64
+	Intent     uint32
+	Illuminant [12]byte
+	Creator    uint32
+	ID         [16]byte
+}
+
+type iccTag struct {
+	Sig    uint32
+	Offset uint32
+	Size   uint32
 }
 
 // NewICCProfile creates a new ICCProfile from bytes.
 func NewICCProfile(data []byte) (*ICCProfile, error) {
 	if len(data) < 128 {
-		return nil, errors.New("invalid ICC profile data")
+		return nil, errors.New("invalid ICC profile data: too short")
 	}
-	return &ICCProfile{data: data}, nil
+	p := &ICCProfile{data: data}
+	if err := p.parse(); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func (p *ICCProfile) parse() error {
+	// Parse Header
+	p.header.Size = binary.BigEndian.Uint32(p.data[0:4])
+	p.header.CMMType = binary.BigEndian.Uint32(p.data[4:8])
+	p.header.Version = binary.BigEndian.Uint32(p.data[8:12])
+	p.header.Class = binary.BigEndian.Uint32(p.data[12:16])
+	p.header.ColorSpace = binary.BigEndian.Uint32(p.data[16:20])
+	p.header.PCS = binary.BigEndian.Uint32(p.data[20:24])
+	// ... skip date ...
+	p.header.Signature = binary.BigEndian.Uint32(p.data[36:40])
+	if p.header.Signature != 0x61637370 { // 'acsp'
+		return errors.New("invalid ICC signature")
+	}
+
+	// Parse Tag Table
+	tagCount := binary.BigEndian.Uint32(p.data[128:132])
+	p.tags = make(map[string]iccTag)
+	offset := 132
+	for i := uint32(0); i < tagCount; i++ {
+		if offset+12 > len(p.data) {
+			return errors.New("ICC tag table truncated")
+		}
+		sig := binary.BigEndian.Uint32(p.data[offset : offset+4])
+		tagOffset := binary.BigEndian.Uint32(p.data[offset+4 : offset+8])
+		tagSize := binary.BigEndian.Uint32(p.data[offset+8 : offset+12])
+		
+		tagStr := uint32ToString(sig)
+		p.tags[tagStr] = iccTag{Sig: sig, Offset: tagOffset, Size: tagSize}
+		offset += 12
+	}
+	return nil
 }
 
 func (p *ICCProfile) Name() string {
-	// In a real implementation, parse the 'desc' tag.
+	// Try to find 'desc' tag (textDescriptionType or multiLocalizedUnicodeType)
+	if tag, ok := p.tags["desc"]; ok {
+		return p.readDescription(tag)
+	}
+	// Try 'dscm' (V4)
+	if tag, ok := p.tags["dscm"]; ok {
+		return p.readDescription(tag)
+	}
 	return "ICC Profile"
 }
 
-func (p *ICCProfile) ColorSpace() string {
-	// In a real implementation, parse header bytes 16-20.
-	if len(p.data) > 20 {
-		return string(p.data[16:20])
+func (p *ICCProfile) readDescription(tag iccTag) string {
+	if int(tag.Offset+tag.Size) > len(p.data) {
+		return ""
+	}
+	raw := p.data[tag.Offset : tag.Offset+tag.Size]
+	if len(raw) < 8 {
+		return ""
+	}
+	sig := binary.BigEndian.Uint32(raw[0:4])
+	if sig == 0x64657363 { // 'desc' - textDescriptionType
+		// 8-12: ASCII count
+		count := binary.BigEndian.Uint32(raw[8:12])
+		if 12+count <= uint32(len(raw)) {
+			return string(raw[12 : 12+count-1]) // null terminated
+		}
+	} else if sig == 0x6D6C7563 { // 'mluc' - multiLocalizedUnicodeType
+		// Complex parsing, skip for now or implement basic
+		// 8-12: Number of records
+		// 12-16: Record size (12)
+		numRecs := binary.BigEndian.Uint32(raw[8:12])
+		if numRecs > 0 && len(raw) >= 28 {
+			// First record: ISO-639 (2), ISO-3166 (2), Len (4), Off (4)
+			// nameLen := binary.BigEndian.Uint32(raw[20:24])
+			nameOff := binary.BigEndian.Uint32(raw[24:28])
+			// Offset is relative to tag start
+			if nameOff < tag.Size {
+				// Read UTF-16BE... simplified
+				return "Localized Profile" 
+			}
+		}
 	}
 	return ""
 }
 
+func (p *ICCProfile) ColorSpace() string {
+	return uint32ToString(p.header.ColorSpace)
+}
+
 func (p *ICCProfile) Class() string {
-	// In a real implementation, parse header bytes 12-16.
-	if len(p.data) > 16 {
-		return string(p.data[12:16])
-	}
-	return ""
+	return uint32ToString(p.header.Class)
 }
 
 func (p *ICCProfile) Data() []byte {
 	return p.data
+}
+
+func uint32ToString(v uint32) string {
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, v)
+	return string(b)
 }
