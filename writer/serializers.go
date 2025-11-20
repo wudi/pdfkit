@@ -58,19 +58,120 @@ func (s *defaultAnnotationSerializer) Serialize(a semantic.Annotation, ctx Seria
 
 	dict.Set(raw.NameLiteral("Rect"), rectArray(rect))
 
-	if link, ok := a.(*semantic.LinkAnnotation); ok {
-		if link.Action != nil {
-			if act := s.actionSerializer.Serialize(link.Action, ctx); act != nil {
+	switch t := a.(type) {
+	case *semantic.LinkAnnotation:
+		if t.Action != nil {
+			if act := s.actionSerializer.Serialize(t.Action, ctx); act != nil {
 				dict.Set(raw.NameLiteral("A"), act)
 			}
-		} else if link.URI != "" {
+		} else if t.URI != "" {
 			// Fallback for legacy URI field
 			action := raw.Dict()
 			action.Set(raw.NameLiteral("S"), raw.NameLiteral("URI"))
-			action.Set(raw.NameLiteral("URI"), raw.Str([]byte(link.URI)))
+			action.Set(raw.NameLiteral("URI"), raw.Str([]byte(t.URI)))
 			dict.Set(raw.NameLiteral("A"), action)
 		}
-	} else if base.Contents != "" {
+	case *semantic.TextAnnotation:
+		if t.Open {
+			dict.Set(raw.NameLiteral("Open"), raw.Bool(true))
+		}
+		if t.Icon != "" {
+			dict.Set(raw.NameLiteral("Name"), raw.NameLiteral(t.Icon))
+		}
+	case *semantic.HighlightAnnotation:
+		if len(t.QuadPoints) > 0 {
+			qp := raw.NewArray()
+			for _, v := range t.QuadPoints {
+				qp.Append(raw.NumberFloat(v))
+			}
+			dict.Set(raw.NameLiteral("QuadPoints"), qp)
+		}
+	case *semantic.UnderlineAnnotation:
+		if len(t.QuadPoints) > 0 {
+			qp := raw.NewArray()
+			for _, v := range t.QuadPoints {
+				qp.Append(raw.NumberFloat(v))
+			}
+			dict.Set(raw.NameLiteral("QuadPoints"), qp)
+		}
+	case *semantic.StrikeOutAnnotation:
+		if len(t.QuadPoints) > 0 {
+			qp := raw.NewArray()
+			for _, v := range t.QuadPoints {
+				qp.Append(raw.NumberFloat(v))
+			}
+			dict.Set(raw.NameLiteral("QuadPoints"), qp)
+		}
+	case *semantic.SquigglyAnnotation:
+		if len(t.QuadPoints) > 0 {
+			qp := raw.NewArray()
+			for _, v := range t.QuadPoints {
+				qp.Append(raw.NumberFloat(v))
+			}
+			dict.Set(raw.NameLiteral("QuadPoints"), qp)
+		}
+	case *semantic.FreeTextAnnotation:
+		if t.DA != "" {
+			dict.Set(raw.NameLiteral("DA"), raw.Str([]byte(t.DA)))
+		}
+		if t.Q != 0 {
+			dict.Set(raw.NameLiteral("Q"), raw.NumberInt(int64(t.Q)))
+		}
+	case *semantic.LineAnnotation:
+		if len(t.L) == 4 {
+			l := raw.NewArray()
+			for _, v := range t.L {
+				l.Append(raw.NumberFloat(v))
+			}
+			dict.Set(raw.NameLiteral("L"), l)
+		}
+		if len(t.LE) == 2 {
+			le := raw.NewArray()
+			for _, v := range t.LE {
+				le.Append(raw.NameLiteral(v))
+			}
+			dict.Set(raw.NameLiteral("LE"), le)
+		}
+		if len(t.IC) > 0 {
+			ic := raw.NewArray()
+			for _, v := range t.IC {
+				ic.Append(raw.NumberFloat(v))
+			}
+			dict.Set(raw.NameLiteral("IC"), ic)
+		}
+	case *semantic.SquareAnnotation:
+		if len(t.IC) > 0 {
+			ic := raw.NewArray()
+			for _, v := range t.IC {
+				ic.Append(raw.NumberFloat(v))
+			}
+			dict.Set(raw.NameLiteral("IC"), ic)
+		}
+		if len(t.RD) == 4 {
+			rd := raw.NewArray()
+			for _, v := range t.RD {
+				rd.Append(raw.NumberFloat(v))
+			}
+			dict.Set(raw.NameLiteral("RD"), rd)
+		}
+	case *semantic.CircleAnnotation:
+		if len(t.IC) > 0 {
+			ic := raw.NewArray()
+			for _, v := range t.IC {
+				ic.Append(raw.NumberFloat(v))
+			}
+			dict.Set(raw.NameLiteral("IC"), ic)
+		}
+		if len(t.RD) == 4 {
+			rd := raw.NewArray()
+			for _, v := range t.RD {
+				rd.Append(raw.NumberFloat(v))
+			}
+			dict.Set(raw.NameLiteral("RD"), rd)
+		}
+	}
+
+	if base.Contents != "" {
 		dict.Set(raw.NameLiteral("Contents"), raw.Str([]byte(base.Contents)))
 	}
 

@@ -172,3 +172,25 @@ Status key: Not started / In progress / Done.
 
 ## Phase 4: PDF 2.0 Compliance
 - [x] Add PDF 2.0 fields: Add specific PDF 2.0 fields (e.g., `OutputIntents` on Page, `AssociatedFiles`) to the semantic model. Status: Done.
+
+# Feature Expansion (v2.2)
+
+Status key: Not started / In progress / Done.
+
+## Phase 1: Expanded Annotation Support
+- [x] Implement Text Markup Annotations: `Highlight`, `Underline`, `StrikeOut`, `Squiggly`. Status: Done.
+- [x] Implement Shape Annotations: `Line`, `Square`, `Circle`. Status: Done.
+- [x] Implement Text Annotations: `Text` (Sticky Note), `FreeText` (Typewriter). Status: Done.
+- [ ] Implement Widget Annotations: `Widget` (Form Fields). Status: Partially done (basic support exists).
+- [ ] Implement Other Annotations: `Stamp`, `Ink`, `Popup`, `FileAttachment`, `Sound`, `Movie`, `Screen`, `PrinterMark`, `TrapNet`, `Watermark`, `3D`, `Redact`, `Projection`. Status: Not started.
+
+## Phase 2: Expanded Action Support
+- [ ] Implement JavaScript Action. Status: Not started.
+- [ ] Implement Named Action. Status: Not started.
+- [ ] Implement Launch Action. Status: Not started.
+- [ ] Implement SubmitForm/ResetForm/ImportData Actions. Status: Not started.
+
+## Phase 3: Advanced Graphics
+- [ ] Implement Blend Modes. Status: Not started.
+- [ ] Implement Transparency Groups. Status: Not started.
+- [ ] Implement Soft Masks. Status: Not started.

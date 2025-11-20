@@ -37,15 +37,15 @@ func (d *Document) Decoded() *decoded.DecodedDocument { return d.decoded }
 
 // Page models a single PDF page.
 type Page struct {
-	Index       int
-	MediaBox    Rectangle
-	CropBox     Rectangle
-	TrimBox     Rectangle
-	BleedBox    Rectangle
-	ArtBox      Rectangle
-	Rotate      int // degrees: 0/90/180/270
-	Resources   *Resources
-	Contents    []ContentStream
+	Index           int
+	MediaBox        Rectangle
+	CropBox         Rectangle
+	TrimBox         Rectangle
+	BleedBox        Rectangle
+	ArtBox          Rectangle
+	Rotate          int // degrees: 0/90/180/270
+	Resources       *Resources
+	Contents        []ContentStream
 	Annotations     []Annotation
 	UserUnit        float64
 	OutputIntents   []OutputIntent // PDF 2.0
@@ -346,6 +346,66 @@ type LinkAnnotation struct {
 type WidgetAnnotation struct {
 	BaseAnnotation
 	Field *FormField
+}
+
+// TextAnnotation represents a sticky note annotation.
+type TextAnnotation struct {
+	BaseAnnotation
+	Open bool
+	Icon string // e.g., "Comment", "Key", "Note", "Help", "NewParagraph", "Paragraph", "Insert"
+}
+
+// HighlightAnnotation represents a highlight annotation.
+type HighlightAnnotation struct {
+	BaseAnnotation
+	QuadPoints []float64 // 8 numbers specifying the coordinates of the four corners of the quadrilateral
+}
+
+// UnderlineAnnotation represents an underline annotation.
+type UnderlineAnnotation struct {
+	BaseAnnotation
+	QuadPoints []float64
+}
+
+// StrikeOutAnnotation represents a strikeout annotation.
+type StrikeOutAnnotation struct {
+	BaseAnnotation
+	QuadPoints []float64
+}
+
+// SquigglyAnnotation represents a squiggly underline annotation.
+type SquigglyAnnotation struct {
+	BaseAnnotation
+	QuadPoints []float64
+}
+
+// FreeTextAnnotation represents a free text annotation.
+type FreeTextAnnotation struct {
+	BaseAnnotation
+	DA string // Default appearance string
+	Q  int    // Quadding (justification): 0=Left, 1=Center, 2=Right
+}
+
+// LineAnnotation represents a line annotation.
+type LineAnnotation struct {
+	BaseAnnotation
+	L  []float64 // Array of 4 numbers [x1 y1 x2 y2]
+	LE []string  // Line ending styles [start end] e.g. /Square, /Circle, /Diamond, /OpenArrow, /ClosedArrow, /None
+	IC []float64 // Interior color
+}
+
+// SquareAnnotation represents a square annotation.
+type SquareAnnotation struct {
+	BaseAnnotation
+	IC []float64 // Interior color
+	RD []float64 // Rect differences (padding)
+}
+
+// CircleAnnotation represents a circle annotation.
+type CircleAnnotation struct {
+	BaseAnnotation
+	IC []float64 // Interior color
+	RD []float64 // Rect differences (padding)
 }
 
 // GenericAnnotation represents an annotation not covered by specific types.
