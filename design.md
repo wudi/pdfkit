@@ -128,6 +128,7 @@ The library provides both **high-level convenience APIs** for typical PDF tasks 
 | `extensions`     | Plugin system with phased execution model                         |
 | `recovery`       | Error recovery strategies for malformed PDFs                      |
 | `builder`        | High-level fluent API for PDF construction                        |
+| `layout`         | Layout engine for converting structured content (Markdown/HTML) to PDF |
 
 ### 4.2 Module Dependencies
 
@@ -137,6 +138,9 @@ builder
        └─→ ir/decoded
             └─→ ir/raw
                  └─→ scanner, xref, security
+
+layout
+  └─→ builder
 
 extensions
   └─→ ir/semantic (operates on semantic IR)
@@ -2004,7 +2008,48 @@ type Sanitizer interface {
 
 ---
 
-## 20. Testing Strategy
+## 20. Layout Engine
+
+The `layout` package provides a high-level engine for converting structured content (Markdown, HTML) into PDF pages using the `builder` API.
+
+### 20.1 Engine Architecture
+
+```go
+package layout
+
+// Engine handles layout and rendering
+type Engine struct {
+    b builder.PDFBuilder
+    
+    // Configuration
+    DefaultFont     string
+    DefaultFontSize float64
+    LineHeight      float64
+    Margins         Margins
+    
+    // State
+    currentPage builder.PageBuilder
+    cursorX     float64
+    cursorY     float64
+}
+
+// RenderMarkdown renders markdown text
+func (e *Engine) RenderMarkdown(text string) error
+```
+
+### 20.2 Supported Features
+
+*   **Markdown**:
+    *   Headers (H1-H6)
+    *   Paragraphs with word wrapping
+    *   Unordered lists (bullets)
+    *   Automatic pagination
+*   **HTML**: (Planned)
+    *   Basic tags (p, h1-h6, ul, li)
+
+---
+
+## 21. Testing Strategy
 
 ### 20.1 Test Corpus
 
@@ -2059,7 +2104,7 @@ func BenchmarkWrite(b *testing.B) {}
 
 ---
 
-## 21. Performance Targets
+## 22. Performance Targets
 
 | Operation | Target | Notes |
 |-----------|--------|-------|
@@ -2073,7 +2118,7 @@ func BenchmarkWrite(b *testing.B) {}
 
 ---
 
-## 22. Roadmap
+## 23. Roadmap
 
 ### Phase 1: Core Foundation (Months 1-3)
 - Scanner and tokenizer
@@ -2117,7 +2162,7 @@ func BenchmarkWrite(b *testing.B) {}
 
 ---
 
-## 23. Dependencies
+## 24. Dependencies
 
 ### Standard Library
 - `io`, `io/ioutil`, `io/fs`
@@ -2137,7 +2182,7 @@ func BenchmarkWrite(b *testing.B) {}
 
 ---
 
-## 24. API Stability
+## 25. API Stability
 
 ### Versioning
 - Semantic versioning: `v1.x.x`, `v2.x.x`
@@ -2158,7 +2203,7 @@ func BenchmarkWrite(b *testing.B) {}
 
 ---
 
-## 25. References
+## 26. References
 
 ### Specifications
 - **ISO 32000-1:2008** - PDF 1.7 specification
@@ -2183,7 +2228,7 @@ func BenchmarkWrite(b *testing.B) {}
 
 ---
 
-## 26. Appendix: Example Workflows
+## 27. Appendix: Example Workflows
 
 ### Example 1: Parse and Extract Text
 
