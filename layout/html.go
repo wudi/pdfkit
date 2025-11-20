@@ -33,6 +33,15 @@ func (e *Engine) walkHTML(n *html.Node) {
 		case atom.Li:
 			e.renderHTMLListItem(n)
 			return
+		case atom.Blockquote:
+			e.renderHTMLBlockquote(n)
+			return
+		case atom.Pre:
+			e.renderHTMLPre(n)
+			return
+		case atom.Hr:
+			e.renderHTMLHr(n)
+			return
 		}
 	}
 
@@ -85,20 +94,73 @@ func (e *Engine) renderHTMLParagraph(n *html.Node) {
 func (e *Engine) renderHTMLListItem(n *html.Node) {
 	text := extractText(n)
 	e.ensurePage()
-	
+
 	fontSize := e.DefaultFontSize
 	lineHeight := fontSize * e.LineHeight
-	
+
 	// Simple bullet
 	e.checkPageBreak(lineHeight)
 	e.currentPage.DrawText("•", e.cursorX, e.cursorY-fontSize, builder.TextOptions{
 		Font:     e.DefaultFont,
 		FontSize: fontSize,
 	})
-	
+
 	// Indent text
 	indent := 15.0
 	e.renderTextWrapped(text, e.cursorX+indent, fontSize, lineHeight)
+}
+
+func (e *Engine) renderHTMLBlockquote(n *html.Node) {
+	oldLeft := e.Margins.Left
+	e.Margins.Left += 20
+	e.cursorX = e.Margins.Left
+
+	// Traverse children to render paragraphs inside blockquote
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		e.walkHTML(c)
+	}
+
+	e.Margins.Left = oldLeft
+	e.cursorX = e.Margins.Left
+	e.renderParagraphSpacing()
+}
+
+func (e *Engine) renderHTMLPre(n *html.Node) {
+	text := extractText(n)
+	lines := strings.Split(text, "\n")
+
+	e.ensurePage()
+	fontSize := e.DefaultFontSize
+	lineHeight := fontSize * e.LineHeight
+
+	// Indent code blocks
+	indent := 20.0
+
+	for _, line := range lines {
+		// Trim newline at end of line if present (though Split handles most)
+		line = strings.TrimRight(line, "\r")
+
+		e.checkPageBreak(lineHeight)
+		e.currentPage.DrawText(line, e.cursorX+indent, e.cursorY-fontSize, builder.TextOptions{
+			Font:     e.DefaultFont, // Ideally monospace
+			FontSize: fontSize,
+		})
+		e.cursorY -= lineHeight
+	}
+	e.renderParagraphSpacing()
+}
+
+func (e *Engine) renderHTMLHr(n *html.Node) {
+	e.ensurePage()
+	e.cursorY -= e.DefaultFontSize
+
+	e.checkPageBreak(2)
+	e.currentPage.DrawLine(e.Margins.Left, e.cursorY, e.pageWidth-e.Margins.Right, e.cursorY, builder.LineOptions{
+		LineWidth:   1,
+		StrokeColor: builder.Color{R: 0.5, G: 0.5, B: 0.5},
+	})
+
+	e.cursorY -= e.DefaultFontSize
 }
 
 func extractText(n *html.Node) string {
@@ -107,6 +169,15 @@ func extractText(n *html.Node) string {
 	f = func(n *html.Node) {
 		if n.Type == html.TextNode {
 			sb.WriteString(n.Data)
+		} else if n.Type == html.ElementNode && n.DataAtom == atom.Br {
+			sb.WriteString("\n")
+		} else if n.Type == html.ElementNode && n.DataAtom == atom.Img {
+			for _, attr := range n.Attr {
+				if attr.Key == "alt" {
+					sb.WriteString(attr.Val)
+					break
+				}
+			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			f(c)
