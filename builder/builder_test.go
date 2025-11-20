@@ -85,7 +85,7 @@ func TestBuilder_DrawShapesAndImages(t *testing.T) {
 	img := &semantic.Image{
 		Width:            2,
 		Height:           3,
-		ColorSpace:       semantic.ColorSpace{Name: "DeviceGray"},
+		ColorSpace:       &semantic.DeviceColorSpace{Name: "DeviceGray"},
 		BitsPerComponent: 8,
 		Data:             []byte{0x00, 0xFF},
 	}
@@ -186,9 +186,12 @@ func encodeWithMap(text string, cmap map[rune]int) []byte {
 }
 
 func TestBuilder_PageBoxesAnnotations(t *testing.T) {
-	ann := &semantic.Annotation{Subtype: "Link", URI: "https://example.com"}
+	ann := &semantic.LinkAnnotation{
+		BaseAnnotation: semantic.BaseAnnotation{Subtype: "Link"},
+		URI:            "https://example.com",
+	}
 	b := NewBuilder()
-	box := semantic.Rectangle{0, 0, 25, 30}
+	box := semantic.Rectangle{LLX: 0, LLY: 0, URX: 25, URY: 30}
 	b.NewPage(50, 60).
 		SetMediaBox(box).
 		SetCropBox(box).
@@ -206,7 +209,11 @@ func TestBuilder_PageBoxesAnnotations(t *testing.T) {
 	if page.Rotate != 90 {
 		t.Fatalf("rotation not normalized: %d", page.Rotate)
 	}
-	if len(page.Annotations) != 1 || page.Annotations[0].URI != "https://example.com" {
+	if len(page.Annotations) != 1 {
+		t.Fatalf("annotation not added correctly: %+v", page.Annotations)
+	}
+	link, ok := page.Annotations[0].(*semantic.LinkAnnotation)
+	if !ok || link.URI != "https://example.com" {
 		t.Fatalf("annotation not added correctly: %+v", page.Annotations)
 	}
 }

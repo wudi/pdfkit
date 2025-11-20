@@ -107,7 +107,7 @@ func buildSamplePDF(t *testing.T) []byte {
 	img := &semantic.Image{
 		Width:            1,
 		Height:           1,
-		ColorSpace:       semantic.ColorSpace{Name: "DeviceRGB"},
+		ColorSpace:       &semantic.DeviceColorSpace{Name: "DeviceRGB"},
 		BitsPerComponent: 8,
 		Data:             []byte{0xFF},
 	}

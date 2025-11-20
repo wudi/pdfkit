@@ -505,9 +505,7 @@ func TestWriter_ContentStream_ASCIIHexAndASCII85(t *testing.T) {
 
 	check(FilterASCIIHex, "ASCIIHexDecode", func(data []byte) ([]byte, error) {
 		trimmed := strings.TrimSpace(string(data))
-		if strings.HasSuffix(trimmed, ">") {
-			trimmed = trimmed[:len(trimmed)-1]
-		}
+		trimmed = strings.TrimSuffix(trimmed, ">")
 		decoded, err := hex.DecodeString(trimmed)
 		if err != nil {
 			return nil, err
@@ -936,7 +934,7 @@ func TestWriter_ProcSetWithImages(t *testing.T) {
 				MediaBox: semantic.Rectangle{URX: 20, URY: 20},
 				Resources: &semantic.Resources{
 					XObjects: map[string]semantic.XObject{
-						"Im1": {Subtype: "Image", Width: 2, Height: 2, BitsPerComponent: 8, ColorSpace: semantic.ColorSpace{Name: "DeviceRGB"}, Data: data},
+						"Im1": {Subtype: "Image", Width: 2, Height: 2, BitsPerComponent: 8, ColorSpace: &semantic.DeviceColorSpace{Name: "DeviceRGB"}, Data: data},
 					},
 				},
 				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
@@ -1080,7 +1078,7 @@ func TestWriter_ColorSpaceResources(t *testing.T) {
 				MediaBox: semantic.Rectangle{URX: 10, URY: 10},
 				Resources: &semantic.Resources{
 					ColorSpaces: map[string]semantic.ColorSpace{
-						"CS1": {Name: "DeviceRGB"},
+						"CS1": &semantic.DeviceColorSpace{Name: "DeviceRGB"},
 					},
 				},
 				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
@@ -1149,7 +1147,7 @@ func TestWriter_XObjectResources(t *testing.T) {
 				MediaBox: semantic.Rectangle{URX: 20, URY: 20},
 				Resources: &semantic.Resources{
 					XObjects: map[string]semantic.XObject{
-						"Im1": {Subtype: "Image", Width: 2, Height: 2, BitsPerComponent: 8, ColorSpace: semantic.ColorSpace{Name: "DeviceGray"}, Data: data},
+						"Im1": {Subtype: "Image", Width: 2, Height: 2, BitsPerComponent: 8, ColorSpace: &semantic.DeviceColorSpace{Name: "DeviceGray"}, Data: data},
 					},
 				},
 				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
@@ -1317,7 +1315,7 @@ func TestWriter_ShadingResources(t *testing.T) {
 					Shadings: map[string]semantic.Shading{
 						"S1": {
 							ShadingType: 2,
-							ColorSpace:  semantic.ColorSpace{Name: "DeviceRGB"},
+							ColorSpace:  &semantic.DeviceColorSpace{Name: "DeviceRGB"},
 							Coords:      []float64{0, 0, 10, 0},
 							Domain:      []float64{0, 1},
 						},
@@ -2050,10 +2048,12 @@ func TestWriter_LinkAnnotation(t *testing.T) {
 			{
 				MediaBox: semantic.Rectangle{URX: 100, URY: 100},
 				Annotations: []semantic.Annotation{
-					{
-						Subtype: "Link",
-						Rect:    semantic.Rectangle{LLX: 5, LLY: 5, URX: 50, URY: 50},
-						URI:     "https://example.com",
+					&semantic.LinkAnnotation{
+						BaseAnnotation: semantic.BaseAnnotation{
+							Subtype: "Link",
+							RectVal: semantic.Rectangle{LLX: 5, LLY: 5, URX: 50, URY: 50},
+						},
+						URI: "https://example.com",
 					},
 				},
 				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},
@@ -2109,10 +2109,12 @@ func TestWriter_TextAnnotationContents(t *testing.T) {
 			{
 				MediaBox: semantic.Rectangle{URX: 50, URY: 50},
 				Annotations: []semantic.Annotation{
-					{
-						Subtype:  "Text",
-						Rect:     semantic.Rectangle{LLX: 1, LLY: 1, URX: 10, URY: 10},
-						Contents: "note here",
+					&semantic.GenericAnnotation{
+						BaseAnnotation: semantic.BaseAnnotation{
+							Subtype:  "Text",
+							RectVal:  semantic.Rectangle{LLX: 1, LLY: 1, URX: 10, URY: 10},
+							Contents: "note here",
+						},
 					},
 				},
 				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
@@ -2163,11 +2165,13 @@ func TestWriter_AnnotationAppearance(t *testing.T) {
 			{
 				MediaBox: semantic.Rectangle{URX: 20, URY: 20},
 				Annotations: []semantic.Annotation{
-					{
-						Subtype:    "Text",
-						Rect:       semantic.Rectangle{LLX: 1, LLY: 1, URX: 5, URY: 5},
-						Contents:   "note",
-						Appearance: ap,
+					&semantic.GenericAnnotation{
+						BaseAnnotation: semantic.BaseAnnotation{
+							Subtype:    "Text",
+							RectVal:    semantic.Rectangle{LLX: 1, LLY: 1, URX: 5, URY: 5},
+							Contents:   "note",
+							Appearance: ap,
+						},
 					},
 				},
 				Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}},

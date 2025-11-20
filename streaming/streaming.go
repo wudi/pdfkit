@@ -485,7 +485,7 @@ func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
 			res.ColorSpaces = make(map[string]semantic.ColorSpace)
 			for name, entry := range csDict.KV {
 				if n, ok := entry.(raw.NameObj); ok {
-					res.ColorSpaces[name] = semantic.ColorSpace{Name: n.Value()}
+					res.ColorSpaces[name] = &semantic.DeviceColorSpace{Name: n.Value()}
 				}
 			}
 		}
@@ -521,7 +521,7 @@ func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
 								}
 								if cs, ok := xoDict.Get(raw.NameLiteral("ColorSpace")); ok {
 									if n, ok := cs.(raw.NameObj); ok {
-										xo.ColorSpace = semantic.ColorSpace{Name: n.Value()}
+										xo.ColorSpace = &semantic.DeviceColorSpace{Name: n.Value()}
 									}
 								}
 								xo.Data = decodeStream(stream)
@@ -637,7 +637,7 @@ func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
 				}
 				if cs, ok := shDict.Get(raw.NameLiteral("ColorSpace")); ok {
 					if n, ok := cs.(raw.NameObj); ok {
-						sh.ColorSpace = semantic.ColorSpace{Name: n.Value()}
+						sh.ColorSpace = &semantic.DeviceColorSpace{Name: n.Value()}
 					}
 				}
 				if coords, ok := shDict.Get(raw.NameLiteral("Coords")); ok {

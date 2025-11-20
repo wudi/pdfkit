@@ -154,3 +154,21 @@ Status key: Not started / In progress / Done.
 - [x] Digital Signatures: Implement `Sig` dictionary, byte range calculation, and cryptographic signing (RSA/SHA-256) to support digitally signed PDFs. Status: Done (implemented `writer.Sign` with incremental updates, ByteRange calculation, and `security.RSASigner` with full PKCS#7 detached signature support).
 - [ ] Form Filling API: Create a high-level API in `builder` to fill AcroForm fields (text, checkbox, radio) and flatten forms. Status: Not started.
 - [ ] HTML/Markdown to PDF: Implement a layout engine that converts HTML/Markdown input into PDF pages using the `builder` API. Status: Not started.
+
+# Architecture Refactoring Plan (v2.1)
+
+Status key: Not started / In progress / Done.
+
+## Phase 1: Polymorphic Semantic Model
+- [x] Refactor `Annotation` to an interface: Replace the monolithic `Annotation` struct with an interface and specific implementations (e.g., `LinkAnnotation`, `WidgetAnnotation`, `TextAnnotation`). Status: Done.
+- [x] Refactor `Action` to an interface: Introduce an `Action` interface to handle interactivity (e.g., `GoToAction`, `URIAction`, `JavaScriptAction`). Status: Done.
+- [x] Refactor `ColorSpace` to an interface: Refactor `ColorSpace` to handle complex definitions (e.g., `ICCBasedColorSpace`, `DeviceNColorSpace`). Status: Done.
+
+## Phase 2: Strategy-Based Writer
+- [ ] Refactor `writer/object_builder.go`: Break down the monolithic `object_builder.go` into smaller, specialized serializers using the Strategy Pattern (e.g., `AnnotationSerializer`, `ColorSpaceSerializer`). Status: Not started.
+
+## Phase 3: Incremental Update Tracking
+- [ ] Add `OriginalRef` and `Dirty` flags: Add `OriginalRef` and `Dirty` flags to all semantic objects to track their origin and modification status for incremental updates. Status: Not started.
+
+## Phase 4: PDF 2.0 Compliance
+- [ ] Add PDF 2.0 fields: Add specific PDF 2.0 fields (e.g., `OutputIntents` on Page, `AssociatedFiles`) to the semantic model. Status: Not started.

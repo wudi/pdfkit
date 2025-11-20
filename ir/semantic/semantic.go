@@ -123,9 +123,24 @@ type ExtGState struct {
 }
 
 // ColorSpace references a named colorspace.
-type ColorSpace struct {
-	Name string // e.g., DeviceRGB, DeviceGray
+type ColorSpace interface {
+	ColorSpaceName() string
 }
+
+type DeviceColorSpace struct {
+	Name string
+}
+
+func (cs DeviceColorSpace) ColorSpaceName() string { return cs.Name }
+
+// ICCBasedColorSpace represents an ICC-based color space.
+type ICCBasedColorSpace struct {
+	Profile   []byte
+	Alternate ColorSpace
+	Range     []float64
+}
+
+func (cs ICCBasedColorSpace) ColorSpaceName() string { return "ICCBased" }
 
 // XObject describes a referenced object (limited to simple images).
 type XObject struct {
@@ -253,19 +268,73 @@ type OutputIntent struct {
 // RoleMap maps structure element names to role-mapped names.
 type RoleMap map[string]string
 
-// Annotation represents a simple page annotation.
-type Annotation struct {
+// Annotation represents a page annotation.
+type Annotation interface {
+	Type() string
+	Rect() Rectangle
+	SetRect(Rectangle)
+	Reference() raw.ObjectRef
+	SetReference(raw.ObjectRef)
+	Base() *BaseAnnotation
+}
+
+// BaseAnnotation provides common fields for annotations.
+type BaseAnnotation struct {
 	Subtype         string
-	Rect            Rectangle
-	URI             string // used for Link annotations
+	RectVal         Rectangle
 	Contents        string
-	Appearance      []byte // normal appearance stream
+	Appearance      []byte
 	Flags           int
 	Border          []float64
 	Color           []float64
 	AppearanceState string
 	Ref             raw.ObjectRef
 }
+
+func (a *BaseAnnotation) Type() string                 { return a.Subtype }
+func (a *BaseAnnotation) Rect() Rectangle              { return a.RectVal }
+func (a *BaseAnnotation) SetRect(r Rectangle)          { a.RectVal = r }
+func (a *BaseAnnotation) Reference() raw.ObjectRef     { return a.Ref }
+func (a *BaseAnnotation) SetReference(r raw.ObjectRef) { a.Ref = r }
+func (a *BaseAnnotation) Base() *BaseAnnotation        { return a }
+
+// LinkAnnotation represents a link annotation.
+type LinkAnnotation struct {
+	BaseAnnotation
+	URI    string
+	Action Action
+}
+
+// WidgetAnnotation represents a form widget annotation.
+type WidgetAnnotation struct {
+	BaseAnnotation
+	Field *FormField
+}
+
+// GenericAnnotation represents an annotation not covered by specific types.
+type GenericAnnotation struct {
+	BaseAnnotation
+}
+
+// Action represents a PDF action.
+type Action interface {
+	ActionType() string
+}
+
+// URIAction represents a URI action.
+type URIAction struct {
+	URI string
+}
+
+func (a URIAction) ActionType() string { return "URI" }
+
+// GoToAction represents a GoTo action.
+type GoToAction struct {
+	Dest      *OutlineDestination
+	PageIndex int
+}
+
+func (a GoToAction) ActionType() string { return "GoTo" }
 
 // OutlineItem describes a bookmark entry.
 type OutlineItem struct {

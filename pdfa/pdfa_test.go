@@ -40,8 +40,8 @@ func TestEnforce(t *testing.T) {
 		Pages: []*semantic.Page{
 			{
 				Annotations: []semantic.Annotation{
-					{Subtype: "Movie"}, // Forbidden
-					{Subtype: "Text"},  // Allowed
+					&semantic.GenericAnnotation{BaseAnnotation: semantic.BaseAnnotation{Subtype: "Movie"}}, // Forbidden
+					&semantic.GenericAnnotation{BaseAnnotation: semantic.BaseAnnotation{Subtype: "Text"}},  // Allowed
 				},
 				Resources: &semantic.Resources{
 					Fonts: map[string]*semantic.Font{
@@ -94,7 +94,7 @@ func TestEnforce(t *testing.T) {
 	if len(doc.Pages[0].Annotations) != 1 {
 		t.Errorf("Expected 1 annotation, got %d", len(doc.Pages[0].Annotations))
 	}
-	if doc.Pages[0].Annotations[0].Subtype != "Text" {
-		t.Errorf("Expected Text annotation, got %s", doc.Pages[0].Annotations[0].Subtype)
+	if doc.Pages[0].Annotations[0].Base().Subtype != "Text" {
+		t.Errorf("Expected Text annotation, got %s", doc.Pages[0].Annotations[0].Base().Subtype)
 	}
 }

@@ -263,7 +263,7 @@ func solidLogo(w, h int, c builder.Color) *semantic.Image {
 	return &semantic.Image{
 		Width:            w,
 		Height:           h,
-		ColorSpace:       semantic.ColorSpace{Name: "DeviceRGB"},
+		ColorSpace:       &semantic.DeviceColorSpace{Name: "DeviceRGB"},
 		BitsPerComponent: 8,
 		Data:             px,
 	}

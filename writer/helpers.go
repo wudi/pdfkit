@@ -375,7 +375,9 @@ func xoKey(name string, xo semantic.XObject) string {
 	h.Write([]byte(name))
 	h.Write([]byte(xo.Subtype))
 	h.Write([]byte(fmt.Sprintf("%d-%d-%d", xo.Width, xo.Height, xo.BitsPerComponent)))
-	h.Write([]byte(xo.ColorSpace.Name))
+	if xo.ColorSpace != nil {
+		h.Write([]byte(xo.ColorSpace.ColorSpaceName()))
+	}
 	h.Write([]byte(fmt.Sprintf("%f-%f-%f-%f", xo.BBox.LLX, xo.BBox.LLY, xo.BBox.URX, xo.BBox.URY)))
 	h.Write(xo.Data)
 	if xo.Interpolate {
@@ -399,7 +401,11 @@ func patternKey(name string, p semantic.Pattern) string {
 func shadingKey(name string, s semantic.Shading) string {
 	h := sha256.New()
 	h.Write([]byte(name))
-	h.Write([]byte(fmt.Sprintf("%d-%s", s.ShadingType, s.ColorSpace.Name)))
+	csName := ""
+	if s.ColorSpace != nil {
+		csName = s.ColorSpace.ColorSpaceName()
+	}
+	h.Write([]byte(fmt.Sprintf("%d-%s", s.ShadingType, csName)))
 	for _, c := range s.Coords {
 		h.Write([]byte(fmt.Sprintf("%f", c)))
 	}

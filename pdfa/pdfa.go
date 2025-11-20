@@ -133,7 +133,7 @@ func (e *enforcerImpl) Validate(ctx Context, doc *semantic.Document, level Level
 			if isForbiddenAnnotation(annot) {
 				report.Violations = append(report.Violations, Violation{
 					Code:        "ACT001",
-					Description: "Forbidden annotation type or action: " + annot.Subtype,
+					Description: "Forbidden annotation type or action: " + annot.Base().Subtype,
 					Location:    "Page " + string(rune(i+1)),
 				})
 			}
@@ -166,14 +166,16 @@ func isFontEmbedded(f *semantic.Font) bool {
 }
 
 func isForbiddenAnnotation(a semantic.Annotation) bool {
-	switch a.Subtype {
+	switch a.Base().Subtype {
 	case "Movie", "Sound", "Screen", "3D":
 		return true
 	}
 	// Check for JavaScript in URI (simplified check)
 	// Real implementation would check the Action dictionary
-	if len(a.URI) > 11 && a.URI[:11] == "javascript:" {
-		return true
+	if link, ok := a.(*semantic.LinkAnnotation); ok {
+		if len(link.URI) > 11 && link.URI[:11] == "javascript:" {
+			return true
+		}
 	}
 	return false
 }

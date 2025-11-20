@@ -75,12 +75,18 @@ func (s *JSSanitizer) Sanitize(ctx Context, doc *semantic.Document) (*Sanitizati
 	for i, p := range doc.Pages {
 		var cleanAnnots []semantic.Annotation
 		for _, annot := range p.Annotations {
-			if strings.HasPrefix(annot.URI, "javascript:") {
+			isJS := false
+			if link, ok := annot.(*semantic.LinkAnnotation); ok {
+				if strings.HasPrefix(link.URI, "javascript:") {
+					isJS = true
+				}
+			}
+			if isJS {
 				report.ItemsRemoved++
 				report.Actions = append(report.Actions, SanitizationAction{
 					Type:        "RemoveAnnotation",
 					Description: fmt.Sprintf("Removed JavaScript annotation on page %d", i+1),
-					ObjectRef:   annot.Ref,
+					ObjectRef:   annot.Reference(),
 				})
 				continue
 			}

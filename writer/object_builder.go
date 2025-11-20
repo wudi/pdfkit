@@ -324,7 +324,7 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 		if p.Resources != nil && len(p.Resources.ColorSpaces) > 0 {
 			csDict := raw.Dict()
 			for name, cs := range p.Resources.ColorSpaces {
-				val := cs.Name
+				val := cs.ColorSpaceName()
 				if val == "" {
 					val = "DeviceRGB"
 				}
@@ -346,7 +346,7 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 					unionXObjects.Set(raw.NameLiteral(name), raw.Ref(xref.Num, xref.Gen))
 				}
 				if xo.Subtype == "Image" || xo.Subtype == "" {
-					if xo.ColorSpace.Name == "DeviceGray" {
+					if xo.ColorSpace != nil && xo.ColorSpace.ColorSpaceName() == "DeviceGray" {
 						addProc("ImageB")
 					} else {
 						addProc("ImageC")
@@ -398,12 +398,14 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 				aRef := b.nextRef()
 				aDict := raw.Dict()
 				aDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Annot"))
-				subtype := a.Subtype
+
+				base := a.Base()
+				subtype := base.Subtype
 				if subtype == "" {
 					subtype = "Link"
 				}
 				aDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral(subtype))
-				rect := a.Rect
+				rect := base.RectVal
 				if !cropSet(rect) {
 					// fall back to crop/media box coordinates
 					if cropSet(p.CropBox) {
@@ -413,41 +415,49 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 					}
 				}
 				aDict.Set(raw.NameLiteral("Rect"), rectArray(rect))
-				if a.URI != "" {
-					action := raw.Dict()
-					action.Set(raw.NameLiteral("S"), raw.NameLiteral("URI"))
-					action.Set(raw.NameLiteral("URI"), raw.Str([]byte(a.URI)))
-					aDict.Set(raw.NameLiteral("A"), action)
-				} else if a.Contents != "" {
-					aDict.Set(raw.NameLiteral("Contents"), raw.Str([]byte(a.Contents)))
+
+				if link, ok := a.(*semantic.LinkAnnotation); ok {
+					if link.Action != nil {
+						if act := b.serializeAction(link.Action, pageRefs); act != nil {
+							aDict.Set(raw.NameLiteral("A"), act)
+						}
+					} else if link.URI != "" {
+						// Fallback for legacy URI field
+						action := raw.Dict()
+						action.Set(raw.NameLiteral("S"), raw.NameLiteral("URI"))
+						action.Set(raw.NameLiteral("URI"), raw.Str([]byte(link.URI)))
+						aDict.Set(raw.NameLiteral("A"), action)
+					}
+				} else if base.Contents != "" {
+					aDict.Set(raw.NameLiteral("Contents"), raw.Str([]byte(base.Contents)))
 				}
-				if len(a.Appearance) > 0 {
+				if len(base.Appearance) > 0 {
 					apRef := b.nextRef()
 					apDict := raw.Dict()
-					apDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(a.Appearance))))
-					apStream := raw.NewStream(apDict, a.Appearance)
+					apDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(base.Appearance))))
+					apStream := raw.NewStream(apDict, base.Appearance)
 					b.objects[apRef] = apStream
 					ap := raw.Dict()
 					ap.Set(raw.NameLiteral("N"), raw.Ref(apRef.Num, apRef.Gen))
 					aDict.Set(raw.NameLiteral("AP"), ap)
 				}
-				if a.Flags != 0 {
-					aDict.Set(raw.NameLiteral("F"), raw.NumberInt(int64(a.Flags)))
+				if base.Flags != 0 {
+					aDict.Set(raw.NameLiteral("F"), raw.NumberInt(int64(base.Flags)))
 				}
-				if len(a.Border) == 3 {
-					aDict.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberFloat(a.Border[0]), raw.NumberFloat(a.Border[1]), raw.NumberFloat(a.Border[2])))
+				if len(base.Border) == 3 {
+					aDict.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberFloat(base.Border[0]), raw.NumberFloat(base.Border[1]), raw.NumberFloat(base.Border[2])))
 				} else {
 					aDict.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberInt(0), raw.NumberInt(0), raw.NumberInt(0)))
 				}
-				if len(a.Color) > 0 {
+				if len(base.Color) > 0 {
 					colArr := raw.NewArray()
-					for _, c := range a.Color {
+					for _, c := range base.Color {
 						colArr.Append(raw.NumberFloat(c))
 					}
 					aDict.Set(raw.NameLiteral("C"), colArr)
 				}
-				if a.AppearanceState != "" {
-					aDict.Set(raw.NameLiteral("AS"), raw.NameLiteral(a.AppearanceState))
+				if base.AppearanceState != "" {
+					aDict.Set(raw.NameLiteral("AS"), raw.NameLiteral(base.AppearanceState))
 				}
 				b.objects[aRef] = aDict
 				annotArr.Append(raw.Ref(aRef.Num, aRef.Gen))
@@ -918,7 +928,10 @@ func (b *objectBuilder) ensureXObject(name string, xo semantic.XObject) raw.Obje
 		if xo.Height > 0 {
 			dict.Set(raw.NameLiteral("Height"), raw.NumberInt(int64(xo.Height)))
 		}
-		color := xo.ColorSpace.Name
+		var color string
+		if xo.ColorSpace != nil {
+			color = xo.ColorSpace.ColorSpaceName()
+		}
 		if color == "" {
 			color = "DeviceRGB"
 		}
@@ -995,7 +1008,10 @@ func (b *objectBuilder) ensureShading(name string, s semantic.Shading) raw.Objec
 		stype = 2
 	}
 	dict.Set(raw.NameLiteral("ShadingType"), raw.NumberInt(int64(stype)))
-	cs := s.ColorSpace.Name
+	var cs string
+	if s.ColorSpace != nil {
+		cs = s.ColorSpace.ColorSpaceName()
+	}
 	if cs == "" {
 		cs = "DeviceRGB"
 	}
@@ -1072,4 +1088,35 @@ func (b *objectBuilder) buildOutlines(items []semantic.OutlineItem, parent raw.O
 	first = refs[0]
 	last = refs[len(refs)-1]
 	return first, last, count
+}
+
+func (b *objectBuilder) serializeAction(a semantic.Action, pageRefs []raw.ObjectRef) raw.Object {
+	if a == nil {
+		return nil
+	}
+	d := raw.Dict()
+	switch act := a.(type) {
+	case semantic.URIAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("URI"))
+		d.Set(raw.NameLiteral("URI"), raw.Str([]byte(act.URI)))
+	case semantic.GoToAction:
+		d.Set(raw.NameLiteral("S"), raw.NameLiteral("GoTo"))
+		if act.PageIndex >= 0 && act.PageIndex < len(pageRefs) {
+			pref := pageRefs[act.PageIndex]
+			var dest raw.Object
+			if act.Dest != nil {
+				dest = raw.NewArray(
+					raw.Ref(pref.Num, pref.Gen),
+					raw.NameLiteral("XYZ"),
+					xyzDestValue(act.Dest.X),
+					xyzDestValue(act.Dest.Y),
+					xyzDestValue(act.Dest.Zoom),
+				)
+			} else {
+				dest = raw.NewArray(raw.Ref(pref.Num, pref.Gen), raw.NameLiteral("Fit"))
+			}
+			d.Set(raw.NameLiteral("D"), dest)
+		}
+	}
+	return d
 }

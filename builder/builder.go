@@ -35,7 +35,7 @@ type PageBuilder interface {
 	DrawRectangle(x, y, width, height float64, opts RectOptions) PageBuilder
 	DrawLine(x1, y1, x2, y2 float64, opts LineOptions) PageBuilder
 	DrawTable(table Table, opts TableOptions) PageBuilder
-	AddAnnotation(ann *semantic.Annotation) PageBuilder
+	AddAnnotation(ann semantic.Annotation) PageBuilder
 	SetMediaBox(box semantic.Rectangle) PageBuilder
 	SetCropBox(box semantic.Rectangle) PageBuilder
 	SetRotation(degrees int) PageBuilder
@@ -806,9 +806,9 @@ func (p *pageBuilderImpl) DrawTable(table Table, opts TableOptions) PageBuilder 
 	return cur
 }
 
-func (p *pageBuilderImpl) AddAnnotation(ann *semantic.Annotation) PageBuilder {
+func (p *pageBuilderImpl) AddAnnotation(ann semantic.Annotation) PageBuilder {
 	if ann != nil {
-		p.page.Annotations = append(p.page.Annotations, *ann)
+		p.page.Annotations = append(p.page.Annotations, ann)
 	}
 	return p
 }
