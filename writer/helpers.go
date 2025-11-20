@@ -706,6 +706,19 @@ func xyzDestValue(v *float64) raw.Object {
 	return raw.NumberFloat(*v)
 }
 
+func serializeDestination(dest *semantic.OutlineDestination, pageRef raw.ObjectRef) raw.Object {
+	if dest != nil {
+		return raw.NewArray(
+			raw.Ref(pageRef.Num, pageRef.Gen),
+			raw.NameLiteral("XYZ"),
+			xyzDestValue(dest.X),
+			xyzDestValue(dest.Y),
+			xyzDestValue(dest.Zoom),
+		)
+	}
+	return raw.NewArray(raw.Ref(pageRef.Num, pageRef.Gen), raw.NameLiteral("Fit"))
+}
+
 func buildTrailer(size int, catalogRef raw.ObjectRef, infoRef *raw.ObjectRef, encryptRef *raw.ObjectRef, doc *semantic.Document, cfg Config, prev int64, ids [2][]byte) *raw.DictObj {
 	trailer := raw.Dict()
 	trailer.Set(raw.NameLiteral("Size"), raw.NumberInt(int64(size)))

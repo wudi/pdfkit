@@ -9,7 +9,12 @@ import (
 	"sort"
 )
 
-type impl struct{ interceptors []Interceptor }
+type impl struct {
+	interceptors     []Interceptor
+	annotSerializer  AnnotationSerializer
+	actionSerializer ActionSerializer
+	csSerializer     ColorSpaceSerializer
+}
 
 func (w *impl) SerializeObject(ref raw.ObjectRef, obj raw.Object) ([]byte, error) {
 	var buf bytes.Buffer
@@ -67,7 +72,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	incr := incrementalContext(doc, out, cfg)
 	idPair := fileID(doc, cfg)
 
-	builder := newObjectBuilder(doc, cfg, incr.startObjNum)
+	builder := newObjectBuilder(doc, cfg, incr.startObjNum, w.annotSerializer, w.actionSerializer, w.csSerializer)
 	objects, catalogRef, infoRef, encryptRef, err := builder.Build()
 	if err != nil {
 		return err

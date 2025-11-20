@@ -56,13 +56,41 @@ type Interceptor interface {
 	AfterWrite(ctx Context, obj raw.Object, bytesWritten int64) error
 }
 
-type WriterBuilder struct{ interceptors []Interceptor }
+type WriterBuilder struct {
+	interceptors     []Interceptor
+	annotSerializer  AnnotationSerializer
+	actionSerializer ActionSerializer
+	csSerializer     ColorSpaceSerializer
+}
 
 func (b *WriterBuilder) WithInterceptor(i Interceptor) *WriterBuilder {
 	b.interceptors = append(b.interceptors, i)
 	return b
 }
-func (b *WriterBuilder) Build() Writer { return &impl{interceptors: b.interceptors} }
+
+func (b *WriterBuilder) WithAnnotationSerializer(s AnnotationSerializer) *WriterBuilder {
+	b.annotSerializer = s
+	return b
+}
+
+func (b *WriterBuilder) WithActionSerializer(s ActionSerializer) *WriterBuilder {
+	b.actionSerializer = s
+	return b
+}
+
+func (b *WriterBuilder) WithColorSpaceSerializer(s ColorSpaceSerializer) *WriterBuilder {
+	b.csSerializer = s
+	return b
+}
+
+func (b *WriterBuilder) Build() Writer {
+	return &impl{
+		interceptors:     b.interceptors,
+		annotSerializer:  b.annotSerializer,
+		actionSerializer: b.actionSerializer,
+		csSerializer:     b.csSerializer,
+	}
+}
 
 type WriterAt interface {
 	Write(p []byte) (n int, err error)

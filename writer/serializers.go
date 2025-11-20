@@ -169,6 +169,21 @@ func (s *defaultAnnotationSerializer) Serialize(a semantic.Annotation, ctx Seria
 			}
 			dict.Set(raw.NameLiteral("RD"), rd)
 		}
+	case *semantic.WidgetAnnotation:
+		if t.Field != nil {
+			if t.Field.Type != "" {
+				dict.Set(raw.NameLiteral("FT"), raw.NameLiteral(t.Field.Type))
+			}
+			if t.Field.Name != "" {
+				dict.Set(raw.NameLiteral("T"), raw.Str([]byte(t.Field.Name)))
+			}
+			if t.Field.Value != "" {
+				dict.Set(raw.NameLiteral("V"), raw.Str([]byte(t.Field.Value)))
+			}
+			if t.Field.Flags != 0 {
+				dict.Set(raw.NameLiteral("Ff"), raw.NumberInt(int64(t.Field.Flags)))
+			}
+		}
 	}
 
 	if base.Contents != "" {
@@ -230,19 +245,7 @@ func (s *defaultActionSerializer) Serialize(a semantic.Action, ctx Serialization
 	case semantic.GoToAction:
 		d.Set(raw.NameLiteral("S"), raw.NameLiteral("GoTo"))
 		if pref := ctx.PageRef(act.PageIndex); pref != nil {
-			var dest raw.Object
-			if act.Dest != nil {
-				dest = raw.NewArray(
-					raw.Ref(pref.Num, pref.Gen),
-					raw.NameLiteral("XYZ"),
-					xyzDestValue(act.Dest.X),
-					xyzDestValue(act.Dest.Y),
-					xyzDestValue(act.Dest.Zoom),
-				)
-			} else {
-				dest = raw.NewArray(raw.Ref(pref.Num, pref.Gen), raw.NameLiteral("Fit"))
-			}
-			d.Set(raw.NameLiteral("D"), dest)
+			d.Set(raw.NameLiteral("D"), serializeDestination(act.Dest, *pref))
 		}
 	}
 	return d

@@ -27,7 +27,7 @@ type objectBuilder struct {
 	csSerializer     ColorSpaceSerializer
 }
 
-func newObjectBuilder(doc *semantic.Document, cfg Config, startObjNum int) *objectBuilder {
+func newObjectBuilder(doc *semantic.Document, cfg Config, startObjNum int, as AnnotationSerializer, actS ActionSerializer, csS ColorSpaceSerializer) *objectBuilder {
 	b := &objectBuilder{
 		doc:         doc,
 		cfg:         cfg,
@@ -38,9 +38,21 @@ func newObjectBuilder(doc *semantic.Document, cfg Config, startObjNum int) *obje
 		patternRefs: make(map[string]raw.ObjectRef),
 		shadingRefs: make(map[string]raw.ObjectRef),
 	}
-	b.actionSerializer = newActionSerializer()
-	b.annotSerializer = newAnnotationSerializer(b.actionSerializer)
-	b.csSerializer = newColorSpaceSerializer()
+	if actS != nil {
+		b.actionSerializer = actS
+	} else {
+		b.actionSerializer = newActionSerializer()
+	}
+	if as != nil {
+		b.annotSerializer = as
+	} else {
+		b.annotSerializer = newAnnotationSerializer(b.actionSerializer)
+	}
+	if csS != nil {
+		b.csSerializer = csS
+	} else {
+		b.csSerializer = newColorSpaceSerializer()
+	}
 	return b
 }
 
@@ -606,58 +618,36 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 			pd.Set(raw.NameLiteral("Annots"), arr)
 		}
 		for _, f := range b.doc.AcroForm.Fields {
-			fieldRef := b.nextRef()
-			fd := raw.Dict()
-			if f.Type != "" {
-				fd.Set(raw.NameLiteral("FT"), raw.NameLiteral(f.Type))
-			} else {
-				fd.Set(raw.NameLiteral("FT"), raw.NameLiteral("Tx"))
+			// Convert FormField to WidgetAnnotation for serialization
+			widget := &semantic.WidgetAnnotation{
+				BaseAnnotation: semantic.BaseAnnotation{
+					Subtype:         "Widget",
+					RectVal:         f.Rect,
+					Flags:           f.Flags, // Using Field flags as Annotation flags (legacy behavior)
+					Appearance:      f.Appearance,
+					AppearanceState: f.AppearanceState,
+					Border:          f.Border,
+					Color:           f.Color,
+				},
+				Field: &f,
 			}
-			fd.Set(raw.NameLiteral("Type"), raw.NameLiteral("Annot"))
-			fd.Set(raw.NameLiteral("Subtype"), raw.NameLiteral("Widget"))
-			if f.Name != "" {
-				fd.Set(raw.NameLiteral("T"), raw.Str([]byte(f.Name)))
+
+			fieldRef, err := b.annotSerializer.Serialize(widget, b)
+			if err != nil {
+				return nil, raw.ObjectRef{}, nil, nil, err
 			}
-			if f.Value != "" {
-				fd.Set(raw.NameLiteral("V"), raw.Str([]byte(f.Value)))
-			}
-			if f.Flags != 0 {
-				fd.Set(raw.NameLiteral("Ff"), raw.NumberInt(int64(f.Flags)))
-				fd.Set(raw.NameLiteral("F"), raw.NumberInt(int64(f.Flags)))
-			}
-			if cropSet(f.Rect) {
-				fd.Set(raw.NameLiteral("Rect"), rectArray(f.Rect))
-			}
+
+			// Post-processing for P (Page) reference which isn't handled by serializer
 			if f.PageIndex >= 0 && f.PageIndex < len(b.pageRefs) {
 				pref := b.pageRefs[f.PageIndex]
-				fd.Set(raw.NameLiteral("P"), raw.Ref(pref.Num, pref.Gen))
+				if obj, ok := b.objects[fieldRef]; ok {
+					if dict, ok := obj.(*raw.DictObj); ok {
+						dict.Set(raw.NameLiteral("P"), raw.Ref(pref.Num, pref.Gen))
+					}
+				}
 				appendWidgetToPage(f.PageIndex, fieldRef)
 			}
-			if len(f.Border) == 3 {
-				fd.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberFloat(f.Border[0]), raw.NumberFloat(f.Border[1]), raw.NumberFloat(f.Border[2])))
-			} else {
-				fd.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberInt(0), raw.NumberInt(0), raw.NumberInt(0)))
-			}
-			if len(f.Color) > 0 {
-				colArr := raw.NewArray()
-				for _, c := range f.Color {
-					colArr.Append(raw.NumberFloat(c))
-				}
-				fd.Set(raw.NameLiteral("C"), colArr)
-			}
-			if len(f.Appearance) > 0 {
-				apRef := b.nextRef()
-				apDict := raw.Dict()
-				apDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(f.Appearance))))
-				b.objects[apRef] = raw.NewStream(apDict, f.Appearance)
-				ap := raw.Dict()
-				ap.Set(raw.NameLiteral("N"), raw.Ref(apRef.Num, apRef.Gen))
-				fd.Set(raw.NameLiteral("AP"), ap)
-			}
-			if f.AppearanceState != "" {
-				fd.Set(raw.NameLiteral("AS"), raw.NameLiteral(f.AppearanceState))
-			}
-			b.objects[fieldRef] = fd
+
 			fieldsArr.Append(raw.Ref(fieldRef.Num, fieldRef.Gen))
 		}
 		formDict.Set(raw.NameLiteral("Fields"), fieldsArr)
@@ -1011,19 +1001,7 @@ func (b *objectBuilder) buildOutlines(items []semantic.OutlineItem, parent raw.O
 		d.Set(raw.NameLiteral("Title"), raw.Str([]byte(item.Title)))
 		if item.PageIndex >= 0 && item.PageIndex < len(pageRefs) {
 			pref := pageRefs[item.PageIndex]
-			var dest raw.Object
-			if item.Dest != nil {
-				dest = raw.NewArray(
-					raw.Ref(pref.Num, pref.Gen),
-					raw.NameLiteral("XYZ"),
-					xyzDestValue(item.Dest.X),
-					xyzDestValue(item.Dest.Y),
-					xyzDestValue(item.Dest.Zoom),
-				)
-			} else {
-				dest = raw.NewArray(raw.Ref(pref.Num, pref.Gen), raw.NameLiteral("Fit"))
-			}
-			d.Set(raw.NameLiteral("Dest"), dest)
+			d.Set(raw.NameLiteral("Dest"), serializeDestination(item.Dest, pref))
 		}
 		d.Set(raw.NameLiteral("Parent"), raw.Ref(parent.Num, parent.Gen))
 		if i > 0 {

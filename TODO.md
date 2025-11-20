@@ -181,7 +181,7 @@ Status key: Not started / In progress / Done.
 - [x] Implement Text Markup Annotations: `Highlight`, `Underline`, `StrikeOut`, `Squiggly`. Status: Done.
 - [x] Implement Shape Annotations: `Line`, `Square`, `Circle`. Status: Done.
 - [x] Implement Text Annotations: `Text` (Sticky Note), `FreeText` (Typewriter). Status: Done.
-- [ ] Implement Widget Annotations: `Widget` (Form Fields). Status: Partially done (basic support exists).
+- [x] Implement Widget Annotations: `Widget` (Form Fields). Status: Done (integrated into AnnotationSerializer and AcroForm builder).
 - [ ] Implement Other Annotations: `Stamp`, `Ink`, `Popup`, `FileAttachment`, `Sound`, `Movie`, `Screen`, `PrinterMark`, `TrapNet`, `Watermark`, `3D`, `Redact`, `Projection`. Status: Not started.
 
 ## Phase 2: Expanded Action Support
