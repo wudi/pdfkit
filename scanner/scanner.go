@@ -75,6 +75,7 @@ type pdfScanner struct {
 	pin           int64
 	readBuf       []byte
 	windowBuf     []byte
+	tempBuf       []byte
 }
 
 // New loads entire ReaderAt into memory and returns a scanner.
@@ -93,6 +94,7 @@ func New(r ReaderAt, cfg Config) Scanner {
 		readBuf:       make([]byte, chunk),
 		windowBuf:     window,
 		data:          window[:0],
+		tempBuf:       make([]byte, 0, 256),
 	}
 }
 
@@ -224,6 +226,15 @@ func (s *pdfScanner) skipWSAndComments() error {
 func (s *pdfScanner) ensure(n int64) error {
 	if n < s.base {
 		return s.reloadWindow(n)
+	}
+	// Optimization: Pre-allocate if we know we need more space to avoid incremental growth
+	needed := n - s.base + 1
+	if needed > int64(len(s.data)) {
+		missing := needed - int64(len(s.data))
+		// Cap at a reasonable limit to avoid massive allocation on bad input,
+		// though ensureCapacity handles OOM by panic usually.
+		// We assume missing fits in int.
+		s.ensureCapacity(int(missing))
 	}
 	for n >= s.base+int64(len(s.data)) {
 		if s.eof {
@@ -395,7 +406,7 @@ func isAlpha(c byte) bool      { return unicode.IsLetter(rune(c)) }
 func (s *pdfScanner) scanName() (Token, error) {
 	start := s.pos
 	s.pos++ // skip '/'
-	var out bytes.Buffer
+	s.tempBuf = s.tempBuf[:0]
 	for {
 		c, err := s.byteAt(s.pos)
 		if err != nil {
@@ -411,16 +422,16 @@ func (s *pdfScanner) scanName() (Token, error) {
 			s.pos++
 			a := s.hexNibble()
 			b := s.hexNibble()
-			out.WriteByte((a << 4) | b)
+			s.tempBuf = append(s.tempBuf, (a<<4)|b)
 			continue
 		}
-		out.WriteByte(c)
+		s.tempBuf = append(s.tempBuf, c)
 		s.pos++
-		if s.cfg.MaxNameLength > 0 && int64(out.Len()) > s.cfg.MaxNameLength {
+		if s.cfg.MaxNameLength > 0 && int64(len(s.tempBuf)) > s.cfg.MaxNameLength {
 			return Token{}, s.recover(errors.New("name too long"), "name")
 		}
 	}
-	return s.emit(Token{Type: TokenName, Value: out.String(), Pos: start})
+	return s.emit(Token{Type: TokenName, Value: string(s.tempBuf), Pos: start})
 }
 
 func (s *pdfScanner) hexNibble() byte {
@@ -444,7 +455,7 @@ func (s *pdfScanner) hexNibble() byte {
 func (s *pdfScanner) scanLiteralString() (Token, error) { /* PDF 7.3.4.2 */
 	start := s.pos
 	s.pos++ // skip '('
-	var buf bytes.Buffer
+	s.tempBuf = s.tempBuf[:0]
 	depth := 1
 	for {
 		c, err := s.byteAt(s.pos)
@@ -499,16 +510,16 @@ func (s *pdfScanner) scanLiteralString() (Token, error) { /* PDF 7.3.4.2 */
 					val = (val << 3) + int(d-'0')
 					s.pos++
 				}
-				buf.WriteByte(byte(val))
+				s.tempBuf = append(s.tempBuf, byte(val))
 				continue
 			}
-			buf.WriteByte(translateEscape(esc))
+			s.tempBuf = append(s.tempBuf, translateEscape(esc))
 			s.pos++
 			continue
 		}
 		if c == '(' {
 			depth++
-			buf.WriteByte(c)
+			s.tempBuf = append(s.tempBuf, c)
 			s.pos++
 			continue
 		}
@@ -518,13 +529,13 @@ func (s *pdfScanner) scanLiteralString() (Token, error) { /* PDF 7.3.4.2 */
 				s.pos++
 				break
 			}
-			buf.WriteByte(c)
+			s.tempBuf = append(s.tempBuf, c)
 			s.pos++
 			continue
 		}
-		buf.WriteByte(c)
+		s.tempBuf = append(s.tempBuf, c)
 		s.pos++
-		if s.cfg.MaxStringLength > 0 && int64(buf.Len()) > s.cfg.MaxStringLength {
+		if s.cfg.MaxStringLength > 0 && int64(len(s.tempBuf)) > s.cfg.MaxStringLength {
 			return Token{}, s.recover(errors.New("literal string too long"), "literal")
 		}
 	}
@@ -535,7 +546,9 @@ func (s *pdfScanner) scanLiteralString() (Token, error) { /* PDF 7.3.4.2 */
 			}
 		}
 	}
-	return s.emit(Token{Type: TokenString, Value: buf.Bytes(), Pos: start})
+	// Copy tempBuf because it is reused
+	val := append([]byte(nil), s.tempBuf...)
+	return s.emit(Token{Type: TokenString, Value: val, Pos: start})
 }
 
 func (s *pdfScanner) scanHexString() (Token, error) {
@@ -892,7 +905,9 @@ func (s *pdfScanner) peekAhead(n int64) byte {
 
 func (s *pdfScanner) scanKeyword() (Token, error) {
 	start := s.pos
-	var buf bytes.Buffer
+	s.pin = start
+	defer func() { s.pin = -1 }()
+
 	for {
 		c, err := s.byteAt(s.pos)
 		if err != nil {
@@ -904,10 +919,13 @@ func (s *pdfScanner) scanKeyword() (Token, error) {
 		if isDelimiter(c) {
 			break
 		}
-		buf.WriteByte(c)
 		s.pos++
 	}
-	kw := buf.String()
+	slice, err := s.slice(start, s.pos)
+	if err != nil {
+		return Token{}, err
+	}
+	kw := string(slice)
 	switch kw {
 	case "true", "false":
 		return Token{Type: TokenBoolean, Value: kw == "true", Pos: start}, nil
@@ -958,9 +976,11 @@ func (s *pdfScanner) scanNumberOrRef() (Token, error) {
 
 func (s *pdfScanner) scanNumberString() string {
 	start := s.pos
-	var buf bytes.Buffer
 	seenDigit := false
 	dotSeen := false
+	s.pin = start
+	defer func() { s.pin = -1 }()
+
 	for {
 		c, err := s.byteAt(s.pos)
 		if err != nil {
@@ -974,38 +994,40 @@ func (s *pdfScanner) scanNumberString() string {
 		}
 		switch {
 		case c == '+' || c == '-':
-			if buf.Len() > 0 {
-				return s.finishNumber(start, &buf, seenDigit)
+			if s.pos > start {
+				return s.finishNumber(start, seenDigit)
 			}
-			buf.WriteByte(c)
 			s.pos++
 		case c == '.':
 			if dotSeen {
-				return s.finishNumber(start, &buf, seenDigit)
+				return s.finishNumber(start, seenDigit)
 			}
 			dotSeen = true
-			buf.WriteByte(c)
 			s.pos++
 		case c >= '0' && c <= '9':
-			buf.WriteByte(c)
 			seenDigit = true
 			s.pos++
 		default:
-			return s.finishNumber(start, &buf, seenDigit)
+			return s.finishNumber(start, seenDigit)
 		}
 	}
-	return s.finishNumber(start, &buf, seenDigit)
+	return s.finishNumber(start, seenDigit)
 }
 
-func (s *pdfScanner) finishNumber(start int64, buf *bytes.Buffer, seenDigit bool) string {
+func (s *pdfScanner) finishNumber(start int64, seenDigit bool) string {
 	if !seenDigit {
 		s.pos = start
 		return ""
 	}
-	if s.cfg.MaxNumberLength > 0 && buf.Len() > s.cfg.MaxNumberLength {
+	length := s.pos - start
+	if s.cfg.MaxNumberLength > 0 && length > int64(s.cfg.MaxNumberLength) {
 		_ = s.recover(errors.New("number too long"), "number")
 	}
-	return buf.String()
+	slice, err := s.slice(start, s.pos)
+	if err != nil {
+		return ""
+	}
+	return string(slice)
 }
 func (s *pdfScanner) recover(err error, loc string) error {
 	if s.cfg.Recovery == nil {
