@@ -1,48 +1,49 @@
 package layout
 
 import (
-	"bufio"
+	"pdflib/builder"
 	"strings"
 
-	"pdflib/builder"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/text"
 )
 
-// RenderMarkdown renders a markdown string to the PDF.
-func (e *Engine) RenderMarkdown(text string) error {
-	scanner := bufio.NewScanner(strings.NewReader(text))
-	for scanner.Scan() {
-		line := scanner.Text()
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			e.renderParagraphSpacing()
-			continue
-		}
+// RenderMarkdown renders a markdown string to the PDF using goldmark.
+func (e *Engine) RenderMarkdown(source string) error {
+	md := goldmark.New()
+	src := []byte(source)
+	doc := md.Parser().Parse(text.NewReader(src))
 
-		if strings.HasPrefix(trimmed, "#") {
-			e.renderHeader(trimmed)
-		} else if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
-			e.renderListItem(trimmed)
-		} else {
-			e.renderParagraph(trimmed)
+	return e.walkMarkdown(doc, src)
+}
+
+func (e *Engine) walkMarkdown(node ast.Node, source []byte) error {
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		switch n := child.(type) {
+		case *ast.Heading:
+			e.renderMarkdownHeader(n, source)
+		case *ast.Paragraph:
+			e.renderMarkdownParagraph(n, source)
+		case *ast.List:
+			e.walkMarkdown(n, source)
+		case *ast.ListItem:
+			e.renderMarkdownListItem(n, source)
+		case *ast.Text:
+			// Text nodes are usually handled within block elements, but if we encounter one here...
 		}
 	}
+	
 	if e.currentPage != nil {
 		e.currentPage.Finish()
 	}
-	return scanner.Err()
+	return nil
 }
 
-func (e *Engine) renderHeader(line string) {
-	level := 0
-	for _, c := range line {
-		if c == '#' {
-			level++
-		} else {
-			break
-		}
-	}
-	text := strings.TrimSpace(line[level:])
-	
+func (e *Engine) renderMarkdownHeader(n *ast.Heading, source []byte) {
+	text := string(n.Text(source))
+	level := n.Level
+
 	fontSize := e.DefaultFontSize * 2.0
 	if level == 2 {
 		fontSize = e.DefaultFontSize * 1.5
@@ -61,8 +62,23 @@ func (e *Engine) renderHeader(line string) {
 	e.cursorY -= lineHeight
 }
 
-func (e *Engine) renderListItem(line string) {
-	text := strings.TrimSpace(line[2:])
+func (e *Engine) renderMarkdownListItem(n *ast.ListItem, source []byte) {
+	// Get the text content of the list item. 
+	// List items usually contain a paragraph or other blocks.
+	// For simplicity in this engine, we'll extract text from the first child if it's a paragraph or text.
+	
+	var textContent string
+	if child := n.FirstChild(); child != nil {
+		if p, ok := child.(*ast.Paragraph); ok {
+			textContent = string(p.Text(source))
+		} else if t, ok := child.(*ast.Text); ok {
+			textContent = string(t.Segment.Value(source))
+		} else {
+			// Fallback: try to get text from whatever it is
+			textContent = string(child.Text(source))
+		}
+	}
+
 	e.ensurePage()
 	
 	fontSize := e.DefaultFontSize
@@ -77,14 +93,34 @@ func (e *Engine) renderListItem(line string) {
 	
 	// Indent text
 	indent := 15.0
-	e.renderTextWrapped(text, e.cursorX+indent, fontSize, lineHeight)
+	e.renderTextWrapped(textContent, e.cursorX+indent, fontSize, lineHeight)
 }
 
-func (e *Engine) renderParagraph(line string) {
+func (e *Engine) renderMarkdownParagraph(n *ast.Paragraph, source []byte) {
+	// Concatenate all text segments in the paragraph
+	var sb strings.Builder
+	for child := n.FirstChild(); child != nil; child = child.NextSibling() {
+		if t, ok := child.(*ast.Text); ok {
+			sb.Write(t.Segment.Value(source))
+			if t.SoftLineBreak() || t.HardLineBreak() {
+				sb.WriteByte(' ')
+			}
+		} else if _, ok := child.(*ast.CodeSpan); ok {
+			// Handle code spans as plain text for now
+			sb.WriteString(string(child.Text(source)))
+		} else if _, ok := child.(*ast.Emphasis); ok {
+			// Handle emphasis as plain text for now
+			sb.WriteString(string(child.Text(source)))
+		} else {
+			sb.WriteString(string(child.Text(source)))
+		}
+	}
+	
+	text := sb.String()
 	e.ensurePage()
 	fontSize := e.DefaultFontSize
 	lineHeight := fontSize * e.LineHeight
-	e.renderTextWrapped(line, e.cursorX, fontSize, lineHeight)
+	e.renderTextWrapped(text, e.cursorX, fontSize, lineHeight)
 }
 
 func (e *Engine) renderParagraphSpacing() {

@@ -40,3 +40,38 @@ Another paragraph.
 		t.Fatal("Expected content stream")
 	}
 }
+
+func TestEngine_RenderHTML(t *testing.T) {
+	b := builder.NewBuilder()
+	engine := NewEngine(b)
+
+	htmlStr := `
+<h1>Title</h1>
+<h2>Subtitle</h2>
+<p>This is a paragraph with some text. It should wrap if it is long enough.</p>
+<ul>
+	<li>List item 1</li>
+	<li>List item 2</li>
+</ul>
+<p>Another paragraph.</p>
+`
+	err := engine.RenderHTML(htmlStr)
+	if err != nil {
+		t.Fatalf("RenderHTML failed: %v", err)
+	}
+
+	doc, err := b.Build()
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	if len(doc.Pages) == 0 {
+		t.Fatal("Expected at least one page")
+	}
+	
+	// Basic verification of content presence
+	page := doc.Pages[0]
+	if len(page.Contents) == 0 {
+		t.Fatal("Expected content stream")
+	}
+}

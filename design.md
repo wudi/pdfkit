@@ -2017,6 +2017,11 @@ The `layout` package provides a high-level engine for converting structured cont
 ```go
 package layout
 
+import (
+    "github.com/yuin/goldmark"
+    "golang.org/x/net/html"
+)
+
 // Engine handles layout and rendering
 type Engine struct {
     b builder.PDFBuilder
@@ -2033,19 +2038,23 @@ type Engine struct {
     cursorY     float64
 }
 
-// RenderMarkdown renders markdown text
+// RenderMarkdown renders markdown text using goldmark
 func (e *Engine) RenderMarkdown(text string) error
+
+// RenderHTML renders HTML text using net/html
+func (e *Engine) RenderHTML(text string) error
 ```
 
 ### 20.2 Supported Features
 
-*   **Markdown**:
+*   **Markdown** (via `goldmark`):
     *   Headers (H1-H6)
     *   Paragraphs with word wrapping
     *   Unordered lists (bullets)
     *   Automatic pagination
-*   **HTML**: (Planned)
+*   **HTML** (via `net/html`):
     *   Basic tags (p, h1-h6, ul, li)
+    *   Automatic pagination
 
 ---
 
