@@ -24,6 +24,7 @@ type PDFBuilder interface {
 	RegisterFont(name string, font *semantic.Font) PDFBuilder
 	RegisterTrueTypeFont(name string, data []byte) PDFBuilder
 	AddEmbeddedFile(file semantic.EmbeddedFile) PDFBuilder
+	Form() FormBuilder
 	Build() (*semantic.Document, error)
 }
 
@@ -36,6 +37,7 @@ type PageBuilder interface {
 	DrawLine(x1, y1, x2, y2 float64, opts LineOptions) PageBuilder
 	DrawTable(table Table, opts TableOptions) PageBuilder
 	AddAnnotation(ann semantic.Annotation) PageBuilder
+	AddFormField(field semantic.FormField) PageBuilder
 	SetMediaBox(box semantic.Rectangle) PageBuilder
 	SetCropBox(box semantic.Rectangle) PageBuilder
 	SetRotation(degrees int) PageBuilder
@@ -201,6 +203,13 @@ type builderImpl struct {
 	structTree    *semantic.StructureTree
 	mcidCounters  map[*semantic.Page]int
 	embeddedFiles []semantic.EmbeddedFile
+	acroForm      *semantic.AcroForm
+	pendingFields []pendingField
+}
+
+type pendingField struct {
+	field semantic.FormField
+	page  *semantic.Page
 }
 
 type pageBuilderImpl struct {
@@ -320,6 +329,21 @@ func (b *builderImpl) Build() (*semantic.Document, error) {
 		p.Index = i
 		pageIndexByPtr[p] = i
 	}
+
+	if len(b.pendingFields) > 0 {
+		if b.acroForm == nil {
+			b.acroForm = &semantic.AcroForm{NeedAppearances: true}
+		}
+		for _, pf := range b.pendingFields {
+			if idx, ok := pageIndexByPtr[pf.page]; ok {
+				pf.field.PageIndex = idx
+			} else {
+				pf.field.PageIndex = -1
+			}
+			b.acroForm.Fields = append(b.acroForm.Fields, pf.field)
+		}
+	}
+
 	doc := &semantic.Document{
 		Pages:  b.pages,
 		Info:   b.info,
@@ -340,6 +364,9 @@ func (b *builderImpl) Build() (*semantic.Document, error) {
 	}
 	if b.structTree != nil {
 		doc.StructTree = b.structTree
+	}
+	if b.acroForm != nil {
+		doc.AcroForm = b.acroForm
 	}
 	if b.encrypted {
 		doc.OwnerPassword = b.ownerPassword
@@ -807,9 +834,15 @@ func (p *pageBuilderImpl) DrawTable(table Table, opts TableOptions) PageBuilder 
 }
 
 func (p *pageBuilderImpl) AddAnnotation(ann semantic.Annotation) PageBuilder {
-	if ann != nil {
-		p.page.Annotations = append(p.page.Annotations, ann)
-	}
+	p.page.Annotations = append(p.page.Annotations, ann)
+	return p
+}
+
+func (p *pageBuilderImpl) AddFormField(field semantic.FormField) PageBuilder {
+	p.parent.pendingFields = append(p.parent.pendingFields, pendingField{
+		field: field,
+		page:  p.page,
+	})
 	return p
 }
 
