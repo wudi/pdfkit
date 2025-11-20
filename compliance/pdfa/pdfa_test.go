@@ -1,16 +1,13 @@
 package pdfa_test
 
 import (
+	"context"
 	"testing"
 
 	"pdflib/ir/semantic"
-	"pdflib/pdfa"
+	"pdflib/compliance/pdfa"
 	"pdflib/writer"
 )
-
-type staticCtx struct{}
-
-func (staticCtx) Done() <-chan struct{} { return nil }
 
 func TestPDFALevelSharedType(t *testing.T) {
 	levels := []pdfa.Level{pdfa.PDFA1B, pdfa.PDFA3B}
@@ -18,15 +15,15 @@ func TestPDFALevelSharedType(t *testing.T) {
 		cfg := writer.Config{PDFALevel: level}
 		e := pdfa.NewEnforcer()
 		doc := &semantic.Document{}
-		if err := e.Enforce(staticCtx{}, doc, cfg.PDFALevel); err != nil {
+		if err := e.Enforce(context.Background(), doc, cfg.PDFALevel); err != nil {
 			t.Fatalf("enforce level %v: %v", level, err)
 		}
-		rep, err := e.Validate(staticCtx{}, doc, level)
+		rep, err := e.Validate(context.Background(), doc, level)
 		if err != nil {
 			t.Fatalf("validate level %v: %v", level, err)
 		}
-		if rep.Level != level {
-			t.Fatalf("expected level %v got %v", level, rep.Level)
+		if rep.Standard != level.String() {
+			t.Fatalf("expected level %v got %v", level, rep.Standard)
 		}
 	}
 }
@@ -59,7 +56,7 @@ func TestEnforce(t *testing.T) {
 	}
 
 	// Verify it fails validation initially
-	rep, err := e.Validate(staticCtx{}, doc, pdfa.PDFA1B)
+	rep, err := e.Validate(context.Background(), doc, pdfa.PDFA1B)
 	if err != nil {
 		t.Fatalf("validate: %v", err)
 	}
@@ -68,12 +65,12 @@ func TestEnforce(t *testing.T) {
 	}
 
 	// Enforce
-	if err := e.Enforce(staticCtx{}, doc, pdfa.PDFA1B); err != nil {
+	if err := e.Enforce(context.Background(), doc, pdfa.PDFA1B); err != nil {
 		t.Fatalf("enforce: %v", err)
 	}
 
 	// Verify compliance
-	rep, err = e.Validate(staticCtx{}, doc, pdfa.PDFA1B)
+	rep, err = e.Validate(context.Background(), doc, pdfa.PDFA1B)
 	if err != nil {
 		t.Fatalf("validate after enforce: %v", err)
 	}

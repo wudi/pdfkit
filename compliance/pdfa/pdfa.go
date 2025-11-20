@@ -2,6 +2,7 @@ package pdfa
 
 import (
 	"pdflib/cmm"
+	"pdflib/compliance"
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
 )
@@ -14,27 +15,30 @@ const (
 	PDFA3B
 )
 
+func (l Level) String() string {
+	switch l {
+	case PDFA1B:
+		return "PDF/A-1b"
+	case PDFA3B:
+		return "PDF/A-3b"
+	default:
+		return "Unknown"
+	}
+}
+
 // PDFALevel is kept for compatibility; use Level instead.
 type PDFALevel = Level
 
-type Violation struct{ Code, Description, Location string }
-
-type ComplianceReport struct {
-	Compliant  bool
-	Level      Level
-	Violations []Violation
-}
-
 type Enforcer interface {
-	Enforce(ctx Context, doc *semantic.Document, level Level) error
-	Validate(ctx Context, doc *semantic.Document, level Level) (*ComplianceReport, error)
+	Enforce(ctx compliance.Context, doc *semantic.Document, level Level) error
+	Validate(ctx compliance.Context, doc *semantic.Document, level Level) (*compliance.Report, error)
 }
 
 type enforcerImpl struct{}
 
 func NewEnforcer() Enforcer { return &enforcerImpl{} }
 
-func (e *enforcerImpl) Enforce(ctx Context, doc *semantic.Document, level Level) error {
+func (e *enforcerImpl) Enforce(ctx compliance.Context, doc *semantic.Document, level Level) error {
 	// 1. Remove encryption
 	if doc.Encrypted {
 		doc.Encrypted = false
@@ -76,15 +80,15 @@ func (e *enforcerImpl) Enforce(ctx Context, doc *semantic.Document, level Level)
 	return nil
 }
 
-func (e *enforcerImpl) Validate(ctx Context, doc *semantic.Document, level Level) (*ComplianceReport, error) {
-	report := &ComplianceReport{
-		Level:      level,
-		Violations: []Violation{},
+func (e *enforcerImpl) Validate(ctx compliance.Context, doc *semantic.Document, level Level) (*compliance.Report, error) {
+	report := &compliance.Report{
+		Standard:   level.String(),
+		Violations: []compliance.Violation{},
 	}
 
 	// 1. Encryption forbidden
 	if doc.Encrypted {
-		report.Violations = append(report.Violations, Violation{
+		report.Violations = append(report.Violations, compliance.Violation{
 			Code:        "ENC001",
 			Description: "Encryption is forbidden in PDF/A",
 			Location:    "Document",
@@ -93,7 +97,7 @@ func (e *enforcerImpl) Validate(ctx Context, doc *semantic.Document, level Level
 
 	// 2. OutputIntent required
 	if len(doc.OutputIntents) == 0 {
-		report.Violations = append(report.Violations, Violation{
+		report.Violations = append(report.Violations, compliance.Violation{
 			Code:        "INT001",
 			Description: "OutputIntent is required",
 			Location:    "Catalog",
@@ -103,7 +107,7 @@ func (e *enforcerImpl) Validate(ctx Context, doc *semantic.Document, level Level
 		for _, intent := range doc.OutputIntents {
 			if intent.DestOutputProfile != nil {
 				if _, err := cmm.NewICCProfile(intent.DestOutputProfile); err != nil {
-					report.Violations = append(report.Violations, Violation{
+					report.Violations = append(report.Violations, compliance.Violation{
 						Code:        "INT002",
 						Description: "Invalid OutputIntent ICC profile: " + err.Error(),
 						Location:    "OutputIntent",
@@ -133,7 +137,7 @@ func (e *enforcerImpl) Validate(ctx Context, doc *semantic.Document, level Level
 			visitedFonts[font] = true
 
 			if !isFontEmbedded(font) {
-				report.Violations = append(report.Violations, Violation{
+				report.Violations = append(report.Violations, compliance.Violation{
 					Code:        "FNT001",
 					Description: "Font must be embedded: " + font.BaseFont,
 					Location:    "Page " + string(rune(i+1)) + " Resource " + name,
@@ -145,7 +149,7 @@ func (e *enforcerImpl) Validate(ctx Context, doc *semantic.Document, level Level
 		// Check Annotations
 		for _, annot := range p.Annotations {
 			if isForbiddenAnnotation(annot) {
-				report.Violations = append(report.Violations, Violation{
+				report.Violations = append(report.Violations, compliance.Violation{
 					Code:        "ACT001",
 					Description: "Forbidden annotation type or action: " + annot.Base().Subtype,
 					Location:    "Page " + string(rune(i+1)),
@@ -194,7 +198,7 @@ func isForbiddenAnnotation(a semantic.Annotation) bool {
 	return false
 }
 
-func checkCancelled(ctx Context) error {
+func checkCancelled(ctx compliance.Context) error {
 	select {
 	case <-ctx.Done():
 		return &ValidationCancelledError{}
@@ -207,4 +211,3 @@ type ValidationCancelledError struct{}
 
 func (e *ValidationCancelledError) Error() string { return "validation cancelled" }
 
-type Context interface{ Done() <-chan struct{} }

@@ -1,11 +1,14 @@
 package extensions
 
 import (
+	"context"
 	"sort"
 
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
 )
+
+type Context = context.Context
 
 type Phase int
 
@@ -127,4 +130,4 @@ func (h *HubImpl) Extensions(phase Phase) []Extension {
 	return append([]Extension(nil), h.exts[phase]...)
 }
 
-type Context interface{ Done() <-chan struct{} }
+

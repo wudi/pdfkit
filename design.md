@@ -133,9 +133,9 @@ The library provides both **high-level convenience APIs** for typical PDF tasks 
 | `contentstream/editor` | Spatial indexing (QuadTree) and content redaction/editing |
 | `security/validation` | Digital signature validation, LTV, and revocation checking |
 | `xfa`            | XML Forms Architecture parsing and layout engine                  |
-| `cmm`            | Color Management Module (ICC, CxF) [Planned v2.5]                 |
-| `geo`            | Geospatial PDF support [Planned v2.5]                             |
-| `compliance`     | Unified compliance engine (PDF/A, PDF/X, PDF/UA) [Planned v2.5]   |
+| `cmm`            | Color Management Module (ICC, CxF)                                |
+| `geo`            | Geospatial PDF support                                            |
+| `compliance`     | Unified compliance engine (PDF/A, PDF/X, PDF/UA)                  |
 
 ### 4.2 Module Dependencies
 
@@ -1862,6 +1862,77 @@ type Parser interface {
 type LayoutEngine interface {
     Layout(form *Form) ([]*semantic.Page, error)
 }
+
+### 16.5 Color Management (CMM)
+
+```go
+package cmm
+
+// Profile represents a color profile (ICC or CxF)
+type Profile interface {
+    // Transform returns a color transform to PCS (Profile Connection Space)
+    Transform() Transform
+    
+    // Data returns the raw profile data
+    Data() []byte
+}
+
+// Transform converts colors between spaces
+type Transform interface {
+    Convert(src []float64) ([]float64, error)
+}
+```
+
+### 16.6 Geospatial Support
+
+```go
+package geo
+
+// Viewport represents a geospatial viewport
+type Viewport struct {
+    Name   string
+    BBox   semantic.Rectangle
+    Measure *Measure
+}
+
+// Measure represents a measurement dictionary
+type Measure struct {
+    Subtype string // e.g., "GEO"
+    GCS     *CoordinateSystem
+}
+
+// CoordinateSystem represents a geospatial coordinate system
+type CoordinateSystem struct {
+    Type       string // e.g., "GEOGCS"
+    EPSG       int
+    WKT        string
+}
+```
+
+### 16.7 Compliance Engine
+
+```go
+package compliance
+
+// Validator checks document compliance against a standard
+type Validator interface {
+    Validate(ctx context.Context, doc *semantic.Document) (*Report, error)
+}
+
+// Report details compliance status
+type Report struct {
+    Compliant  bool
+    Standard   string
+    Violations []Violation
+}
+
+// Violation represents a compliance issue
+type Violation struct {
+    Code        string
+    Description string
+    Location    string
+}
+```
 ```
 
 ---

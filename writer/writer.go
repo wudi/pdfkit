@@ -3,7 +3,7 @@ package writer
 import (
 	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
-	"pdflib/pdfa"
+	"pdflib/compliance/pdfa"
 )
 
 type PDFVersion string

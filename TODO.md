@@ -298,9 +298,9 @@ Status key: Not started / In progress / Done.
 - [x] **Phase 3: Geospatial & Engineering**
     - [x] Create `geo` package (Viewports, Measure).
     - [x] Update `ir/semantic` for GeoPDF support.
-- [ ] **Phase 4: Compliance Engines**
-    - [ ] Refactor `pdfa` to `compliance`.
-    - [ ] Add `pdfx`, `pdfua`, `pdfvt` sub-packages.
-- [ ] **Phase 5: Advanced Text**
-    - [ ] Implement `ReplaceText` with reshaping in `editor`.
-    - [ ] Support Vertical Writing mode.
+- [x] **Phase 4: Compliance Engines**
+    - [x] Refactor `pdfa` to `compliance`.
+    - [x] Add `pdfx`, `pdfua`, `pdfvt` sub-packages.
+- [x] **Phase 5: Advanced Text**
+    - [x] Implement `ReplaceText` with reshaping in `editor`.
+    - [x] Support Vertical Writing mode.

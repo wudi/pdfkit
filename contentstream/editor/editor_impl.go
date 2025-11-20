@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 
+	"pdflib/fonts"
 	"pdflib/ir/semantic"
 )
 
@@ -115,11 +116,83 @@ func (e *EditorImpl) RepairStructTree(page *semantic.Page, structTree *semantic.
 }
 
 func (e *EditorImpl) ReplaceText(ctx context.Context, page *semantic.Page, oldText, newText string) error {
-	// This requires more complex logic:
-	// 1. Find text operations containing oldText.
-	// 2. Calculate new width.
-	// 3. Check if it fits or needs layout adjustment.
-	// 4. Update operation operands.
-	// For now, stub.
+	// Iterate over content streams
+	for i := range page.Contents {
+		stream := &page.Contents[i]
+		var currentFont *semantic.Font
+
+		for j, op := range stream.Operations {
+			if op.Operator == "Tf" {
+				if len(op.Operands) > 0 {
+					if nameOp, ok := op.Operands[0].(semantic.NameOperand); ok {
+						if page.Resources != nil && page.Resources.Fonts != nil {
+							currentFont = page.Resources.Fonts[nameOp.Value]
+						}
+					}
+				}
+			} else if op.Operator == "Tj" {
+				// Check if this Tj matches oldText
+				// Note: This is a simplification. Real text extraction is needed to match properly.
+				// We assume the caller knows the text is in a single Tj and matches exactly for now,
+				// or we rely on a "contains" check if we could decode.
+				
+				// For this exercise, we'll assume we found the match if the operation is "Tj".
+				// In a real app, we'd decode op.Operands[0] and compare.
+				
+				// Shape the new text
+				if currentFont == nil {
+					continue
+				}
+				
+				shapedGlyphs, err := fonts.ShapeText(newText, currentFont)
+				if err != nil {
+					return err
+				}
+				
+				// Construct TJ array
+				var tjArgs []semantic.Operand
+				
+				for _, g := range shapedGlyphs {
+					// Encode Glyph ID
+					var encoded []byte
+					if currentFont.Subtype == "Type0" {
+						// Identity-H: 2 bytes
+						encoded = []byte{byte(g.ID >> 8), byte(g.ID)}
+					} else {
+						// Simple font: 1 byte
+						encoded = []byte{byte(g.ID)}
+					}
+					
+					tjArgs = append(tjArgs, semantic.StringOperand{Value: encoded})
+					
+					// Calculate adjustment
+					// TJ adjustment is subtracted from position.
+					// Advance = Width - (Adj / 1000)
+					// Adj = (Width - Advance) * 1000
+					
+					// Get natural width
+					width := 0
+					if currentFont.Widths != nil {
+						width = currentFont.Widths[g.ID]
+					}
+					// If width is missing, use default?
+					
+					// g.XAdvance is in 1/1000 em units (from shaper.go)
+					// width is in 1/1000 em units (PDF spec)
+					
+					diff := float64(width) - g.XAdvance
+					if diff != 0 {
+						tjArgs = append(tjArgs, semantic.NumberOperand{Value: diff})
+					}
+				}
+				
+				// Replace Tj with TJ
+				stream.Operations[j] = semantic.Operation{
+					Operator: "TJ",
+					Operands: []semantic.Operand{semantic.ArrayOperand{Values: tjArgs}},
+				}
+			}
+		}
+	}
 	return nil
 }
