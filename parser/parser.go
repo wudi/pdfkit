@@ -19,6 +19,7 @@ type Config struct {
 	XRef        xref.ResolverConfig
 	MaxIndirect int
 	Security    security.Handler
+	Limits      security.Limits
 	Cache       Cache
 	Password    string
 }
@@ -30,7 +31,10 @@ type DocumentParser struct {
 
 func NewDocumentParser(cfg Config) *DocumentParser {
 	if cfg.MaxIndirect == 0 {
-		cfg.MaxIndirect = 32
+		cfg.MaxIndirect = cfg.Limits.MaxIndirectDepth
+		if cfg.MaxIndirect == 0 {
+			cfg.MaxIndirect = security.DefaultLimits().MaxIndirectDepth
+		}
 	}
 	return &DocumentParser{cfg: cfg}
 }
@@ -57,6 +61,7 @@ func (p *DocumentParser) Parse(ctx context.Context, r io.ReaderAt) (*raw.Documen
 		xrefTable: table,
 		security:  sec,
 		maxDepth:  p.cfg.MaxIndirect,
+		limits:    p.cfg.Limits,
 		cache:     p.cfg.Cache,
 		recovery:  p.cfg.Recovery,
 	}
@@ -118,6 +123,7 @@ func (p *DocumentParser) selectSecurity(ctx context.Context, r io.ReaderAt, tabl
 			xrefTable: table,
 			security:  security.NoopHandler(),
 			maxDepth:  p.cfg.MaxIndirect,
+			limits:    p.cfg.Limits,
 			cache:     p.cfg.Cache,
 			recovery:  p.cfg.Recovery,
 		}).Build()

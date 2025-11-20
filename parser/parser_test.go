@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"pdflib/ir/raw"
+	"pdflib/security"
 )
 
 func TestDocumentParserParsesClassicXRef(t *testing.T) {
@@ -102,6 +104,31 @@ func TestDocumentParserPDFA3bFixture(t *testing.T) {
 	}
 	if !foundFilespec {
 		t.Fatalf("expected filespec dictionary with AFRelationship")
+	}
+}
+
+func TestDocumentParserEnforcesLimits(t *testing.T) {
+	buf := &bytes.Buffer{}
+	buf.WriteString("%PDF-1.7\n")
+	off1 := buf.Len()
+	buf.WriteString("1 0 obj\n(Hello World)\nendobj\n")
+	xrefOffset := buf.Len()
+	fmt.Fprintf(buf, "xref\n0 2\n0000000000 65535 f \n%010d 00000 n \n", off1)
+	buf.WriteString("trailer\n<< /Size 2 /Root 1 0 R >>\nstartxref\n")
+	fmt.Fprintf(buf, "%d\n%%%%EOF\n", xrefOffset)
+
+	cfg := Config{
+		Limits: security.Limits{
+			MaxStringLength: 5, // "Hello World" is 11 chars
+		},
+	}
+	p := NewDocumentParser(cfg)
+	_, err := p.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err == nil {
+		t.Fatal("expected error due to string length limit, got nil")
+	}
+	if !strings.Contains(err.Error(), "string too long") {
+		t.Fatalf("expected 'string too long' error, got: %v", err)
 	}
 }
 

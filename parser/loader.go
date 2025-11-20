@@ -32,6 +32,7 @@ type ObjectLoaderBuilder struct {
 	scanner   scanner.Scanner
 	security  security.Handler
 	maxDepth  int
+	limits    security.Limits
 	cache     Cache
 	recovery  recovery.Strategy
 }
@@ -48,6 +49,10 @@ func (b *ObjectLoaderBuilder) WithSecurity(h security.Handler) *ObjectLoaderBuil
 	b.security = h
 	return b
 }
+func (b *ObjectLoaderBuilder) WithLimits(l security.Limits) *ObjectLoaderBuilder {
+	b.limits = l
+	return b
+}
 func (b *ObjectLoaderBuilder) WithCache(c Cache) *ObjectLoaderBuilder { b.cache = c; return b }
 
 func (b *ObjectLoaderBuilder) Build() (ObjectLoader, error) {
@@ -58,7 +63,23 @@ func (b *ObjectLoaderBuilder) Build() (ObjectLoader, error) {
 	if sec == nil {
 		sec = security.NoopHandler()
 	}
-	return &objectLoader{reader: b.reader, xrefTable: b.xrefTable, scanner: b.scanner, security: sec, maxDepth: b.maxDepth, cache: b.cache, recovery: b.recovery}, nil
+	maxDepth := b.maxDepth
+	if maxDepth == 0 {
+		maxDepth = b.limits.MaxIndirectDepth
+		if maxDepth == 0 {
+			maxDepth = security.DefaultLimits().MaxIndirectDepth
+		}
+	}
+	return &objectLoader{
+		reader:    b.reader,
+		xrefTable: b.xrefTable,
+		scanner:   b.scanner,
+		security:  sec,
+		maxDepth:  maxDepth,
+		limits:    b.limits,
+		cache:     b.cache,
+		recovery:  b.recovery,
+	}, nil
 }
 
 type objectLoader struct {
@@ -67,6 +88,7 @@ type objectLoader struct {
 	scanner   scanner.Scanner
 	security  security.Handler
 	maxDepth  int
+	limits    security.Limits
 	cache     Cache
 	recovery  recovery.Strategy
 	mu        sync.Mutex
@@ -119,7 +141,15 @@ func (o *objectLoader) loadOnce(ctx context.Context, ref raw.ObjectRef) (raw.Obj
 // loadAtOffset assumes caller holds the loader mutex.
 func (o *objectLoader) loadAtOffset(objNum int, offset int64, gen int) (raw.Object, error) {
 	if o.scanner == nil {
-		o.scanner = scanner.New(o.reader, scanner.Config{Recovery: o.recovery})
+		cfg := scanner.Config{
+			Recovery:        o.recovery,
+			MaxStringLength: o.limits.MaxStringLength,
+			MaxArrayDepth:   o.limits.MaxIndirectDepth, // Approximation
+			MaxDictDepth:    o.limits.MaxIndirectDepth, // Approximation
+			MaxBufferSize:   o.limits.MaxDecompressedSize,
+			MaxStreamLength: o.limits.MaxStreamLength,
+		}
+		o.scanner = scanner.New(o.reader, cfg)
 	}
 	s := o.scanner
 	if err := s.Seek(offset); err != nil {
@@ -209,7 +239,10 @@ func (o *objectLoader) loadFromObjectStream(ctx context.Context, ref raw.ObjectR
 			filters.NewASCII85Decoder(),
 			filters.NewASCIIHexDecoder(),
 			filters.NewCryptDecoder(),
-		}, filters.Limits{})
+		}, filters.Limits{
+			MaxDecompressedSize: o.limits.MaxDecompressedSize,
+			MaxDecodeTime:       o.limits.MaxDecodeTime,
+		})
 		decoded, err := p.Decode(ctx, data, filterNames, filterParams)
 		if err != nil {
 			return nil, err
@@ -219,7 +252,15 @@ func (o *objectLoader) loadFromObjectStream(ctx context.Context, ref raw.ObjectR
 	header := data[:first]
 	body := data[first:]
 	// parse header pairs
-	s := scanner.New(bytes.NewReader(header), scanner.Config{Recovery: o.recovery})
+	cfg := scanner.Config{
+		Recovery:        o.recovery,
+		MaxStringLength: o.limits.MaxStringLength,
+		MaxArrayDepth:   o.limits.MaxIndirectDepth,
+		MaxDictDepth:    o.limits.MaxIndirectDepth,
+		MaxBufferSize:   o.limits.MaxDecompressedSize,
+		MaxStreamLength: o.limits.MaxStreamLength,
+	}
+	s := scanner.New(bytes.NewReader(header), cfg)
 	var pairs []int
 	for len(pairs)/2 < nObj {
 		tok, err := s.Next()
@@ -237,7 +278,14 @@ func (o *objectLoader) loadFromObjectStream(ctx context.Context, ref raw.ObjectR
 	// Build objects map
 	objs := make(map[int]raw.Object)
 	bodyScanner := func(start int) scanner.Scanner {
-		cfg := scanner.Config{Recovery: o.recovery}
+		cfg := scanner.Config{
+			Recovery:        o.recovery,
+			MaxStringLength: o.limits.MaxStringLength,
+			MaxArrayDepth:   o.limits.MaxIndirectDepth,
+			MaxDictDepth:    o.limits.MaxIndirectDepth,
+			MaxBufferSize:   o.limits.MaxDecompressedSize,
+			MaxStreamLength: o.limits.MaxStreamLength,
+		}
 		sc := scanner.New(bytes.NewReader(body[start:]), cfg)
 		return sc
 	}
