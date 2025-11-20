@@ -3,6 +3,8 @@ package decoded
 import (
 	"context"
 	"fmt"
+	"runtime"
+	"sync"
 
 	"pdflib/filters"
 	"pdflib/ir/raw"
@@ -21,28 +23,102 @@ func (d *decoderImpl) Decode(ctx context.Context, rawDoc *raw.Document) (*Decode
 	streams := make(map[raw.ObjectRef]Stream)
 	resolver := d.makeResolver(rawDoc)
 
+	// Collect all stream tasks
+	type task struct {
+		ref raw.ObjectRef
+		obj raw.Stream
+	}
+	var tasks []task
 	for ref, obj := range rawDoc.Objects {
-		rawStream, ok := obj.(raw.Stream)
-		if !ok {
-			continue
+		if s, ok := obj.(raw.Stream); ok {
+			tasks = append(tasks, task{ref: ref, obj: s})
 		}
+	}
 
-		data := rawStream.RawData()
+	if len(tasks) == 0 {
+		return &DecodedDocument{
+			Raw:               rawDoc,
+			Streams:           streams,
+			Perms:             rawDoc.Permissions,
+			Encrypted:         rawDoc.Encrypted,
+			MetadataEncrypted: rawDoc.MetadataEncrypted,
+		}, nil
+	}
 
-		names, params := filters.ExtractFilters(rawStream.Dictionary())
-		if d.pipeline != nil && len(names) > 0 {
-			decoded, err := d.pipeline.DecodeWithResolver(ctx, data, names, params, resolver)
-			if err != nil {
-				return nil, fmt.Errorf("decode filters %v: %w", names, err)
+	// Determine concurrency
+	workers := runtime.GOMAXPROCS(0)
+	if workers < 1 {
+		workers = 1
+	}
+
+	// Use a buffered channel as a semaphore to limit concurrency
+	sem := make(chan struct{}, workers)
+	// Channel to collect results
+	type result struct {
+		ref    raw.ObjectRef
+		stream Stream
+		err    error
+	}
+	results := make(chan result, len(tasks))
+
+	var wg sync.WaitGroup
+	for _, t := range tasks {
+		wg.Add(1)
+		go func(t task) {
+			defer wg.Done()
+
+			// Acquire semaphore
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				results <- result{err: ctx.Err()}
+				return
 			}
-			data = decoded
-		}
+			defer func() { <-sem }()
 
-		streams[ref] = decodedStream{
-			raw:     rawStream,
-			data:    data,
-			filters: names,
+			// Check context again
+			select {
+			case <-ctx.Done():
+				results <- result{err: ctx.Err()}
+				return
+			default:
+			}
+
+			data := t.obj.RawData()
+			names, params := filters.ExtractFilters(t.obj.Dictionary())
+
+			if d.pipeline != nil && len(names) > 0 {
+				decodedData, err := d.pipeline.DecodeWithResolver(ctx, data, names, params, resolver)
+				if err != nil {
+					results <- result{err: fmt.Errorf("decode filters %v for %v: %w", names, t.ref, err)}
+					return
+				}
+				data = decodedData
+			}
+
+			results <- result{
+				ref: t.ref,
+				stream: decodedStream{
+					raw:     t.obj,
+					data:    data,
+					filters: names,
+				},
+			}
+		}(t)
+	}
+
+	// Close results channel when all workers are done
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect results
+	for res := range results {
+		if res.err != nil {
+			return nil, res.err
 		}
+		streams[res.ref] = res.stream
 	}
 
 	return &DecodedDocument{

@@ -1902,53 +1902,23 @@ func ExampleBuilder() (*semantic.Document, error) {
 
 ### 18.2 Parallel Processing Opportunities
 
+The `ir/decoded` package implements parallel stream decoding using a worker pool pattern. The concurrency level defaults to `GOMAXPROCS`.
+
 ```go
-// Parallel page decoding
-func decodePages(ctx context.Context, doc *raw.Document) error {
-    var wg sync.WaitGroup
-    errCh := make(chan error, len(doc.Pages))
-    
-    for _, pageRef := range doc.Pages {
-        wg.Add(1)
-        go func(ref raw.ObjectRef) {
-            defer wg.Done()
-            if err := decodePage(ctx, ref); err != nil {
-                errCh <- err
-            }
-        }(pageRef)
+// Internal implementation in ir/decoded/decoder_impl.go
+func (d *decoderImpl) Decode(ctx context.Context, rawDoc *raw.Document) (*DecodedDocument, error) {
+    // ...
+    workers := runtime.GOMAXPROCS(0)
+    sem := make(chan struct{}, workers)
+    // ...
+    for _, t := range tasks {
+        go func(t task) {
+            sem <- struct{}{} // Acquire token
+            // Decode stream...
+            <-sem // Release token
+        }(t)
     }
-    
-    wg.Wait()
-    close(errCh)
-    
-    for err := range errCh {
-        if err != nil {
-            return err
-        }
-    }
-    
-    return nil
-}
-
-// Worker pool for stream decoding
-type DecoderPool struct {
-    workers   int
-    tasks     chan decodeTask
-    results   chan decodeResult
-}
-
-func (p *DecoderPool) Start(ctx context.Context) {
-    for i := 0; i < p.workers; i++ {
-        go p.worker(ctx)
-    }
-}
-
-func (p *DecoderPool) worker(ctx context.Context) {
-    for task := range p.tasks {
-        result := decodeResult{ref: task.ref}
-        result.data, result.err = decodeStream(ctx, task.stream)
-        p.results <- result
-    }
+    // ...
 }
 ```
 
