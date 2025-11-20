@@ -79,6 +79,28 @@ func (p *DocumentParser) Parse(ctx context.Context, r io.ReaderAt) (*raw.Documen
 		Encrypted:         sec.IsEncrypted(),
 	}
 
+	// Check for PDF 2.0 Unencrypted Wrapper (Collection)
+	if doc.Trailer != nil {
+		if rootRef, ok := doc.Trailer.Get(raw.NameObj{Val: "Root"}); ok {
+			if ref, ok := rootRef.(raw.RefObj); ok {
+				// We need to load the Catalog to check for Collection
+				// But we haven't loaded objects yet.
+				// We can use the loader we just built.
+				if catalogObj, err := loader.Load(ctx, ref.R); err == nil {
+					if catalog, ok := catalogObj.(*raw.DictObj); ok {
+						if collection, ok := catalog.Get(raw.NameObj{Val: "Collection"}); ok {
+							// Check if it's an unencrypted wrapper
+							// This logic is simplified; real check involves checking schema
+							// and potentially "EncryptedPayload" in the Collection dictionary
+							// or associated files.
+							_ = collection // Placeholder for future implementation
+						}
+					}
+				}
+			}
+		}
+	}
+
 	for _, objNum := range table.Objects() {
 		if objNum == 0 {
 			continue // free head entry

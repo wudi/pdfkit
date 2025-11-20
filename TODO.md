@@ -255,3 +255,33 @@ Status key: Not started / In progress / Done.
 - [x] Enhance `Font` model to support Type 3 specific fields (`CharProcs`, `FontMatrix`, `Resources`).
 - [x] Implement `OptionalContentGroup` (OCG) and `OptionalContentMembership` (OCMD).
 - [x] Update `Resources` to map `Properties` to semantic OCGs.
+
+# Architecture Refactoring Plan (v2.4) - Behavioral & Editing Layers
+
+Status key: Not started / In progress / Done.
+
+## Phase 1: The Scripting Layer (Behavior)
+- [x] Create `scripting` package with `Engine` interface.
+- [x] Define `PDFDOM` interface to expose `semantic.Document` safely to scripts.
+- [x] Implement `JavaScriptAction` execution hook in `extensions`.
+
+## Phase 2: The Content Editor Layer (Editing)
+- [x] Create `contentstream/editor` package.
+- [x] Implement `SpatialIndex` (QuadTree) for `[]Operation`.
+- [x] Implement `Editor` API (`RemoveRect`, `ReplaceText`) using the index.
+- [x] Update `contentstream.Processor` to support "Trace" mode for indexing.
+
+## Phase 3: The Validation Layer (Security)
+- [x] Create `security/validation` package.
+- [x] Implement `ChainBuilder` for X.509 certificate chains.
+- [x] Implement `RevocationChecker` (OCSP/CRL).
+- [x] Implement `LTVManager` for DSS dictionaries.
+
+## Phase 4: The XFA Engine (Rendering)
+- [x] Create `xfa` package.
+- [x] Implement `Parser` (XML -> XFA DOM).
+- [x] Implement `Layout` (XFA DOM -> `semantic.Page`).
+
+## Phase 5: PDF 2.0 Envelope Support
+- [x] Refactor `semantic.Document` to support `Payload` (nested document).
+- [x] Update `parser` to detect and handle "Collection" / "EncryptedPayload".

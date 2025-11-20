@@ -30,6 +30,7 @@ type Document struct {
 	MetadataEncrypted bool
 	OriginalRef       raw.ObjectRef
 	Dirty             bool
+	Payload           *Document // PDF 2.0 Unencrypted Wrapper Payload
 }
 
 // Decoded returns the underlying decoded document (if set).

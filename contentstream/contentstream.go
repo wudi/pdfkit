@@ -43,8 +43,10 @@ func (gs *GraphicsState) Restore() error {
 }
 
 type TextState struct {
-	Font     *semantic.Font
-	FontSize float64
+	Font           *semantic.Font
+	FontSize       float64
+	TextMatrix     coords.Matrix
+	TextLineMatrix coords.Matrix
 }
 
 type simpleProcessor struct{ handlers map[string]OperatorHandler }
