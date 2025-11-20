@@ -171,4 +171,4 @@ Status key: Not started / In progress / Done.
 - [x] Add `OriginalRef` and `Dirty` flags: Add `OriginalRef` and `Dirty` flags to all semantic objects to track their origin and modification status for incremental updates. Status: Done.
 
 ## Phase 4: PDF 2.0 Compliance
-- [ ] Add PDF 2.0 fields: Add specific PDF 2.0 fields (e.g., `OutputIntents` on Page, `AssociatedFiles`) to the semantic model. Status: Not started.
+- [x] Add PDF 2.0 fields: Add specific PDF 2.0 fields (e.g., `OutputIntents` on Page, `AssociatedFiles`) to the semantic model. Status: Done.

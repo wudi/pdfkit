@@ -46,11 +46,13 @@ type Page struct {
 	Rotate      int // degrees: 0/90/180/270
 	Resources   *Resources
 	Contents    []ContentStream
-	Annotations []Annotation
-	UserUnit    float64
-	ref         raw.ObjectRef
-	OriginalRef raw.ObjectRef
-	Dirty       bool
+	Annotations     []Annotation
+	UserUnit        float64
+	OutputIntents   []OutputIntent // PDF 2.0
+	AssociatedFiles []EmbeddedFile // PDF 2.0
+	ref             raw.ObjectRef
+	OriginalRef     raw.ObjectRef
+	Dirty           bool
 }
 
 // ContentStream is a sequence of operations on a page.
@@ -163,6 +165,7 @@ type XObject struct {
 	BBox             Rectangle // used for Form XObjects
 	Interpolate      bool
 	SMask            *XObject
+	AssociatedFiles  []EmbeddedFile // PDF 2.0
 	OriginalRef      raw.ObjectRef
 	Dirty            bool
 }
@@ -270,12 +273,13 @@ type StructureTree struct {
 
 // StructureElement captures a tagged PDF structure element with children or marked content references.
 type StructureElement struct {
-	Type        string
-	Title       string
-	PageIndex   *int
-	Kids        []StructureItem
-	OriginalRef raw.ObjectRef
-	Dirty       bool
+	Type            string
+	Title           string
+	PageIndex       *int
+	Kids            []StructureItem
+	AssociatedFiles []EmbeddedFile // PDF 2.0
+	OriginalRef     raw.ObjectRef
+	Dirty           bool
 }
 
 // StructureItem represents either a child element or a marked-content reference (MCID) on a page.
@@ -318,6 +322,7 @@ type BaseAnnotation struct {
 	Border          []float64
 	Color           []float64
 	AppearanceState string
+	AssociatedFiles []EmbeddedFile // PDF 2.0
 	Ref             raw.ObjectRef
 	OriginalRef     raw.ObjectRef
 	Dirty           bool
