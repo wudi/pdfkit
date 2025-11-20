@@ -165,7 +165,7 @@ Status key: Not started / In progress / Done.
 - [x] Refactor `ColorSpace` to an interface: Refactor `ColorSpace` to handle complex definitions (e.g., `ICCBasedColorSpace`, `DeviceNColorSpace`). Status: Done.
 
 ## Phase 2: Strategy-Based Writer
-- [ ] Refactor `writer/object_builder.go`: Break down the monolithic `object_builder.go` into smaller, specialized serializers using the Strategy Pattern (e.g., `AnnotationSerializer`, `ColorSpaceSerializer`). Status: Not started.
+- [x] Refactor `writer/object_builder.go`: Break down the monolithic `object_builder.go` into smaller, specialized serializers using the Strategy Pattern (e.g., `AnnotationSerializer`, `ColorSpaceSerializer`). Status: Done.
 
 ## Phase 3: Incremental Update Tracking
 - [ ] Add `OriginalRef` and `Dirty` flags: Add `OriginalRef` and `Dirty` flags to all semantic objects to track their origin and modification status for incremental updates. Status: Not started.

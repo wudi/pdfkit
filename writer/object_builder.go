@@ -19,10 +19,16 @@ type objectBuilder struct {
 	xobjectRefs map[string]raw.ObjectRef
 	patternRefs map[string]raw.ObjectRef
 	shadingRefs map[string]raw.ObjectRef
+
+	pageRefs []raw.ObjectRef
+
+	annotSerializer  AnnotationSerializer
+	actionSerializer ActionSerializer
+	csSerializer     ColorSpaceSerializer
 }
 
 func newObjectBuilder(doc *semantic.Document, cfg Config, startObjNum int) *objectBuilder {
-	return &objectBuilder{
+	b := &objectBuilder{
 		doc:         doc,
 		cfg:         cfg,
 		objects:     make(map[raw.ObjectRef]raw.Object),
@@ -32,6 +38,25 @@ func newObjectBuilder(doc *semantic.Document, cfg Config, startObjNum int) *obje
 		patternRefs: make(map[string]raw.ObjectRef),
 		shadingRefs: make(map[string]raw.ObjectRef),
 	}
+	b.actionSerializer = newActionSerializer()
+	b.annotSerializer = newAnnotationSerializer(b.actionSerializer)
+	b.csSerializer = newColorSpaceSerializer()
+	return b
+}
+
+func (b *objectBuilder) NextRef() raw.ObjectRef {
+	return b.nextRef()
+}
+
+func (b *objectBuilder) AddObject(ref raw.ObjectRef, obj raw.Object) {
+	b.objects[ref] = obj
+}
+
+func (b *objectBuilder) PageRef(index int) *raw.ObjectRef {
+	if index >= 0 && index < len(b.pageRefs) {
+		return &b.pageRefs[index]
+	}
+	return nil
 }
 
 func (b *objectBuilder) nextRef() raw.ObjectRef {
@@ -43,7 +68,7 @@ func (b *objectBuilder) nextRef() raw.ObjectRef {
 func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *raw.ObjectRef, *raw.ObjectRef, error) {
 	catalogRef := b.nextRef()
 	pagesRef := b.nextRef()
-	pageRefs := make([]raw.ObjectRef, 0, len(b.doc.Pages))
+	b.pageRefs = make([]raw.ObjectRef, 0, len(b.doc.Pages))
 	pageDicts := make([]*raw.DictObj, len(b.doc.Pages))
 
 	// Document info dictionary
@@ -256,7 +281,7 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 	}
 	for i, p := range b.doc.Pages {
 		ref := b.nextRef()
-		pageRefs = append(pageRefs, ref)
+		b.pageRefs = append(b.pageRefs, ref)
 		p.MediaBox = semantic.Rectangle{LLX: 0, LLY: 0, URX: p.MediaBox.URX, URY: p.MediaBox.URY}
 		pageDict := raw.Dict()
 		pageDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Page"))
@@ -324,13 +349,10 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 		if p.Resources != nil && len(p.Resources.ColorSpaces) > 0 {
 			csDict := raw.Dict()
 			for name, cs := range p.Resources.ColorSpaces {
-				val := cs.ColorSpaceName()
-				if val == "" {
-					val = "DeviceRGB"
-				}
-				csDict.Set(raw.NameLiteral(name), raw.NameLiteral(val))
+				obj := b.csSerializer.Serialize(cs, b)
+				csDict.Set(raw.NameLiteral(name), obj)
 				if _, ok := unionColorSpaces.KV[name]; !ok {
-					unionColorSpaces.Set(raw.NameLiteral(name), raw.NameLiteral(val))
+					unionColorSpaces.Set(raw.NameLiteral(name), obj)
 				}
 			}
 			if csDict.Len() > 0 {
@@ -395,71 +417,19 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 		if len(p.Annotations) > 0 {
 			annotArr := raw.NewArray()
 			for _, a := range p.Annotations {
-				aRef := b.nextRef()
-				aDict := raw.Dict()
-				aDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Annot"))
-
 				base := a.Base()
-				subtype := base.Subtype
-				if subtype == "" {
-					subtype = "Link"
-				}
-				aDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral(subtype))
-				rect := base.RectVal
-				if !cropSet(rect) {
+				if !cropSet(base.RectVal) {
 					// fall back to crop/media box coordinates
 					if cropSet(p.CropBox) {
-						rect = p.CropBox
+						a.SetRect(p.CropBox)
 					} else {
-						rect = p.MediaBox
+						a.SetRect(p.MediaBox)
 					}
 				}
-				aDict.Set(raw.NameLiteral("Rect"), rectArray(rect))
-
-				if link, ok := a.(*semantic.LinkAnnotation); ok {
-					if link.Action != nil {
-						if act := b.serializeAction(link.Action, pageRefs); act != nil {
-							aDict.Set(raw.NameLiteral("A"), act)
-						}
-					} else if link.URI != "" {
-						// Fallback for legacy URI field
-						action := raw.Dict()
-						action.Set(raw.NameLiteral("S"), raw.NameLiteral("URI"))
-						action.Set(raw.NameLiteral("URI"), raw.Str([]byte(link.URI)))
-						aDict.Set(raw.NameLiteral("A"), action)
-					}
-				} else if base.Contents != "" {
-					aDict.Set(raw.NameLiteral("Contents"), raw.Str([]byte(base.Contents)))
+				aRef, err := b.annotSerializer.Serialize(a, b)
+				if err != nil {
+					return nil, raw.ObjectRef{}, nil, nil, err
 				}
-				if len(base.Appearance) > 0 {
-					apRef := b.nextRef()
-					apDict := raw.Dict()
-					apDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(base.Appearance))))
-					apStream := raw.NewStream(apDict, base.Appearance)
-					b.objects[apRef] = apStream
-					ap := raw.Dict()
-					ap.Set(raw.NameLiteral("N"), raw.Ref(apRef.Num, apRef.Gen))
-					aDict.Set(raw.NameLiteral("AP"), ap)
-				}
-				if base.Flags != 0 {
-					aDict.Set(raw.NameLiteral("F"), raw.NumberInt(int64(base.Flags)))
-				}
-				if len(base.Border) == 3 {
-					aDict.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberFloat(base.Border[0]), raw.NumberFloat(base.Border[1]), raw.NumberFloat(base.Border[2])))
-				} else {
-					aDict.Set(raw.NameLiteral("Border"), raw.NewArray(raw.NumberInt(0), raw.NumberInt(0), raw.NumberInt(0)))
-				}
-				if len(base.Color) > 0 {
-					colArr := raw.NewArray()
-					for _, c := range base.Color {
-						colArr.Append(raw.NumberFloat(c))
-					}
-					aDict.Set(raw.NameLiteral("C"), colArr)
-				}
-				if base.AppearanceState != "" {
-					aDict.Set(raw.NameLiteral("AS"), raw.NameLiteral(base.AppearanceState))
-				}
-				b.objects[aRef] = aDict
 				annotArr.Append(raw.Ref(aRef.Num, aRef.Gen))
 				annotationRefs[i] = append(annotationRefs[i], aRef)
 			}
@@ -469,12 +439,12 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 	}
 	// Pages tree
 	kidsArr := raw.NewArray()
-	for _, r := range pageRefs {
+	for _, r := range b.pageRefs {
 		kidsArr.Append(raw.Ref(r.Num, r.Gen))
 	}
 	pagesDict := raw.Dict()
 	pagesDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Pages"))
-	pagesDict.Set(raw.NameLiteral("Count"), raw.NumberInt(int64(len(pageRefs))))
+	pagesDict.Set(raw.NameLiteral("Count"), raw.NumberInt(int64(len(b.pageRefs))))
 	pagesDict.Set(raw.NameLiteral("Kids"), kidsArr)
 	if unionFonts.Len() > 0 {
 		pagesRes := raw.Dict()
@@ -504,7 +474,7 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 	var parentTreeRef *raw.ObjectRef
 	var parentTree map[int]map[int]raw.ObjectRef
 	if b.doc.StructTree != nil {
-		structRootRef, parentTreeRef, parentTree = buildStructureTree(b.doc.StructTree, pageRefs, b.nextRef, b.objects)
+		structRootRef, parentTreeRef, parentTree = buildStructureTree(b.doc.StructTree, b.pageRefs, b.nextRef, b.objects)
 		for idx := range parentTree {
 			if idx >= 0 && idx < len(pageDicts) {
 				pageDicts[idx].Set(raw.NameLiteral("StructParents"), raw.NumberInt(int64(idx)))
@@ -560,7 +530,7 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 		outlineDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Outlines"))
 		b.objects[outlineRef] = outlineDict
 
-		first, last, total := b.buildOutlines(b.doc.Outlines, outlineRef, pageRefs, b.objects, b.nextRef, outlineRef)
+		first, last, total := b.buildOutlines(b.doc.Outlines, outlineRef, b.pageRefs, b.objects, b.nextRef, outlineRef)
 		outlineDict.Set(raw.NameLiteral("First"), raw.Ref(first.Num, first.Gen))
 		outlineDict.Set(raw.NameLiteral("Last"), raw.Ref(last.Num, last.Gen))
 		outlineDict.Set(raw.NameLiteral("Count"), raw.NumberInt(total))
@@ -587,8 +557,8 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 			for i, bead := range art.Beads {
 				bd := raw.Dict()
 				bd.Set(raw.NameLiteral("Type"), raw.NameLiteral("Bead"))
-				if bead.PageIndex >= 0 && bead.PageIndex < len(pageRefs) {
-					pref := pageRefs[bead.PageIndex]
+				if bead.PageIndex >= 0 && bead.PageIndex < len(b.pageRefs) {
+					pref := b.pageRefs[bead.PageIndex]
 					bd.Set(raw.NameLiteral("P"), raw.Ref(pref.Num, pref.Gen))
 				}
 				if cropSet(bead.Rect) {
@@ -616,10 +586,10 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 		formDict := raw.Dict()
 		fieldsArr := raw.NewArray()
 		appendWidgetToPage := func(pageIdx int, ref raw.ObjectRef) {
-			if pageIdx < 0 || pageIdx >= len(pageRefs) {
+			if pageIdx < 0 || pageIdx >= len(b.pageRefs) {
 				return
 			}
-			pref := pageRefs[pageIdx]
+			pref := b.pageRefs[pageIdx]
 			pageObj := b.objects[pref]
 			pd, ok := pageObj.(*raw.DictObj)
 			if !ok {
@@ -658,8 +628,8 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 			if cropSet(f.Rect) {
 				fd.Set(raw.NameLiteral("Rect"), rectArray(f.Rect))
 			}
-			if f.PageIndex >= 0 && f.PageIndex < len(pageRefs) {
-				pref := pageRefs[f.PageIndex]
+			if f.PageIndex >= 0 && f.PageIndex < len(b.pageRefs) {
+				pref := b.pageRefs[f.PageIndex]
 				fd.Set(raw.NameLiteral("P"), raw.Ref(pref.Num, pref.Gen))
 				appendWidgetToPage(f.PageIndex, fieldRef)
 			}
@@ -928,14 +898,7 @@ func (b *objectBuilder) ensureXObject(name string, xo semantic.XObject) raw.Obje
 		if xo.Height > 0 {
 			dict.Set(raw.NameLiteral("Height"), raw.NumberInt(int64(xo.Height)))
 		}
-		var color string
-		if xo.ColorSpace != nil {
-			color = xo.ColorSpace.ColorSpaceName()
-		}
-		if color == "" {
-			color = "DeviceRGB"
-		}
-		dict.Set(raw.NameLiteral("ColorSpace"), raw.NameLiteral(color))
+		dict.Set(raw.NameLiteral("ColorSpace"), b.csSerializer.Serialize(xo.ColorSpace, b))
 		if xo.BitsPerComponent > 0 {
 			dict.Set(raw.NameLiteral("BitsPerComponent"), raw.NumberInt(int64(xo.BitsPerComponent)))
 		}
@@ -1008,14 +971,7 @@ func (b *objectBuilder) ensureShading(name string, s semantic.Shading) raw.Objec
 		stype = 2
 	}
 	dict.Set(raw.NameLiteral("ShadingType"), raw.NumberInt(int64(stype)))
-	var cs string
-	if s.ColorSpace != nil {
-		cs = s.ColorSpace.ColorSpaceName()
-	}
-	if cs == "" {
-		cs = "DeviceRGB"
-	}
-	dict.Set(raw.NameLiteral("ColorSpace"), raw.NameLiteral(cs))
+	dict.Set(raw.NameLiteral("ColorSpace"), b.csSerializer.Serialize(s.ColorSpace, b))
 	if len(s.Coords) > 0 {
 		arr := raw.NewArray()
 		for _, c := range s.Coords {
@@ -1088,35 +1044,4 @@ func (b *objectBuilder) buildOutlines(items []semantic.OutlineItem, parent raw.O
 	first = refs[0]
 	last = refs[len(refs)-1]
 	return first, last, count
-}
-
-func (b *objectBuilder) serializeAction(a semantic.Action, pageRefs []raw.ObjectRef) raw.Object {
-	if a == nil {
-		return nil
-	}
-	d := raw.Dict()
-	switch act := a.(type) {
-	case semantic.URIAction:
-		d.Set(raw.NameLiteral("S"), raw.NameLiteral("URI"))
-		d.Set(raw.NameLiteral("URI"), raw.Str([]byte(act.URI)))
-	case semantic.GoToAction:
-		d.Set(raw.NameLiteral("S"), raw.NameLiteral("GoTo"))
-		if act.PageIndex >= 0 && act.PageIndex < len(pageRefs) {
-			pref := pageRefs[act.PageIndex]
-			var dest raw.Object
-			if act.Dest != nil {
-				dest = raw.NewArray(
-					raw.Ref(pref.Num, pref.Gen),
-					raw.NameLiteral("XYZ"),
-					xyzDestValue(act.Dest.X),
-					xyzDestValue(act.Dest.Y),
-					xyzDestValue(act.Dest.Zoom),
-				)
-			} else {
-				dest = raw.NewArray(raw.Ref(pref.Num, pref.Gen), raw.NameLiteral("Fit"))
-			}
-			d.Set(raw.NameLiteral("D"), dest)
-		}
-	}
-	return d
 }
