@@ -349,6 +349,44 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 				if gs.FillAlpha != nil {
 					entry.Set(raw.NameLiteral("ca"), raw.NumberFloat(*gs.FillAlpha))
 				}
+				if gs.BlendMode != "" {
+					entry.Set(raw.NameLiteral("BM"), raw.NameLiteral(gs.BlendMode))
+				}
+				if gs.AlphaSource != nil {
+					entry.Set(raw.NameLiteral("AIS"), raw.Bool(*gs.AlphaSource))
+				}
+				if gs.TextKnockout != nil {
+					entry.Set(raw.NameLiteral("TK"), raw.Bool(*gs.TextKnockout))
+				}
+				if gs.Overprint != nil {
+					entry.Set(raw.NameLiteral("OP"), raw.Bool(*gs.Overprint))
+				}
+				if gs.OverprintFill != nil {
+					entry.Set(raw.NameLiteral("op"), raw.Bool(*gs.OverprintFill))
+				}
+				if gs.OverprintMode != nil {
+					entry.Set(raw.NameLiteral("OPM"), raw.NumberInt(int64(*gs.OverprintMode)))
+				}
+				if gs.SoftMask != nil {
+					smDict := raw.Dict()
+					smDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Mask"))
+					smDict.Set(raw.NameLiteral("S"), raw.NameLiteral(gs.SoftMask.Subtype))
+					if gs.SoftMask.Group != nil {
+						gRef := b.ensureXObject("SMaskGroup", *gs.SoftMask.Group)
+						smDict.Set(raw.NameLiteral("G"), raw.Ref(gRef.Num, gRef.Gen))
+					}
+					if len(gs.SoftMask.BackdropColor) > 0 {
+						bc := raw.NewArray()
+						for _, c := range gs.SoftMask.BackdropColor {
+							bc.Append(raw.NumberFloat(c))
+						}
+						smDict.Set(raw.NameLiteral("BC"), bc)
+					}
+					if gs.SoftMask.Transfer != "" {
+						smDict.Set(raw.NameLiteral("TR"), raw.NameLiteral(gs.SoftMask.Transfer))
+					}
+					entry.Set(raw.NameLiteral("SMask"), smDict)
+				}
 				gsDict.Set(raw.NameLiteral(name), entry)
 				if _, ok := unionExtGStates.KV[name]; !ok {
 					unionExtGStates.Set(raw.NameLiteral(name), entry)
@@ -898,6 +936,21 @@ func (b *objectBuilder) ensureXObject(name string, xo semantic.XObject) raw.Obje
 	}
 	if sub == "Form" && cropSet(xo.BBox) {
 		dict.Set(raw.NameLiteral("BBox"), rectArray(xo.BBox))
+	}
+	if sub == "Form" && xo.Group != nil {
+		gDict := raw.Dict()
+		gDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Group"))
+		gDict.Set(raw.NameLiteral("S"), raw.NameLiteral("Transparency"))
+		if xo.Group.CS != nil {
+			gDict.Set(raw.NameLiteral("CS"), b.csSerializer.Serialize(xo.Group.CS, b))
+		}
+		if xo.Group.Isolated {
+			gDict.Set(raw.NameLiteral("I"), raw.Bool(true))
+		}
+		if xo.Group.Knockout {
+			gDict.Set(raw.NameLiteral("K"), raw.Bool(true))
+		}
+		dict.Set(raw.NameLiteral("Group"), gDict)
 	}
 	if xo.SMask != nil {
 		maskName := fmt.Sprintf("%s:SMask", name)

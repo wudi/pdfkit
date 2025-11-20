@@ -191,6 +191,6 @@ Status key: Not started / In progress / Done.
 - [x] Implement SubmitForm/ResetForm/ImportData Actions. Status: Done.
 
 ## Phase 3: Advanced Graphics
-- [ ] Implement Blend Modes. Status: Not started.
-- [ ] Implement Transparency Groups. Status: Not started.
-- [ ] Implement Soft Masks. Status: Not started.
+- [x] Implement Blend Modes. Status: Done.
+- [x] Implement Transparency Groups. Status: Done.
+- [x] Implement Soft Masks. Status: Done.

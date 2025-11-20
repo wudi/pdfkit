@@ -127,9 +127,33 @@ type Font struct {
 
 // ExtGState captures graphics state defaults such as transparency.
 type ExtGState struct {
-	LineWidth   *float64
-	StrokeAlpha *float64
-	FillAlpha   *float64
+	LineWidth     *float64
+	StrokeAlpha   *float64
+	FillAlpha     *float64
+	BlendMode     string // /BM (Normal, Multiply, Screen, Overlay, Darken, Lighten, ColorDodge, ColorBurn, HardLight, SoftLight, Difference, Exclusion)
+	AlphaSource   *bool  // /AIS (Alpha Is Shape)
+	TextKnockout  *bool  // /TK
+	Overprint     *bool  // /OP
+	OverprintFill *bool  // /op
+	OverprintMode *int   // /OPM
+	SoftMask      *SoftMaskDict
+	OriginalRef   raw.ObjectRef
+	Dirty         bool
+}
+
+// SoftMaskDict represents a soft-mask dictionary used in ExtGState.
+type SoftMaskDict struct {
+	Subtype       string    // /S (Alpha, Luminosity)
+	Group         *XObject  // /G (Transparency Group XObject)
+	BackdropColor []float64 // /BC
+	Transfer      string    // /TR (Transfer function name)
+}
+
+// TransparencyGroup describes the attributes of a transparency group XObject.
+type TransparencyGroup struct {
+	CS        ColorSpace // /CS
+	Isolated  bool       // /I
+	Knockout  bool       // /K
 }
 
 // ColorSpace references a named colorspace.
@@ -165,7 +189,8 @@ type XObject struct {
 	BBox             Rectangle // used for Form XObjects
 	Interpolate      bool
 	SMask            *XObject
-	AssociatedFiles  []EmbeddedFile // PDF 2.0
+	Group            *TransparencyGroup // /Group (for Form XObjects)
+	AssociatedFiles  []EmbeddedFile     // PDF 2.0
 	OriginalRef      raw.ObjectRef
 	Dirty            bool
 }
