@@ -184,6 +184,43 @@ func (s *defaultAnnotationSerializer) Serialize(a semantic.Annotation, ctx Seria
 				dict.Set(raw.NameLiteral("Ff"), raw.NumberInt(int64(t.Field.Flags)))
 			}
 		}
+	case *semantic.StampAnnotation:
+		if t.Name != "" {
+			dict.Set(raw.NameLiteral("Name"), raw.NameLiteral(t.Name))
+		}
+	case *semantic.InkAnnotation:
+		if len(t.InkList) > 0 {
+			arr := raw.NewArray()
+			for _, path := range t.InkList {
+				pathArr := raw.NewArray()
+				for _, pt := range path {
+					pathArr.Append(raw.NumberFloat(pt))
+				}
+				arr.Append(pathArr)
+			}
+			dict.Set(raw.NameLiteral("InkList"), arr)
+		}
+	case *semantic.FileAttachmentAnnotation:
+		if t.Name != "" {
+			dict.Set(raw.NameLiteral("Name"), raw.NameLiteral(t.Name))
+		}
+		if len(t.File.Data) > 0 {
+			fsRef := ctx.NextRef()
+			fsDict := raw.Dict()
+			fsDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("EmbeddedFile"))
+			fsDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(t.File.Data))))
+			ctx.AddObject(fsRef, raw.NewStream(fsDict, t.File.Data))
+
+			fDict := raw.Dict()
+			fDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Filespec"))
+			fDict.Set(raw.NameLiteral("F"), raw.Str([]byte(t.File.Name)))
+
+			efDict := raw.Dict()
+			efDict.Set(raw.NameLiteral("F"), raw.Ref(fsRef.Num, fsRef.Gen))
+			fDict.Set(raw.NameLiteral("EF"), efDict)
+
+			dict.Set(raw.NameLiteral("FS"), fDict)
+		}
 	}
 
 	if base.Contents != "" {

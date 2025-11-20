@@ -182,7 +182,10 @@ Status key: Not started / In progress / Done.
 - [x] Implement Shape Annotations: `Line`, `Square`, `Circle`. Status: Done.
 - [x] Implement Text Annotations: `Text` (Sticky Note), `FreeText` (Typewriter). Status: Done.
 - [x] Implement Widget Annotations: `Widget` (Form Fields). Status: Done (integrated into AnnotationSerializer and AcroForm builder).
-- [ ] Implement Other Annotations: `Stamp`, `Ink`, `Popup`, `FileAttachment`, `Sound`, `Movie`, `Screen`, `PrinterMark`, `TrapNet`, `Watermark`, `3D`, `Redact`, `Projection`. Status: Not started.
+- [x] Implement Stamp Annotation. Status: Done.
+- [x] Implement Ink Annotation. Status: Done.
+- [x] Implement FileAttachment Annotation. Status: Done.
+- [ ] Implement Other Annotations: `Popup`, `Sound`, `Movie`, `Screen`, `PrinterMark`, `TrapNet`, `Watermark`, `3D`, `Redact`, `Projection`. Status: Not started.
 
 ## Phase 2: Expanded Action Support
 - [x] Implement JavaScript Action. Status: Done.

@@ -433,6 +433,25 @@ type CircleAnnotation struct {
 	RD []float64 // Rect differences (padding)
 }
 
+// StampAnnotation represents a stamp annotation.
+type StampAnnotation struct {
+	BaseAnnotation
+	Name string // Icon name (e.g., "Approved", "Confidential")
+}
+
+// InkAnnotation represents a freehand "scribble" annotation.
+type InkAnnotation struct {
+	BaseAnnotation
+	InkList [][]float64 // Array of arrays of points [x1 y1 x2 y2 ...]
+}
+
+// FileAttachmentAnnotation represents a file attachment annotation.
+type FileAttachmentAnnotation struct {
+	BaseAnnotation
+	File EmbeddedFile
+	Name string // Icon name (e.g., "Graph", "PushPin", "Paperclip", "Tag")
+}
+
 // GenericAnnotation represents an annotation not covered by specific types.
 type GenericAnnotation struct {
 	BaseAnnotation
