@@ -883,7 +883,7 @@ func serializePrimitive(o raw.Object) []byte {
 		if v.IsInteger() {
 			return []byte(fmt.Sprintf("%d", v.Int()))
 		}
-		return []byte(fmt.Sprintf("%f", v.Float()))
+		return []byte(fmt.Sprintf("%g", v.Float()))
 	case raw.BoolObj:
 		if v.Value() {
 			return []byte("true")

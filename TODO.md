@@ -61,7 +61,7 @@ This document tracks the detailed implementation progress of features defined in
 ## 6. Interactivity
 - [ ] **Annotations**:
     - [x] Basic (Text, Link, Widget).
-    - [ ] Markup (Highlight, Underline, etc.).
+    - [x] Markup (Highlight, Underline, etc.).
     - [ ] Advanced (3D, Redact, Projection, Sound, Movie).
 - [ ] **Actions**:
     - [x] Basic (GoTo, URI).
