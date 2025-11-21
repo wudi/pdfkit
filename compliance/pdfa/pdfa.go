@@ -351,11 +351,28 @@ func isForbiddenAnnotation(a semantic.Annotation, level Level) bool {
 		if len(link.URI) > 11 && link.URI[:11] == "javascript:" {
 			return true
 		}
+		if checkAction(link.Action, level) {
+			return true
+		}
+	}
+
+	if screen, ok := a.(*semantic.ScreenAnnotation); ok {
+		if checkAction(screen.Action, level) {
+			return true
+		}
 	}
 	
-	// Check Actions
-	// TODO: Deep check of Action dictionary for JS, Launch, etc.
+	return false
+}
 
+func checkAction(a semantic.Action, level Level) bool {
+	if a == nil {
+		return false
+	}
+	switch a.ActionType() {
+	case "Launch", "Sound", "Movie", "ResetForm", "ImportData", "JavaScript":
+		return true
+	}
 	return false
 }
 

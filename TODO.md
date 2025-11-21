@@ -37,9 +37,9 @@ This document tracks the detailed implementation progress of features defined in
 ## 4. Graphics & Imaging
 - [ ] **Color Spaces**:
     - [x] Implement `cmm` package (ICC Profile parsing).
-    - [ ] **CMM Transform**: Implement actual color conversion logic (currently basic fallback).
-    - [x] Support `DeviceN` and `Separation` (Spot Colors).
-    - [x] Support `Pattern` color space.
+	- [x] **CMM Transform**: Implement actual color conversion logic (Basic Gray/RGB/CMYK support added).
+	- [x] Support `DeviceN` and `Separation` (Spot Colors).
+	- [x] Support `Pattern` color space.
 - [x] **Patterns & Shading**:
     - [x] Tiling Patterns (Type 1).
     - [x] Shading Patterns (Type 1-7).
@@ -75,16 +75,16 @@ This document tracks the detailed implementation progress of features defined in
     - [x] Basic Fields (Text, Button, Choice).
     - [x] Appearance Generation (NeedAppearances=false).
     - [x] Calculation Order.
-- [ ] **XFA**:
+- [x] **XFA**:
     - [x] Full Schema Implementation.
     - [x] Data Binding.
-    - [ ] **Layout Engine**: Improve naive implementation (support flow, auto-height, pagination).
+    - [x] **Layout Engine**: Improve naive implementation (support flow, auto-height, pagination).
 - [x] **HTML Forms**: Recognition/Embedding.
 
 ## 8. Compliance
 - [ ] **PDF/A**:
     - [x] PDF/A-1b Basic enforcement.
-    - [ ] **Validation**: Deep check of Action dictionaries (JS, Launch).
+    - [x] **Validation**: Deep check of Action dictionaries (JS, Launch).
     - [ ] **OutputIntent**: Embed valid ICC profile (currently placeholder).
     - [ ] **Attachments**: Verify compliance of embedded files.
 - [x] **PDF/X**: OutputIntent, TrimBox/BleedBox enforcement.

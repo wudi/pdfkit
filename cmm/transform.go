@@ -50,6 +50,34 @@ func (t *basicTransform) Convert(in []float64) ([]float64, error) {
 		return out, nil
 	}
 
+	if t.src.ColorSpace() == "GRAY" && t.dst.ColorSpace() == "RGB " {
+		g := in[0]
+		out[0], out[1], out[2] = g, g, g
+		return out, nil
+	}
+
+	if t.src.ColorSpace() == "RGB " && t.dst.ColorSpace() == "GRAY" {
+		r, g, b := in[0], in[1], in[2]
+		out[0] = 0.299*r + 0.587*g + 0.114*b
+		return out, nil
+	}
+
+	if t.src.ColorSpace() == "GRAY" && t.dst.ColorSpace() == "CMYK" {
+		k := 1.0 - in[0]
+		out[0], out[1], out[2], out[3] = 0, 0, 0, k
+		return out, nil
+	}
+
+	if t.src.ColorSpace() == "CMYK" && t.dst.ColorSpace() == "GRAY" {
+		// CMYK -> RGB -> Gray
+		c, m, y, k := in[0], in[1], in[2], in[3]
+		r := (1.0 - c) * (1.0 - k)
+		g := (1.0 - m) * (1.0 - k)
+		b := (1.0 - y) * (1.0 - k)
+		out[0] = 0.299*r + 0.587*g + 0.114*b
+		return out, nil
+	}
+
 	// If dimensions match, just copy (dangerous assumption, but better than crash for now)
 	if srcCh == dstCh {
 		copy(out, in)

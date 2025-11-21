@@ -49,7 +49,7 @@
 
 #### 1. 颜色空间 (Color Spaces)
 - [x] **Device Spaces**: DeviceGray, DeviceRGB, DeviceCMYK.
-- [ ] **CIE-based Spaces**: CalGray, CalRGB, Lab, ICCBased (完整解析 ICC Profile)。
+- [x] **CIE-based Spaces**: CalGray, CalRGB, Lab, ICCBased (完整解析 ICC Profile)。
 - [x] **Special Spaces**:
     - [x] **Indexed**: 索引颜色。
     - [x] **Pattern**: 能够绘制平铺或渐变作为颜色。
@@ -85,7 +85,7 @@
 *PDF 最复杂的深水区。*
 
 #### 1. 字体格式支持
-- [ ] **Type 1 (PostScript)**: 解析 .pfb/.pfm 数据。
+- [x] **Type 1 (PostScript)**: 解析 .pfb/.pfm 数据。
 - [x] **Type 3**: 由 PDF 图形操作符构成的自定义字形。
 - [x] **TrueType**: 解析与提取。
 - [x] **Type 0 (Composite Fonts)**: CID-Keyed Fonts (用于 CJK 支持)。
@@ -138,8 +138,8 @@
     - [x] Calculation Order: 字段间计算依赖。
 
 2.  **XFA (XML Forms Architecture)**:
-    - [ ] **注意**: 虽然 PDF 2.0 已弃用 XFA，但全能 Parser **必须**能读取它（从 XFA 字典提取 XML），否则无法处理大量政府/企业历史文档。
-    - [ ] Dynamic XFA Rendering: 解析 XML 并渲染布局（极高难度）。
+    - [x] **注意**: 虽然 PDF 2.0 已弃用 XFA，但全能 Parser **必须**能读取它（从 XFA 字典提取 XML），否则无法处理大量政府/企业历史文档。
+    - [x] Dynamic XFA Rendering: 解析 XML 并渲染布局（基础实现）。
 
 3.  **HTML Forms (Acrobat DC 新特性)**:
     - [x] 能够识别嵌入的 Web 内容形式。
