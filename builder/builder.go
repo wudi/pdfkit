@@ -24,6 +24,7 @@ type PDFBuilder interface {
 	RegisterFont(name string, font *semantic.Font) PDFBuilder
 	RegisterTrueTypeFont(name string, data []byte) PDFBuilder
 	AddEmbeddedFile(file semantic.EmbeddedFile) PDFBuilder
+	SetCalculationOrder(fields []semantic.FormField) PDFBuilder
 	Form() FormBuilder
 	Build() (*semantic.Document, error)
 }
@@ -303,6 +304,14 @@ func (b *builderImpl) AddEmbeddedFile(file semantic.EmbeddedFile) PDFBuilder {
 		copyFile.Data = append([]byte(nil), file.Data...)
 	}
 	b.embeddedFiles = append(b.embeddedFiles, copyFile)
+	return b
+}
+
+func (b *builderImpl) SetCalculationOrder(fields []semantic.FormField) PDFBuilder {
+	if b.acroForm == nil {
+		b.acroForm = &semantic.AcroForm{NeedAppearances: true}
+	}
+	b.acroForm.CalculationOrder = fields
 	return b
 }
 

@@ -130,3 +130,40 @@ func TestBuilder_FormFill(t *testing.T) {
 		t.Errorf("expected Choice value 'Option2', got %v", chf.Selected)
 	}
 }
+
+func TestBuilder_CalculationOrder(t *testing.T) {
+	b := NewBuilder()
+	f1 := &semantic.TextFormField{
+		BaseFormField: semantic.BaseFormField{Name: "Field1"},
+	}
+	f2 := &semantic.TextFormField{
+		BaseFormField: semantic.BaseFormField{Name: "Field2"},
+	}
+	f3 := &semantic.TextFormField{
+		BaseFormField: semantic.BaseFormField{Name: "Field3"},
+	}
+
+	b.NewPage(100, 100).
+		AddFormField(f1).
+		AddFormField(f2).
+		AddFormField(f3).
+		Finish()
+
+	// Set calculation order: f3, f1 (f2 excluded)
+	b.SetCalculationOrder([]semantic.FormField{f3, f1})
+
+	doc, err := b.Build()
+	if err != nil {
+		t.Fatalf("build doc: %v", err)
+	}
+
+	if len(doc.AcroForm.CalculationOrder) != 2 {
+		t.Fatalf("expected 2 fields in calculation order, got %d", len(doc.AcroForm.CalculationOrder))
+	}
+	if doc.AcroForm.CalculationOrder[0].FieldName() != "Field3" {
+		t.Errorf("expected first field to be Field3, got %s", doc.AcroForm.CalculationOrder[0].FieldName())
+	}
+	if doc.AcroForm.CalculationOrder[1].FieldName() != "Field1" {
+		t.Errorf("expected second field to be Field1, got %s", doc.AcroForm.CalculationOrder[1].FieldName())
+	}
+}

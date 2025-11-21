@@ -105,6 +105,8 @@ type Document struct {
 	Permissions       Permissions
 	MetadataEncrypted bool
 	Encrypted         bool
+	Linearized        bool
+	HintTable         *HintTable
 }
 
 // Parser converts bytes into a raw.Document.

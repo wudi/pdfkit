@@ -104,14 +104,14 @@ type Field struct {
 }
 
 type UI struct {
-	TextEdit    *TextEdit    `xml:"textEdit"`
-	CheckButton *CheckButton `xml:"checkButton"`
-	ChoiceList  *ChoiceList  `xml:"choiceList"`
-	NumericEdit *NumericEdit `xml:"numericEdit"`
+	TextEdit     *TextEdit     `xml:"textEdit"`
+	CheckButton  *CheckButton  `xml:"checkButton"`
+	ChoiceList   *ChoiceList   `xml:"choiceList"`
+	NumericEdit  *NumericEdit  `xml:"numericEdit"`
 	DateTimeEdit *DateTimeEdit `xml:"dateTimeEdit"`
-	ImageEdit   *ImageEdit   `xml:"imageEdit"`
-	Signature   *Signature   `xml:"signature"`
-	Button      *Button      `xml:"button"`
+	ImageEdit    *ImageEdit    `xml:"imageEdit"`
+	Signature    *Signature    `xml:"signature"`
+	Button       *Button       `xml:"button"`
 }
 
 type TextEdit struct {
@@ -126,10 +126,10 @@ type ChoiceList struct {
 	Open string `xml:"open,attr"` // "userControl", "always", "multiSelect"
 }
 
-type NumericEdit struct {}
-type DateTimeEdit struct {}
-type ImageEdit struct {}
-type Signature struct {}
+type NumericEdit struct{}
+type DateTimeEdit struct{}
+type ImageEdit struct{}
+type Signature struct{}
 type Button struct {
 	Highlight string `xml:"highlight,attr"` // "inverted", "push", "outline"
 }
@@ -146,16 +146,16 @@ type Draw struct {
 }
 
 type Value struct {
-	Text      string     `xml:"text"`
-	Integer   string     `xml:"integer"`
-	Decimal   string     `xml:"decimal"`
-	Float     string     `xml:"float"`
-	Boolean   string     `xml:"boolean"`
-	Date      string     `xml:"date"`
-	Time      string     `xml:"time"`
-	DateTime  string     `xml:"dateTime"`
-	Image     *ImageVal  `xml:"image"`
-	ExData    *ExData    `xml:"exData"`
+	Text     string    `xml:"text"`
+	Integer  string    `xml:"integer"`
+	Decimal  string    `xml:"decimal"`
+	Float    string    `xml:"float"`
+	Boolean  string    `xml:"boolean"`
+	Date     string    `xml:"date"`
+	Time     string    `xml:"time"`
+	DateTime string    `xml:"dateTime"`
+	Image    *ImageVal `xml:"image"`
+	ExData   *ExData   `xml:"exData"`
 }
 
 type ImageVal struct {
@@ -178,7 +178,7 @@ type Caption struct {
 type Font struct {
 	Typeface string `xml:"typeface,attr"`
 	Size     string `xml:"size,attr"`
-	Weight   string `xml:"weight,attr"` // "bold"
+	Weight   string `xml:"weight,attr"`  // "bold"
 	Posture  string `xml:"posture,attr"` // "italic"
 }
 

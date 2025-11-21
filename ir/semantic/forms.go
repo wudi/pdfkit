@@ -4,12 +4,13 @@ import "pdflib/ir/raw"
 
 // AcroForm represents form-level information.
 type AcroForm struct {
-	NeedAppearances bool
-	XFA             []byte // XML Data Stream
-	Fields          []FormField
-	DefaultResources *Resources // DR entry
-	OriginalRef     raw.ObjectRef
-	Dirty           bool
+	NeedAppearances  bool
+	XFA              []byte // XML Data Stream
+	Fields           []FormField
+	CalculationOrder []FormField // CO entry
+	DefaultResources *Resources  // DR entry
+	OriginalRef      raw.ObjectRef
+	Dirty            bool
 }
 
 // FormField is the interface for all form fields.
@@ -38,19 +39,19 @@ type FormField interface {
 
 // BaseFormField provides common fields for form fields.
 type BaseFormField struct {
-	Name            string
-	PageIndex       int
-	Rect            Rectangle
-	Flags           int
-	Appearance      []byte
-	AppearanceState string
-	Border          []float64
-	Color           []float64
+	Name              string
+	PageIndex         int
+	Rect              Rectangle
+	Flags             int
+	Appearance        []byte
+	AppearanceState   string
+	Border            []float64
+	Color             []float64
 	DefaultAppearance string // DA entry
 	Quadding          int    // Q entry: 0=Left, 1=Center, 2=Right
-	Ref             raw.ObjectRef
-	OriginalRef     raw.ObjectRef
-	Dirty           bool
+	Ref               raw.ObjectRef
+	OriginalRef       raw.ObjectRef
+	Dirty             bool
 }
 
 func (f *BaseFormField) FieldName() string            { return f.Name }

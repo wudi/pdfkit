@@ -42,44 +42,44 @@ func (g *AppearanceGenerator) generateTextAppearance(field *semantic.TextFormFie
 	rect := field.FieldRect()
 	width := rect.URX - rect.LLX
 	height := rect.URY - rect.LLY
-	
+
 	// 3. Build content stream
 	var buf bytes.Buffer
-	
+
 	// /Tx BMC ... EMC
 	buf.WriteString("/Tx BMC\n")
 	buf.WriteString("q\n")
-	
+
 	// Clip to border (simplified)
 	buf.WriteString(fmt.Sprintf("1 1 %.2f %.2f re W n\n", width-2, height-2))
-	
+
 	// Set font and color
 	buf.WriteString(fmt.Sprintf("BT\n/%s %g Tf\n", fontName, fontSize))
-	
+
 	// Set color
 	writeColor(&buf, color)
-	
+
 	// Position text
 	// TODO: Handle Quadding (alignment)
 	// Simple left alignment with padding
-	buf.WriteString("2 2 Td\n") 
-	
+	buf.WriteString("2 2 Td\n")
+
 	// Draw text
 	text := escapeText(field.Value)
 	buf.WriteString(fmt.Sprintf("(%s) Tj\n", text))
-	
+
 	buf.WriteString("ET\n")
 	buf.WriteString("Q\n")
 	buf.WriteString("EMC\n")
-	
+
 	// 4. Create XObject
 	xobj := &semantic.XObject{
-		Subtype: "Form",
-		BBox: semantic.Rectangle{LLX: 0, LLY: 0, URX: width, URY: height},
+		Subtype:   "Form",
+		BBox:      semantic.Rectangle{LLX: 0, LLY: 0, URX: width, URY: height},
 		Resources: g.Form.DefaultResources, // Inherit DR
-		Data: buf.Bytes(),
+		Data:      buf.Bytes(),
 	}
-	
+
 	return xobj, nil
 }
 
@@ -95,7 +95,7 @@ func (g *AppearanceGenerator) generateButtonAppearance(field *semantic.ButtonFor
 
 	var buf bytes.Buffer
 	buf.WriteString("q\n")
-	
+
 	// Draw border/background (simplified)
 	// 1 g (white background)
 	// 0 0 0 RG (black border)
@@ -109,10 +109,10 @@ func (g *AppearanceGenerator) generateButtonAppearance(field *semantic.ButtonFor
 		// Assuming ZapfDingbats is available as /ZaDb
 		// But we don't know the resource name for ZapfDingbats without looking at DR.
 		// For now, let's draw a simple cross (X) using lines.
-		
+
 		buf.WriteString("0 g\n") // Black
 		buf.WriteString("1 w\n")
-		
+
 		// Draw X
 		padding := 3.0
 		buf.WriteString(fmt.Sprintf("%.2f %.2f m %.2f %.2f l S\n", padding, padding, width-padding, height-padding))
@@ -122,10 +122,10 @@ func (g *AppearanceGenerator) generateButtonAppearance(field *semantic.ButtonFor
 	buf.WriteString("Q\n")
 
 	xobj := &semantic.XObject{
-		Subtype: "Form",
-		BBox: semantic.Rectangle{LLX: 0, LLY: 0, URX: width, URY: height},
+		Subtype:   "Form",
+		BBox:      semantic.Rectangle{LLX: 0, LLY: 0, URX: width, URY: height},
 		Resources: g.Form.DefaultResources,
-		Data: buf.Bytes(),
+		Data:      buf.Bytes(),
 	}
 	return xobj, nil
 }

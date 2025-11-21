@@ -14,7 +14,7 @@ func TestGenerateTextAppearance(t *testing.T) {
 
 	field := &semantic.TextFormField{
 		BaseFormField: semantic.BaseFormField{
-			Rect: semantic.Rectangle{LLX: 100, LLY: 100, URX: 200, URY: 120},
+			Rect:              semantic.Rectangle{LLX: 100, LLY: 100, URX: 200, URY: 120},
 			DefaultAppearance: "/Helv 12 Tf 0 g",
 		},
 		Value: "Hello World",

@@ -71,10 +71,10 @@ This document tracks the detailed implementation progress of features defined in
 ## 7. Forms
 - [x] **AcroForms**:
     - [x] Basic Fields (Text, Button, Choice).
-    - [ ] Appearance Generation (NeedAppearances=false).
-    - [ ] Calculation Order.
+    - [x] Appearance Generation (NeedAppearances=false).
+    - [x] Calculation Order.
 - [ ] **XFA**:
-    - [ ] Full Schema Implementation.
+    - [x] Full Schema Implementation.
     - [ ] Data Binding.
     - [ ] Layout Engine.
 - [ ] **HTML Forms**: Recognition/Embedding.

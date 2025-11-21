@@ -683,6 +683,8 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 		formRef := b.nextRef()
 		formDict := raw.Dict()
 		fieldsArr := raw.NewArray()
+		fieldRefMap := make(map[semantic.FormField]raw.ObjectRef)
+
 		appendWidgetToPage := func(pageIdx int, ref raw.ObjectRef) {
 			if pageIdx < 0 || pageIdx >= len(b.pageRefs) {
 				return
@@ -722,6 +724,7 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 			if err != nil {
 				return nil, raw.ObjectRef{}, nil, nil, err
 			}
+			fieldRefMap[f] = fieldRef
 
 			// Post-processing for P (Page) reference which isn't handled by serializer
 			if f.FieldPageIndex() >= 0 && f.FieldPageIndex() < len(b.pageRefs) {
@@ -739,6 +742,17 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 		formDict.Set(raw.NameLiteral("Fields"), fieldsArr)
 		if b.doc.AcroForm.NeedAppearances {
 			formDict.Set(raw.NameLiteral("NeedAppearances"), raw.Bool(true))
+		}
+		if len(b.doc.AcroForm.CalculationOrder) > 0 {
+			coArr := raw.NewArray()
+			for _, f := range b.doc.AcroForm.CalculationOrder {
+				if ref, ok := fieldRefMap[f]; ok {
+					coArr.Append(raw.Ref(ref.Num, ref.Gen))
+				}
+			}
+			if coArr.Len() > 0 {
+				formDict.Set(raw.NameLiteral("CO"), coArr)
+			}
 		}
 		b.objects[formRef] = formDict
 		catalogDict.Set(raw.NameLiteral("AcroForm"), raw.Ref(formRef.Num, formRef.Gen))
@@ -1234,7 +1248,7 @@ func (b *objectBuilder) serializeResources(res *semantic.Resources) raw.Dictiona
 	}
 	if len(res.ExtGStates) > 0 {
 		d := raw.Dict()
-		// ExtGState serialization is currently inline in Build. 
+		// ExtGState serialization is currently inline in Build.
 		// We should probably refactor ensureExtGState but for now let's duplicate or leave it?
 		// The logic in Build is complex (unions).
 		// For Type 3 / Patterns, we just need to serialize them.
