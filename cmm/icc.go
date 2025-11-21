@@ -75,7 +75,7 @@ func (p *ICCProfile) parse() error {
 		sig := binary.BigEndian.Uint32(p.data[offset : offset+4])
 		tagOffset := binary.BigEndian.Uint32(p.data[offset+4 : offset+8])
 		tagSize := binary.BigEndian.Uint32(p.data[offset+8 : offset+12])
-		
+
 		tagStr := uint32ToString(sig)
 		p.tags[tagStr] = iccTag{Sig: sig, Offset: tagOffset, Size: tagSize}
 		offset += 12
@@ -122,7 +122,7 @@ func (p *ICCProfile) readDescription(tag iccTag) string {
 			// Offset is relative to tag start
 			if nameOff < tag.Size {
 				// Read UTF-16BE... simplified
-				return "Localized Profile" 
+				return "Localized Profile"
 			}
 		}
 	}
@@ -166,7 +166,7 @@ func (p *ICCProfile) ReadXYZTag(sig string) ([3]float64, error) {
 	if typeSig != 0x58595A20 { // 'XYZ '
 		return [3]float64{}, errors.New("invalid tag type")
 	}
-	
+
 	x := s15Fixed16ToFloat(binary.BigEndian.Uint32(data[8:12]))
 	y := s15Fixed16ToFloat(binary.BigEndian.Uint32(data[12:16]))
 	z := s15Fixed16ToFloat(binary.BigEndian.Uint32(data[16:20]))
