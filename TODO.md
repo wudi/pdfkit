@@ -106,9 +106,9 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **Tagged PDF**:
     - [x] Full StructTree support (Writer/Parser).
     - [x] RoleMap.
-- [ ] **Associated Files (AF)**:
+- [x] **Associated Files (AF)**:
     - [x] Document-level (Catalog) AF.
-    - [ ] Object-level (Page, XObject, Annotation) AF serialization.
+    - [x] Object-level (Page, XObject, Annotation) AF serialization.
 - [x] **GeoSpatial**: GeoPDF support.
 
 ## 11. PDF 2.0 Specifics
