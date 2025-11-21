@@ -238,7 +238,7 @@ func main() {
 	}
 
 	var buf bytes.Buffer
-	w := (&writer.WriterBuilder{}).Build()
+	w := writer.NewWriter()
 	cfg := writer.Config{Deterministic: true, Linearize: true}
 	if err := w.Write(context.Background(), doc, &buf, cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "write pdf: %v\n", err)

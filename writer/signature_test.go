@@ -54,7 +54,7 @@ func TestWriter_SignatureField(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	w := (&WriterBuilder{}).Build()
+	w := NewWriter()
 	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}

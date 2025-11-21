@@ -3,11 +3,11 @@ package writer
 import (
 	"bytes"
 	"context"
+	"pdflib/ir/raw"
 	"pdflib/ir/semantic"
 	"pdflib/parser"
-	"pdflib/ir/raw"
-	"testing"
 	"strings"
+	"testing"
 )
 
 func TestWriter_Type3FontAndOCG(t *testing.T) {
@@ -20,8 +20,8 @@ func TestWriter_Type3FontAndOCG(t *testing.T) {
 		CharProcs: map[string][]byte{
 			"a": []byte("100 0 d0 0 0 1000 1000 re f"),
 		},
-		Encoding: "WinAnsiEncoding",
-		Widths:   map[int]int{97: 1000}, // 'a'
+		Encoding:  "WinAnsiEncoding",
+		Widths:    map[int]int{97: 1000}, // 'a'
 		Resources: &semantic.Resources{}, // Empty resources for the font itself
 	}
 
@@ -62,14 +62,14 @@ func TestWriter_Type3FontAndOCG(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	w := (&WriterBuilder{}).Build()
+	w := NewWriter()
 	if err := w.Write(context.Background(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 
 	// Verify output
 	data := buf.Bytes()
-	
+
 	// Check for Type 3 font
 	if !strings.Contains(string(data), "/Subtype /Type3") {
 		t.Fatalf("Type 3 subtype missing")

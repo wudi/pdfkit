@@ -42,7 +42,7 @@ func TestSerializeBlendModes(t *testing.T) {
 			}
 
 			var buf bytes.Buffer
-			w := (&WriterBuilder{}).Build()
+			w := NewWriter()
 			if err := w.Write(context.Background(), doc, &buf, Config{}); err != nil {
 				t.Fatalf("Write failed: %v", err)
 			}
@@ -88,7 +88,7 @@ func TestSerializeTransparencyGroup(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	w := (&WriterBuilder{}).Build()
+	w := NewWriter()
 	if err := w.Write(context.Background(), doc, &buf, Config{}); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}

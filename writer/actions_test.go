@@ -94,7 +94,7 @@ func TestWriter_Actions(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	w := (&WriterBuilder{}).Build()
+	w := NewWriter()
 	if err := w.Write(context.Background(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestWriter_AdvancedActions(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	w := (&WriterBuilder{}).Build()
+	w := NewWriter()
 	if err := w.Write(context.Background(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
@@ -389,7 +389,7 @@ func TestWriter_PageTransitionAndMoreActions(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	w := (&WriterBuilder{}).Build()
+	w := NewWriter()
 	if err := w.Write(context.Background(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}

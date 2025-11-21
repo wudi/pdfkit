@@ -69,7 +69,7 @@ func main() {
 
 	// Write the PDF
 	var buf bytes.Buffer
-	w := (&writer.WriterBuilder{}).Build()
+	w := writer.NewWriter()
 	// Enable SubsetFonts for efficient CJK support
 	cfg := writer.Config{
 		SubsetFonts: true,

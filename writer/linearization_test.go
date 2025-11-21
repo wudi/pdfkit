@@ -27,7 +27,7 @@ func TestLinearization(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	w := (&WriterBuilder{}).Build()
+	w := NewWriter()
 	cfg := Config{
 		Linearize: true,
 	}
@@ -68,7 +68,7 @@ func TestLinearization_Structure(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	w := (&WriterBuilder{}).Build()
+	w := NewWriter()
 	cfg := Config{Linearize: true}
 	if err := w.Write(ctx, doc, &buf, cfg); err != nil {
 		t.Fatalf("Write failed: %v", err)

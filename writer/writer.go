@@ -51,6 +51,11 @@ type Writer interface {
 	SerializeObject(ref raw.ObjectRef, obj raw.Object) ([]byte, error)
 }
 
+// NewWriter creates a new Writer with default configuration.
+func NewWriter() Writer {
+	return (&WriterBuilder{}).Build()
+}
+
 type Interceptor interface {
 	BeforeWrite(ctx Context, obj raw.Object) error
 	AfterWrite(ctx Context, obj raw.Object, bytesWritten int64) error

@@ -27,7 +27,7 @@ func TestSign(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	w := (&WriterBuilder{}).Build()
+	w := NewWriter()
 	err = w.Write(context.Background(), doc, &buf, Config{Version: PDF17})
 	if err != nil {
 		t.Fatalf("Failed to write PDF: %v", err)
@@ -127,7 +127,7 @@ func TestSign_PAdES(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	w := (&WriterBuilder{}).Build()
+	w := NewWriter()
 	err = w.Write(context.Background(), doc, &buf, Config{Version: PDF17})
 	if err != nil {
 		t.Fatalf("Failed to write PDF: %v", err)

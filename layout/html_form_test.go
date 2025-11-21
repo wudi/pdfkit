@@ -97,7 +97,7 @@ func TestHTMLForms(t *testing.T) {
 
 	// Write and Parse back to verify end-to-end
 	var buf bytes.Buffer
-	w := (&writer.WriterBuilder{}).Build()
+	w := writer.NewWriter()
 	if err := w.Write(context.Background(), doc, &buf, writer.Config{Deterministic: true}); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}

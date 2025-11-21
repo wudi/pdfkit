@@ -160,7 +160,7 @@ func main() {
 
 	// 4. Write the document
 	var buf bytes.Buffer
-	w := (&writer.WriterBuilder{}).Build()
+	w := writer.NewWriter()
 	if err := w.Write(ctx, doc, &buf, writer.Config{Deterministic: true}); err != nil {
 		exitErr("write pdf", err)
 	}

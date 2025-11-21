@@ -64,7 +64,7 @@ func main() {
 	}
 	defer outFile.Close()
 
-	w := (&writer.WriterBuilder{}).Build()
+	w := writer.NewWriter()
 	cfg := writer.Config{
 		Version:     writer.PDF17,
 		Compression: 9,

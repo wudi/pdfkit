@@ -39,7 +39,7 @@ func TestGeoPDF(t *testing.T) {
 
 	// Write to buffer
 	var buf bytes.Buffer
-	w := (&WriterBuilder{}).Build()
+	w := NewWriter()
 	if err := w.Write(context.Background(), doc, &buf, Config{}); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}

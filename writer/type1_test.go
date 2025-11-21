@@ -84,7 +84,7 @@ currentfile eexec
 	}
 
 	var out bytes.Buffer
-	w := (&WriterBuilder{}).Build()
+	w := NewWriter()
 	err = w.Write(context.Background(), doc, &out, Config{})
 	if err != nil {
 		t.Fatalf("Write failed: %v", err)

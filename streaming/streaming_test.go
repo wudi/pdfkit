@@ -121,7 +121,7 @@ func buildSamplePDF(t *testing.T) []byte {
 		t.Fatalf("build doc: %v", err)
 	}
 	var buf bytes.Buffer
-	w := (&writer.WriterBuilder{}).Build()
+	w := writer.NewWriter()
 	if err := w.Write(staticCtx{}, doc, &buf, writer.Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
