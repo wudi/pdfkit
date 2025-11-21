@@ -360,20 +360,48 @@ func (l *linearizer) generateHintStream(offsets map[int]int64, lengths map[int]i
 
 	// Calculate Content Stream info
 	var minContentLength int64 = -1
+	var maxContentLength int64 = 0
+	var minContentOffset int64 = -1
+	var maxContentOffset int64 = 0
 	var p1ContentOffset int64
+
+	type contentInfo struct {
+		length         int64
+		relativeOffset int64
+		hasContent     bool
+	}
+	contentInfos := make([]contentInfo, len(l.pageList))
 
 	for i, pageRef := range l.pageList {
 		csRef, ok := l.getContentStreamRef(pageRef)
 		if ok {
 			newRef := l.renumber[csRef]
 			if l, ok := lengths[newRef.Num]; ok {
+				contentInfos[i].length = l
+				contentInfos[i].hasContent = true
 				if minContentLength == -1 || l < minContentLength {
 					minContentLength = l
 				}
+				if l > maxContentLength {
+					maxContentLength = l
+				}
 			}
-			if i == 0 {
-				if off, ok := offsets[newRef.Num]; ok {
-					p1ContentOffset = off
+
+			// Calculate relative offset
+			newPageRef := l.renumber[pageRef]
+			if pageOff, ok := offsets[newPageRef.Num]; ok {
+				if csOff, ok := offsets[newRef.Num]; ok {
+					rel := csOff - pageOff
+					contentInfos[i].relativeOffset = rel
+					if minContentOffset == -1 || rel < minContentOffset {
+						minContentOffset = rel
+					}
+					if rel > maxContentOffset {
+						maxContentOffset = rel
+					}
+					if i == 0 {
+						p1ContentOffset = rel
+					}
 				}
 			}
 		}
@@ -381,11 +409,16 @@ func (l *linearizer) generateHintStream(offsets map[int]int64, lengths map[int]i
 	if minContentLength == -1 {
 		minContentLength = 0
 	}
+	if minContentOffset == -1 {
+		minContentOffset = 0
+	}
 
 	bitsNObjects := bitsNeeded(maxNObjects)
 	bitsLength := bitsNeeded(maxLength)
 	bitsNShared := bitsNeeded(maxNShared)
 	bitsSharedIndex := bitsNeeded(maxSharedIndex)
+	bitsContentOffset := bitsNeeded(maxContentOffset - minContentOffset)
+	bitsContentLength := bitsNeeded(maxContentLength - minContentLength)
 
 	// 3. Write Page Offset Hint Table
 	var buf bytes.Buffer
@@ -415,21 +448,31 @@ func (l *linearizer) generateHintStream(offsets map[int]int64, lengths map[int]i
 	bw.write(uint64(minLength), 32)
 
 	bw.write(uint64(bitsLength), 16)
-	bw.write(uint64(p1ContentOffset), 32)  // Content stream offset
-	bw.write(0, 16)                        // Bits for content stream offset
-	bw.write(uint64(minContentLength), 32) // Content stream length
-	bw.write(0, 16)                        // Bits for content stream length
+	bw.write(uint64(p1ContentOffset), 32)   // Content stream offset (Item 11)
+	bw.write(uint64(bitsContentOffset), 16) // Bits for content stream offset (Item 12)
+	bw.write(uint64(minContentLength), 32)  // Content stream length (Item 13)
+	bw.write(uint64(bitsContentLength), 16) // Bits for content stream length (Item 14)
 	bw.write(uint64(bitsNShared), 16)
 	bw.write(uint64(bitsSharedIndex), 16)
 	bw.write(0, 16) // Numerator
 	bw.write(0, 16) // Denominator
 
 	// Entries
-	for _, info := range infos {
+	for i, info := range infos {
 		bw.write(uint64(info.nObjects-minObjs), uint(bitsNObjects))
 		bw.write(uint64(info.length-minLength), uint(bitsLength))
 		bw.write(uint64(info.nShared), uint(bitsNShared))
 		bw.write(uint64(info.sharedIndex), uint(bitsSharedIndex))
+		if contentInfos[i].hasContent {
+			bw.write(uint64(contentInfos[i].relativeOffset-minContentOffset), uint(bitsContentOffset))
+			bw.write(uint64(contentInfos[i].length-minContentLength), uint(bitsContentLength))
+		} else {
+			// If no content, write 0s? Or skip?
+			// Spec doesn't say what to do if no content stream.
+			// Usually pages have content. If not, maybe 0 delta.
+			bw.write(0, uint(bitsContentOffset))
+			bw.write(0, uint(bitsContentLength))
+		}
 	}
 
 	bw.flush()

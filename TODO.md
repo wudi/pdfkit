@@ -10,7 +10,7 @@ This document tracks the detailed implementation progress of features defined in
     - [x] **XRef Streams**: Compressed cross-reference streams (PDF 1.5+).
     - [x] **Hybrid Reference**: Mixed use of traditional table and streams (common in transitional files).
 - [x] **Incremental Updates**: Ability to read and write modifications appended to the end of the file, keeping original signatures valid.
-- [ ] **Linearization (Fast Web View)**: Support Hint Tables, allowing byte-streaming loading.
+- [x] **Linearization (Fast Web View)**: Support Hint Tables, allowing byte-streaming loading.
 - [x] **Object Streams**: Parse and generate compressed object streams (ObjStm).
 
 ## 2. Basic Objects (Cos Objects)
@@ -90,7 +90,7 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **Encryption**:
     - [x] RC4 (40/128).
     - [x] AES (128).
-    - [ ] AES-256 (PDF 2.0).
+    - [x] AES-256 (PDF 2.0).
 - [ ] **Signatures**:
     - [x] Basic PKCS#7.
     - [x] PAdES (ETSI).

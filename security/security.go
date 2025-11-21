@@ -436,6 +436,9 @@ func rev6Hash(pwd []byte, salt []byte, extra []byte) []byte {
 			h = sum[:]
 		}
 	}
+	if len(h) > 32 {
+		return h[:32]
+	}
 	return h
 }
 
@@ -529,306 +532,151 @@ func BuildStandardEncryption(userPwd, ownerPwd string, permissions raw.Permissio
 	return enc, fileKey, nil
 }
 
-func checkUserPassword(key []byte, userEntry []byte, fileID []byte, r int) bool {
-	if r <= 2 {
-		expect := rc4Simple(key, passwordPadding)
-		if len(userEntry) >= 16 {
-			exp16 := expect[:16]
-			act := userEntry[:16]
-			if string(exp16) == string(act) {
-				return true
-			}
+// BuildAES256Encryption constructs an Encrypt dictionary and keys for AES-256 (PDF 2.0) security.
+func BuildAES256Encryption(userPwd, ownerPwd string, permissions raw.Permissions, fileID []byte, encryptMetadata bool) (*raw.DictObj, []byte, error) {
+	if len(ownerPwd) == 0 {
+		if len(userPwd) > 0 {
+			ownerPwd = userPwd
+		} else {
+			ownerPwd = "owner"
 		}
-		return false
 	}
-	// R>=3 (still RC4 for V<=2) simplified check: compute value per spec.
-	h := md5.Sum(append(passwordPadding, fileID...))
-	val := h[:]
-	for i := 0; i < 20; i++ {
-		tmpKey := make([]byte, len(key))
-		for j := 0; j < len(key); j++ {
-			tmpKey[j] = key[j] ^ byte(i)
-		}
-		val = rc4Simple(tmpKey, val)
-	}
-	return len(userEntry) >= 16 && comparePrefix(val[:16], userEntry[:16])
-}
 
-// AES-256 (R>=5) derivation for user password per ISO 32000-2 (simplified to SHA-256 hash).
-func deriveAES256User(pwd []byte, uEntry []byte, ue []byte, fileID []byte) ([]byte, bool, error) {
-	if len(uEntry) < 48 || len(ue) < 16 {
-		return nil, false, errors.New("user entry too short")
+	// 1. Generate File Encryption Key (32 bytes)
+	fileKey := make([]byte, 32)
+	if _, err := rand.Read(fileKey); err != nil {
+		return nil, nil, err
 	}
-	validationSalt := uEntry[32:40]
-	keySalt := uEntry[40:48]
-	hashVal := rev6Hash(pwd, validationSalt, fileID)
-	if !comparePrefix(hashVal[:32], uEntry[:32]) {
-		return nil, false, nil
-	}
-	keyHash := rev6Hash(pwd, keySalt, fileID)
-	fileKey, err := aesCBCNoIV(keyHash[:32], ue, false)
+
+	// 2. Create U and UE entries
+	uEntry, ueEntry, err := generateAES256Entry([]byte(userPwd), nil, fileKey, fileID)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, err
 	}
-	return fileKey, true, nil
-}
 
-// AES-256 owner derivation uses U entry as additional data.
-func deriveAES256Owner(pwd []byte, oEntry []byte, oe []byte, uEntry []byte) ([]byte, bool, error) {
-	if len(oEntry) < 48 || len(oe) < 16 || len(uEntry) < 48 {
-		return nil, false, errors.New("owner entry too short")
-	}
-	validationSalt := oEntry[32:40]
-	keySalt := oEntry[40:48]
-	hashVal := rev6Hash(pwd, validationSalt, uEntry[:48])
-	if !comparePrefix(hashVal[:32], oEntry[:32]) {
-		return nil, false, nil
-	}
-	keyHash := rev6Hash(pwd, keySalt, uEntry[:48])
-	fileKey, err := aesCBCNoIV(keyHash[:32], oe, false)
+	// 3. Create O and OE entries
+	oEntry, oeEntry, err := generateAES256Entry([]byte(ownerPwd), uEntry, fileKey, nil) // Owner uses U entry as extra data? No, U is not used for Owner hash in R=6?
+	// ISO 32000-2:
+	// Owner Password:
+	// Validation Salt (8 bytes)
+	// Key Salt (8 bytes)
+	// hash = rev6Hash(ownerPwd, ValidationSalt, U)  <-- U is used as extra data!
+	// O = hash || ValidationSalt || KeySalt
+	// keyHash = rev6Hash(ownerPwd, KeySalt, U)
+	// OE = AES-CBC(keyHash, fileKey)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, err
 	}
-	return fileKey, true, nil
-}
 
-func parseCryptFilters(dict raw.Dictionary, base cryptAlgo) (map[string]cryptAlgo, error) {
-	out := make(map[string]cryptAlgo)
-	if dict == nil {
-		return out, nil
-	}
-	cfObj, ok := dict.Get(raw.NameObj{Val: "CF"})
-	if !ok {
-		return out, nil
-	}
-	cfDict, ok := cfObj.(*raw.DictObj)
-	if !ok {
-		return nil, errors.New("CF must be a dictionary")
-	}
-	for name, obj := range cfDict.KV {
-		entry, ok := obj.(*raw.DictObj)
-		if !ok {
-			return nil, errors.New("crypt filter entry must be a dictionary")
-		}
-		algo := base
-		if cfmObj, ok := entry.Get(raw.NameObj{Val: "CFM"}); ok {
-			if cfmName, ok := cfmObj.(raw.NameObj); ok {
-				switch cfmName.Val {
-				case "V2":
-					algo = algoRC4
-				case "AESV2":
-					algo = algoAES
-				case "None":
-					algo = algoNone
-				default:
-					return nil, fmt.Errorf("unsupported crypt filter method %s", cfmName.Val)
-				}
-			}
-		}
-		out[name] = algo
-	}
-	return out, nil
-}
+	// 4. Create Perms entry
+	// Perms is 16 bytes: [Perms (4 bytes) | 0xFF... (12 bytes)]
+	// Encrypted with fileKey (ECB? No, AES-256 uses CBC with zero IV for Perms?)
+	// ISO 32000-2: "The Perms string shall be encrypted using the file encryption key... using the AES-256 algorithm in ECB mode with no padding."
+	// Wait, ECB?
+	// "The Perms string... encrypted using the file encryption key... using AES-256 in ECB mode..."
+	// My `decryptPermsAES256` uses `block.Decrypt` which is ECB for a single block.
+	// So yes, ECB.
 
-func resolveCryptFilter(dict raw.Dictionary, key string, base cryptAlgo, filters map[string]cryptAlgo) (cryptAlgo, error) {
-	name := nameVal(dict, key)
-	if name == "" || name == "Standard" {
-		if algo, ok := filters["Standard"]; ok {
-			return algo, nil
-		}
-		return base, nil
+	pVal := PermissionsValue(permissions)
+	permsBlock := make([]byte, 16)
+	binary.LittleEndian.PutUint32(permsBlock[0:4], uint32(pVal))
+	for i := 4; i < 16; i++ {
+		permsBlock[i] = 0xFF
 	}
-	if name == "Identity" {
-		return algoNone, nil
+	if !encryptMetadata {
+		permsBlock[8] = 'F' // EncryptMetadata = false -> 'F' in 9th byte?
+		// ISO 32000-2: "If EncryptMetadata is false, the byte at offset 8 shall be 'F' (0x46). Otherwise it shall be 'T' (0x54)."
+		permsBlock[8] = 0x46
+	} else {
+		permsBlock[8] = 0x54
 	}
-	if algo, ok := filters[name]; ok {
-		return algo, nil
-	}
-	return algoUnset, fmt.Errorf("crypt filter %s not defined", name)
-}
+	// Bytes 9-11 are 0x61, 0x64, 0x62 ('a', 'd', 'b')
+	permsBlock[9] = 0x61
+	permsBlock[10] = 0x64
+	permsBlock[11] = 0x62
 
-func objectKey(fileKey []byte, objNum, gen int, r int, useAES bool) []byte {
-	if r >= 5 {
-		return fileKey
-	}
-	key := append([]byte{}, fileKey...)
-	var objBuf [3]byte
-	objBuf[0] = byte(objNum & 0xFF)
-	objBuf[1] = byte((objNum >> 8) & 0xFF)
-	objBuf[2] = byte((objNum >> 16) & 0xFF)
-	key = append(key, objBuf[:]...)
-	var genBuf [2]byte
-	genBuf[0] = byte(gen & 0xFF)
-	genBuf[1] = byte((gen >> 8) & 0xFF)
-	key = append(key, genBuf[:]...)
-	if useAES {
-		key = append(key, 0x73, 0x41, 0x6C, 0x54) // "sAlT"
-	}
-	hashLen := len(fileKey) + 5
-	if hashLen > 16 {
-		hashLen = 16
-	}
-	hash := md5.Sum(key)
-	out := hash[:]
-	if useAES && hashLen > 16 {
-		hashLen = 16
-	}
-	if hashLen < len(out) {
-		out = out[:hashLen]
-	}
-	return out
-}
-
-func rc4Simple(key []byte, data []byte) []byte {
-	out := make([]byte, len(data))
-	c, _ := rc4.NewCipher(key)
-	c.XORKeyStream(out, data)
-	return out
-}
-
-func rc4Crypt(key []byte, data []byte) ([]byte, error) {
-	c, err := rc4.NewCipher(key)
+	permsEnc := make([]byte, 16)
+	block, err := aes.NewCipher(fileKey)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	out := make([]byte, len(data))
-	c.XORKeyStream(out, data)
-	return out, nil
+	block.Encrypt(permsEnc, permsBlock)
+
+	// 5. Build Dictionary
+	enc := raw.Dict()
+	enc.Set(raw.NameObj{Val: "Filter"}, raw.NameObj{Val: "Standard"})
+	enc.Set(raw.NameObj{Val: "V"}, raw.NumberObj{I: 5, IsInt: true})
+	enc.Set(raw.NameObj{Val: "R"}, raw.NumberObj{I: 6, IsInt: true})
+	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberObj{I: 256, IsInt: true})
+	enc.Set(raw.NameObj{Val: "O"}, raw.Str(oEntry))
+	enc.Set(raw.NameObj{Val: "U"}, raw.Str(uEntry))
+	enc.Set(raw.NameObj{Val: "OE"}, raw.Str(oeEntry))
+	enc.Set(raw.NameObj{Val: "UE"}, raw.Str(ueEntry))
+	enc.Set(raw.NameObj{Val: "Perms"}, raw.Str(permsEnc))
+	enc.Set(raw.NameObj{Val: "P"}, raw.NumberObj{I: int64(pVal), IsInt: true})
+	if !encryptMetadata {
+		enc.Set(raw.NameObj{Val: "EncryptMetadata"}, raw.Bool(encryptMetadata))
+	}
+
+	// Crypt Filters
+	cf := raw.Dict()
+	stdCF := raw.Dict()
+	stdCF.Set(raw.NameObj{Val: "Type"}, raw.NameObj{Val: "CryptFilter"})
+	stdCF.Set(raw.NameObj{Val: "CFM"}, raw.NameObj{Val: "AESV3"}) // AESV3 for PDF 2.0
+	stdCF.Set(raw.NameObj{Val: "AuthEvent"}, raw.NameObj{Val: "DocOpen"})
+	stdCF.Set(raw.NameObj{Val: "Length"}, raw.NumberObj{I: 256, IsInt: true})
+	cf.Set(raw.NameObj{Val: "StdCF"}, stdCF)
+	enc.Set(raw.NameObj{Val: "CF"}, cf)
+	enc.Set(raw.NameObj{Val: "StmF"}, raw.NameObj{Val: "StdCF"})
+	enc.Set(raw.NameObj{Val: "StrF"}, raw.NameObj{Val: "StdCF"})
+
+	return enc, fileKey, nil
 }
 
-func aesCrypt(key []byte, data []byte, encrypt bool) ([]byte, error) {
-	block, err := aes.NewCipher(key)
+func generateAES256Entry(pwd []byte, extra []byte, fileKey []byte, fileID []byte) ([]byte, []byte, error) {
+	// 1. Salts
+	valSalt := make([]byte, 8)
+	keySalt := make([]byte, 8)
+	if _, err := rand.Read(valSalt); err != nil {
+		return nil, nil, err
+	}
+	if _, err := rand.Read(keySalt); err != nil {
+		return nil, nil, err
+	}
+
+	// 2. User/Owner Entry (48 bytes)
+	hash := rev6Hash(pwd, valSalt, extra)
+	entry := make([]byte, 0, 48)
+	entry = append(entry, hash...)
+	entry = append(entry, valSalt...)
+	entry = append(entry, keySalt...)
+
+	// 3. UE/OE Entry (32 bytes)
+	keyHash := rev6Hash(pwd, keySalt, extra)
+	encKey, err := aesCBCNoIV(keyHash, fileKey, true)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if encrypt {
-		iv := make([]byte, aes.BlockSize)
-		if _, err := rand.Read(iv); err != nil {
-			return nil, err
-		}
-		padLen := aes.BlockSize - (len(data) % aes.BlockSize)
-		if padLen == 0 {
-			padLen = aes.BlockSize
-		}
-		pad := bytes.Repeat([]byte{byte(padLen)}, padLen)
-		plain := append(data, pad...)
-		out := make([]byte, aes.BlockSize+len(plain))
-		copy(out[:aes.BlockSize], iv)
-		mode := cipher.NewCBCEncrypter(block, iv)
-		mode.CryptBlocks(out[aes.BlockSize:], plain)
-		return out, nil
-	}
-	if len(data) < aes.BlockSize {
-		return nil, errors.New("aes ciphertext too short")
-	}
-	iv := data[:aes.BlockSize]
-	ct := data[aes.BlockSize:]
-	if len(ct)%aes.BlockSize != 0 {
-		return nil, errors.New("aes ciphertext not multiple of blocksize")
-	}
-	out := make([]byte, len(ct))
-	mode := cipher.NewCBCDecrypter(block, iv)
-	mode.CryptBlocks(out, ct)
-	if len(out) == 0 {
-		return out, nil
-	}
-	pad := int(out[len(out)-1])
-	if pad <= 0 || pad > aes.BlockSize || pad > len(out) {
-		return nil, errors.New("invalid aes padding")
-	}
-	return out[:len(out)-pad], nil
+
+	return entry, encKey, nil
 }
 
-func aesCBCNoIV(key []byte, data []byte, encrypt bool) ([]byte, error) {
-	iv := make([]byte, aes.BlockSize)
-	return aesCBCWithIV(key, iv, data, encrypt)
-}
+// Helpers
 
-func aesCBCWithIV(key []byte, iv []byte, data []byte, encrypt bool) ([]byte, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	if len(iv) != aes.BlockSize {
-		return nil, errors.New("invalid iv size")
-	}
-	if encrypt {
-		padLen := aes.BlockSize - (len(data) % aes.BlockSize)
-		if padLen == 0 {
-			padLen = aes.BlockSize
-		}
-		pad := bytes.Repeat([]byte{byte(padLen)}, padLen)
-		plain := append(data, pad...)
-		out := make([]byte, len(plain))
-		mode := cipher.NewCBCEncrypter(block, iv)
-		mode.CryptBlocks(out, plain)
-		return out, nil
-	}
-	if len(data)%aes.BlockSize != 0 {
-		return nil, errors.New("aes data not multiple of blocksize")
-	}
-	out := make([]byte, len(data))
-	mode := cipher.NewCBCDecrypter(block, iv)
-	mode.CryptBlocks(out, data)
-	if len(out) == 0 {
-		return out, nil
-	}
-	pad := int(out[len(out)-1])
-	if pad <= 0 || pad > aes.BlockSize || pad > len(out) {
-		return nil, errors.New("invalid aes padding")
-	}
-	return out[:len(out)-pad], nil
-}
-
-func decryptPermsAES256(key []byte, perms []byte) (int32, error) {
-	if len(key) == 0 {
-		return 0, errors.New("missing key")
-	}
-	if len(perms) != 16 {
-		return 0, errors.New("perms length must be 16")
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return 0, err
-	}
-	out := make([]byte, 16)
-	block.Decrypt(out, perms)
-	if !comparePrefix([]byte("perm"), out[12:16]) {
-		return 0, errors.New("invalid perms signature")
-	}
-	p := int32(binary.LittleEndian.Uint32(out[0:4]))
-	return p, nil
-}
-
-func comparePrefix(a, b []byte) bool {
-	if len(a) > len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func numberVal(dict raw.Dictionary, key string) (int64, bool) {
-	if dict == nil {
-		return 0, false
-	}
-	if v, ok := dict.Get(raw.NameObj{Val: key}); ok {
+func numberVal(d raw.Dictionary, key string) (int64, bool) {
+	if v, ok := d.Get(raw.NameObj{Val: key}); ok {
 		if n, ok := v.(raw.NumberObj); ok {
-			return n.Int(), true
+			if n.IsInt {
+				return n.I, true
+			}
+			return int64(n.F), true
 		}
 	}
 	return 0, false
 }
 
-func stringBytes(dict raw.Dictionary, key string) ([]byte, bool) {
-	if dict == nil {
-		return nil, false
-	}
-	if v, ok := dict.Get(raw.NameObj{Val: key}); ok {
+func stringBytes(d raw.Dictionary, key string) ([]byte, bool) {
+	if v, ok := d.Get(raw.NameObj{Val: key}); ok {
 		if s, ok := v.(raw.StringObj); ok {
 			return s.Value(), true
 		}
@@ -836,11 +684,8 @@ func stringBytes(dict raw.Dictionary, key string) ([]byte, bool) {
 	return nil, false
 }
 
-func boolVal(dict raw.Dictionary, key string) (bool, bool) {
-	if dict == nil {
-		return false, false
-	}
-	if v, ok := dict.Get(raw.NameObj{Val: key}); ok {
+func boolVal(d raw.Dictionary, key string) (bool, bool) {
+	if v, ok := d.Get(raw.NameObj{Val: key}); ok {
 		if b, ok := v.(raw.BoolObj); ok {
 			return b.V, true
 		}
@@ -848,14 +693,222 @@ func boolVal(dict raw.Dictionary, key string) (bool, bool) {
 	return false, false
 }
 
-func nameVal(dict raw.Dictionary, key string) string {
-	if dict == nil {
-		return ""
+func rc4Simple(key, data []byte) []byte {
+	c, _ := rc4.NewCipher(key)
+	dst := make([]byte, len(data))
+	c.XORKeyStream(dst, data)
+	return dst
+}
+
+func rc4Crypt(key, data []byte) ([]byte, error) {
+	return rc4Simple(key, data), nil
+}
+
+func aesCrypt(key, data []byte, encrypt bool) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
 	}
-	if v, ok := dict.Get(raw.NameObj{Val: key}); ok {
-		if n, ok := v.(raw.NameObj); ok {
-			return n.Val
+	iv := make([]byte, aes.BlockSize)
+	if encrypt {
+		if _, err := rand.Read(iv); err != nil {
+			return nil, err
+		}
+		mode := cipher.NewCBCEncrypter(block, iv)
+		padding := aes.BlockSize - len(data)%aes.BlockSize
+		padText := bytes.Repeat([]byte{byte(padding)}, padding)
+		paddedData := append(data, padText...)
+		encrypted := make([]byte, len(paddedData))
+		mode.CryptBlocks(encrypted, paddedData)
+		return append(iv, encrypted...), nil
+	} else {
+		if len(data) < aes.BlockSize {
+			return nil, errors.New("data too short for AES")
+		}
+		copy(iv, data[:aes.BlockSize])
+		ciphertext := data[aes.BlockSize:]
+		if len(ciphertext)%aes.BlockSize != 0 {
+			return nil, errors.New("ciphertext not multiple of block size")
+		}
+		mode := cipher.NewCBCDecrypter(block, iv)
+		decrypted := make([]byte, len(ciphertext))
+		mode.CryptBlocks(decrypted, ciphertext)
+		if len(decrypted) == 0 {
+			return nil, errors.New("empty decrypted data")
+		}
+		padding := int(decrypted[len(decrypted)-1])
+		if padding > aes.BlockSize || padding == 0 {
+			return nil, errors.New("invalid padding")
+		}
+		return decrypted[:len(decrypted)-padding], nil
+	}
+}
+
+func aesCBCWithIV(key, iv, data []byte, encrypt bool) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	if encrypt {
+		mode := cipher.NewCBCEncrypter(block, iv)
+		out := make([]byte, len(data))
+		mode.CryptBlocks(out, data)
+		return out, nil
+	}
+	mode := cipher.NewCBCDecrypter(block, iv)
+	out := make([]byte, len(data))
+	mode.CryptBlocks(out, data)
+	return out, nil
+}
+
+func aesCBCNoIV(key, data []byte, encrypt bool) ([]byte, error) {
+	iv := make([]byte, aes.BlockSize)
+	return aesCBCWithIV(key, iv, data, encrypt)
+}
+
+func objectKey(key []byte, objNum, gen, r int, useAES bool) []byte {
+	if r == 6 {
+		return key
+	}
+	newKey := make([]byte, len(key)+5)
+	copy(newKey, key)
+	
+	// Append 3 bytes of Object Number (Little Endian)
+	newKey[len(key)] = byte(objNum)
+	newKey[len(key)+1] = byte(objNum >> 8)
+	newKey[len(key)+2] = byte(objNum >> 16)
+	
+	// Append 2 bytes of Generation Number (Little Endian)
+	newKey[len(key)+3] = byte(gen)
+	newKey[len(key)+4] = byte(gen >> 8)
+
+	if useAES {
+		newKey = append(newKey, []byte("sAlT")...)
+	}
+	sum := md5.Sum(newKey)
+	limit := len(key) + 5
+	if limit > 16 {
+		limit = 16
+	}
+	return sum[:limit]
+}
+
+func checkUserPassword(key, user, fileID []byte, r int) bool {
+	dec, _ := rc4Crypt(key, user)
+	if r == 2 {
+		return bytes.Equal(dec, passwordPadding)
+	}
+	expected := make([]byte, 0, 32+len(fileID))
+	expected = append(expected, passwordPadding...)
+	expected = append(expected, fileID...)
+	hash := md5.Sum(expected)
+	return bytes.HasPrefix(dec, hash[:16])
+}
+
+func deriveAES256User(pwd, uEntry, ue, fileID []byte) ([]byte, bool, error) {
+	if len(uEntry) < 48 {
+		return nil, false, nil
+	}
+	hash := uEntry[:32]
+	valSalt := uEntry[32:40]
+	keySalt := uEntry[40:48]
+	computedHash := rev6Hash(pwd, valSalt, fileID)
+	if !bytes.Equal(hash, computedHash) {
+		return nil, false, nil
+	}
+	keyHash := rev6Hash(pwd, keySalt, fileID)
+	if len(keyHash) > 32 {
+		keyHash = keyHash[:32]
+	}
+	fileKey, err := aesCBCNoIV(keyHash, ue, false)
+	if err != nil {
+		return nil, false, err
+	}
+	return fileKey, true, nil
+}
+
+func deriveAES256Owner(pwd, oEntry, oe, uEntry []byte) ([]byte, bool, error) {
+	if len(oEntry) < 48 {
+		return nil, false, nil
+	}
+	hash := oEntry[:32]
+	valSalt := oEntry[32:40]
+	keySalt := oEntry[40:48]
+	computedHash := rev6Hash(pwd, valSalt, uEntry)
+	if !bytes.Equal(hash, computedHash) {
+		return nil, false, nil
+	}
+	keyHash := rev6Hash(pwd, keySalt, uEntry)
+	if len(keyHash) > 32 {
+		keyHash = keyHash[:32]
+	}
+	fileKey, err := aesCBCNoIV(keyHash, oe, false)
+	if err != nil {
+		return nil, false, err
+	}
+	return fileKey, true, nil
+}
+
+func decryptPermsAES256(key, perms []byte) (int32, error) {
+	if len(perms) != 16 {
+		return 0, errors.New("invalid perms length")
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return 0, err
+	}
+	dec := make([]byte, 16)
+	block.Decrypt(dec, perms)
+	if dec[9] != 'a' || dec[10] != 'd' || dec[11] != 'b' {
+		return 0, errors.New("invalid perms marker")
+	}
+	return int32(binary.LittleEndian.Uint32(dec[:4])), nil
+}
+
+func parseCryptFilters(d raw.Dictionary, baseAlgo cryptAlgo) (map[string]cryptAlgo, error) {
+	filters := make(map[string]cryptAlgo)
+	filters["Identity"] = algoNone
+	filters["StdCF"] = baseAlgo
+	cfDict, ok := d.Get(raw.NameObj{Val: "CF"})
+	if !ok {
+		return filters, nil
+	}
+	cf, ok := cfDict.(raw.Dictionary)
+	if !ok {
+		return filters, nil
+	}
+	for _, key := range cf.Keys() {
+		val, _ := cf.Get(key)
+		filterDict, ok := val.(raw.Dictionary)
+		if !ok {
+			continue
+		}
+		cfm, _ := filterDict.Get(raw.NameObj{Val: "CFM"})
+		if name, ok := cfm.(raw.NameObj); ok {
+			switch name.Val {
+			case "None":
+				filters[key.Value()] = algoNone
+			case "V2":
+				filters[key.Value()] = algoRC4
+			case "AESV2", "AESV3":
+				filters[key.Value()] = algoAES
+			}
 		}
 	}
-	return ""
+	return filters, nil
+}
+
+func resolveCryptFilter(d raw.Dictionary, name string, baseAlgo cryptAlgo, filters map[string]cryptAlgo) (cryptAlgo, error) {
+	n, ok := d.Get(raw.NameObj{Val: name})
+	if !ok {
+		return baseAlgo, nil
+	}
+	filterName, ok := n.(raw.NameObj)
+	if !ok {
+		return baseAlgo, nil
+	}
+	if algo, ok := filters[filterName.Val]; ok {
+		return algo, nil
+	}
+	return algoUnset, fmt.Errorf("undefined crypt filter: %s", filterName.Val)
 }
