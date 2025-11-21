@@ -21,6 +21,7 @@ type Document struct {
 	Articles          []ArticleThread
 	AcroForm          *AcroForm
 	StructTree        *StructureTree
+	DPartRoot         *DPartRoot // PDF/VT
 	OutputIntents     []OutputIntent
 	EmbeddedFiles     []EmbeddedFile
 	decoded           *decoded.DecodedDocument
@@ -1020,4 +1021,10 @@ type OCUser struct {
 	Type string // /User
 	Name string
 	User []string
+}
+
+// DPartRoot represents the root of the DPart hierarchy (PDF/VT).
+type DPartRoot struct {
+	OriginalRef raw.ObjectRef
+	Dirty       bool
 }

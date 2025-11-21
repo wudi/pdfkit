@@ -84,7 +84,7 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **PDF/A-2/3/4**: Full validation and conversion.
 - [x] **PDF/X**: OutputIntent, TrimBox/BleedBox enforcement.
 - [x] **PDF/UA**: Tagged PDF validation.
-- [ ] **PDF/E & PDF/VT**.
+- [x] **PDF/E & PDF/VT**.
 
 ## 9. Security
 - [x] **Encryption**:
