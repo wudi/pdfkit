@@ -35,8 +35,9 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **Crypt**: Filter specifically for decrypting streams.
 
 ## 4. Graphics & Imaging
-- [x] **Color Spaces**:
-    - [x] Implement `cmm` package (ICC Profile parsing/transform).
+- [ ] **Color Spaces**:
+    - [x] Implement `cmm` package (ICC Profile parsing).
+    - [ ] **CMM Transform**: Implement actual color conversion logic (currently basic fallback).
     - [x] Support `DeviceN` and `Separation` (Spot Colors).
     - [x] Support `Pattern` color space.
 - [x] **Patterns & Shading**:
@@ -52,7 +53,8 @@ This document tracks the detailed implementation progress of features defined in
 
 ## 5. Fonts & Text
 - [x] **TrueType**: Parsing and extraction.
-- [x] **Type 1**: Parsing .pfb/.pfm.
+- [ ] **Type 1**: Parsing .pfb/.pfm.
+    - [ ] Handle Length1/Length2/Length3 for embedding.
 - [x] **Type 3**: Custom glyphs.
 - [x] **OpenType/CFF**: Parsing.
 - [x] **Composite Fonts**: CID-Keyed (Type 0) full support.
@@ -73,15 +75,18 @@ This document tracks the detailed implementation progress of features defined in
     - [x] Basic Fields (Text, Button, Choice).
     - [x] Appearance Generation (NeedAppearances=false).
     - [x] Calculation Order.
-- [x] **XFA**:
+- [ ] **XFA**:
     - [x] Full Schema Implementation.
     - [x] Data Binding.
-    - [x] Layout Engine.
+    - [ ] **Layout Engine**: Improve naive implementation (support flow, auto-height, pagination).
 - [x] **HTML Forms**: Recognition/Embedding.
 
 ## 8. Compliance
-- [x] **PDF/A-1b**: Basic enforcement.
-- [x] **PDF/A-2/3/4**: Full validation and conversion.
+- [ ] **PDF/A**:
+    - [x] PDF/A-1b Basic enforcement.
+    - [ ] **Validation**: Deep check of Action dictionaries (JS, Launch).
+    - [ ] **OutputIntent**: Embed valid ICC profile (currently placeholder).
+    - [ ] **Attachments**: Verify compliance of embedded files.
 - [x] **PDF/X**: OutputIntent, TrimBox/BleedBox enforcement.
 - [x] **PDF/UA**: Tagged PDF validation.
 - [x] **PDF/E & PDF/VT**.
