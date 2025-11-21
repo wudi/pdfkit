@@ -934,6 +934,15 @@ func (b *objectBuilder) addFontDescriptor(fd *semantic.FontDescriptor) *raw.Obje
 	if len(fd.FontFile) > 0 {
 		streamDict := raw.Dict()
 		streamDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(fd.FontFile))))
+		if fd.Length1 > 0 {
+			streamDict.Set(raw.NameLiteral("Length1"), raw.NumberInt(int64(fd.Length1)))
+		}
+		if fd.Length2 > 0 {
+			streamDict.Set(raw.NameLiteral("Length2"), raw.NumberInt(int64(fd.Length2)))
+		}
+		if fd.Length3 > 0 {
+			streamDict.Set(raw.NameLiteral("Length3"), raw.NumberInt(int64(fd.Length3)))
+		}
 		streamRef := b.nextRef()
 		b.objects[streamRef] = raw.NewStream(streamDict, fd.FontFile)
 		key := "FontFile2"

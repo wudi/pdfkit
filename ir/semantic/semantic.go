@@ -404,6 +404,9 @@ type FontDescriptor struct {
 	FontBBox     [4]float64
 	FontFile     []byte
 	FontFileType string // FontFile2 (TrueType) or FontFile3
+	Length1      int    // Length of the ASCII segment (Type 1)
+	Length2      int    // Length of the encrypted segment (Type 1)
+	Length3      int    // Length of the fixed-content segment (Type 1)
 }
 
 type Catalog struct{}

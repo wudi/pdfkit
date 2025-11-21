@@ -15,7 +15,7 @@ import (
 // ParseType1 parses PFB (font data) and returns a semantic.Font.
 // It extracts metrics from the ASCII segment of the PFB.
 func ParseType1(name string, pfbData []byte) (*semantic.Font, error) {
-	l1, _, _, err := parsePFB(pfbData)
+	l1, l2, l3, err := parsePFB(pfbData)
 	if err != nil {
 		return nil, fmt.Errorf("parse pfb: %w", err)
 	}
@@ -43,6 +43,9 @@ func ParseType1(name string, pfbData []byte) (*semantic.Font, error) {
 		FontBBox:     metrics.FontBBox,
 		FontFile:     pfbData,
 		FontFileType: "FontFile", // Type 1
+		Length1:      l1,
+		Length2:      l2,
+		Length3:      l3,
 	}
 
 	// We store the lengths in the descriptor or font?

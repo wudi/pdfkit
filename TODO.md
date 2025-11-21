@@ -54,7 +54,7 @@ This document tracks the detailed implementation progress of features defined in
 ## 5. Fonts & Text
 - [x] **TrueType**: Parsing and extraction.
 - [ ] **Type 1**: Parsing .pfb/.pfm.
-    - [ ] Handle Length1/Length2/Length3 for embedding.
+    - [x] Handle Length1/Length2/Length3 for embedding.
 - [x] **Type 3**: Custom glyphs.
 - [x] **OpenType/CFF**: Parsing.
 - [x] **Composite Fonts**: CID-Keyed (Type 0) full support.
