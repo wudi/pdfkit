@@ -62,7 +62,7 @@ This document tracks the detailed implementation progress of features defined in
 - [ ] **Annotations**:
     - [x] Basic (Text, Link, Widget).
     - [x] Markup (Highlight, Underline, etc.).
-    - [ ] Advanced (3D, Redact, Projection, Sound, Movie).
+    - [x] Advanced (3D, Redact, Projection, Sound, Movie).
 - [ ] **Actions**:
     - [x] Basic (GoTo, URI).
     - [ ] JavaScript (Need Engine).
