@@ -53,7 +53,8 @@ This document tracks the detailed implementation progress of features defined in
 
 ## 5. Fonts & Text
 - [x] **TrueType**: Parsing and extraction.
-- [ ] **Type 1**: Parsing .pfb/.pfm.
+## 5. Fonts & Text
+- [x] **Type 1**: Parsing .pfb/.pfm (PFB parsing with metrics extraction implemented).
     - [x] Handle Length1/Length2/Length3 for embedding.
 - [x] **Type 3**: Custom glyphs.
 - [x] **OpenType/CFF**: Parsing.
