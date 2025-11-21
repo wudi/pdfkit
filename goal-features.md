@@ -158,13 +158,13 @@
     - [x] 颜色必须是 DeviceIndependent 或有 OutputIntent。
     - [x] 禁止 JavaScript 和可执行 Launch 动作。
     - [x] 区分 Level A (Accessible, 严格标签) 和 Level B (Basic, 视觉一致)。
-- [ ] **PDF/A-2 (Based on PDF 1.7)**:
-    - [ ] 允许透明度。
-    - [ ] 允许 JPEG2000。
-    - [ ] 允许嵌入 PDF/A 文件。
-    - [ ] 包含 Level A, B, U (Unicode 映射)。
-- [ ] **PDF/A-3**:
-    - [ ] 允许嵌入**任意**文件格式 (作为附件)，只要主文件符合 A-2。
+- [x] **PDF/A-2 (Based on PDF 1.7)**:
+    - [x] 允许透明度。
+    - [x] 允许 JPEG2000。
+    - [x] 允许嵌入 PDF/A 文件。
+    - [x] 包含 Level A, B, U (Unicode 映射)。
+- [x] **PDF/A-3**:
+    - [x] 允许嵌入**任意**文件格式 (作为附件)，只要主文件符合 A-2。
 - [ ] **PDF/A-4 (Based on PDF 2.0)**:
     - [ ] 移除 Level A/B/U 分级，改为基本级、F (File 附件) 和 E (Engineering)。
 

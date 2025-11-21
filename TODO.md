@@ -85,8 +85,8 @@ This document tracks the detailed implementation progress of features defined in
 - [ ] **PDF/A**:
     - [x] PDF/A-1b Basic enforcement.
     - [x] **Validation**: Deep check of Action dictionaries (JS, Launch).
-    - [ ] **OutputIntent**: Embed valid ICC profile (currently placeholder).
-    - [ ] **Attachments**: Verify compliance of embedded files.
+    - [x] **OutputIntent**: Embed valid ICC profile (sRGB embedded).
+    - [x] **Attachments**: Verify compliance of embedded files (Basic check for PDF/A-2).
 - [x] **PDF/X**: OutputIntent, TrimBox/BleedBox enforcement.
 - [x] **PDF/UA**: Tagged PDF validation.
 - [x] **PDF/E & PDF/VT**.

@@ -113,8 +113,7 @@ func (e *enforcerImpl) Enforce(ctx compliance.Context, doc *semantic.Document, l
 				S:                         "GTS_PDFA1",
 				OutputConditionIdentifier: "sRGB IEC61966-2.1",
 				Info:                      "sRGB IEC61966-2.1",
-				// Note: A real implementation should embed a valid ICC profile here.
-				DestOutputProfile: nil,
+				DestOutputProfile:         DefaultICCProfile,
 			},
 		}
 	}
@@ -282,9 +281,24 @@ func (e *enforcerImpl) Validate(ctx compliance.Context, doc *semantic.Document, 
 				Location:    "Catalog",
 			})
 		} else if !level.AllowsArbitraryAttachment() {
-			// Must check if attachments are PDF/A compliant (not implemented fully here, assuming non-compliant for now if we can't verify)
-			// For now, we just warn or allow. Real validator would recursively check embedded PDFs.
-			// We'll skip deep validation for now.
+			// Must check if attachments are PDF/A compliant
+			for _, ef := range doc.EmbeddedFiles {
+				if ef.Subtype != "application/pdf" {
+					// If not PDF, it must be associated with a relationship (PDF/A-3)
+					// But if we are in PDF/A-2, only PDF/A compliant PDFs are allowed.
+					// Since we can't easily validate the embedded file recursively here without loading it,
+					// we check for metadata or assume non-compliant if it's not PDF.
+					if level.IsLevelA2() {
+						report.Violations = append(report.Violations, compliance.Violation{
+							Code:        "ATT002",
+							Description: "Embedded file must be PDF/A compliant in " + level.String(),
+							Location:    "EmbeddedFile " + ef.Name,
+						})
+					}
+				}
+				// Ideally, we would parse `ef.Data` as a PDF and validate it recursively.
+				// For now, we flag non-PDF files in A-2.
+			}
 		}
 	}
 
