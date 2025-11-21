@@ -25,7 +25,7 @@ func TestPDF20_BlackPointCompensation(t *testing.T) {
 	}
 
 	page := &semantic.Page{
-		MediaBox:  semantic.Rectangle{0, 0, 612, 792},
+		MediaBox:  semantic.Rectangle{LLX: 0, LLY: 0, URX: 612, URY: 792},
 		Resources: res,
 	}
 	doc.Pages = []*semantic.Page{page}
@@ -85,7 +85,7 @@ func TestPDF20_CxFColorSpace(t *testing.T) {
 	}
 
 	page := &semantic.Page{
-		MediaBox:  semantic.Rectangle{0, 0, 612, 792},
+		MediaBox:  semantic.Rectangle{LLX: 0, LLY: 0, URX: 612, URY: 792},
 		Resources: res,
 	}
 	doc.Pages = []*semantic.Page{page}
