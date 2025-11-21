@@ -424,6 +424,7 @@ type DocumentInfo struct {
 	Subject     string
 	Creator     string
 	Producer    string
+	Trapped     string // "True", "False", or "Unknown"
 	Keywords    []string
 	OriginalRef raw.ObjectRef
 	Dirty       bool

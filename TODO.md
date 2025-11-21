@@ -82,7 +82,7 @@ This document tracks the detailed implementation progress of features defined in
 ## 8. Compliance
 - [x] **PDF/A-1b**: Basic enforcement.
 - [x] **PDF/A-2/3/4**: Full validation and conversion.
-- [ ] **PDF/X**: OutputIntent, TrimBox/BleedBox enforcement.
+- [x] **PDF/X**: OutputIntent, TrimBox/BleedBox enforcement.
 - [ ] **PDF/UA**: Tagged PDF validation.
 - [ ] **PDF/E & PDF/VT**.
 
