@@ -77,7 +77,7 @@ This document tracks the detailed implementation progress of features defined in
     - [x] Full Schema Implementation.
     - [x] Data Binding.
     - [x] Layout Engine.
-- [ ] **HTML Forms**: Recognition/Embedding.
+- [x] **HTML Forms**: Recognition/Embedding.
 
 ## 8. Compliance
 - [x] **PDF/A-1b**: Basic enforcement.

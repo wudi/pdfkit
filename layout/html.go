@@ -2,6 +2,7 @@ package layout
 
 import (
 	"pdflib/builder"
+	"pdflib/ir/semantic"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -41,6 +42,15 @@ func (e *Engine) walkHTML(n *html.Node) {
 			return
 		case atom.Hr:
 			e.renderHTMLHr(n)
+			return
+		case atom.Input:
+			e.renderHTMLInput(n)
+			return
+		case atom.Textarea:
+			e.renderHTMLTextarea(n)
+			return
+		case atom.Select:
+			e.renderHTMLSelect(n)
 			return
 		}
 	}
@@ -163,6 +173,195 @@ func (e *Engine) renderHTMLHr(n *html.Node) {
 	e.cursorY -= e.DefaultFontSize
 }
 
+func (e *Engine) renderHTMLInput(n *html.Node) {
+	e.ensurePage()
+	fontSize := e.DefaultFontSize
+	height := fontSize * 1.5
+	width := 100.0 // Default width
+
+	name := getAttr(n, "name")
+	val := getAttr(n, "value")
+	typ := getAttr(n, "type")
+	if typ == "" {
+		typ = "text"
+	}
+
+	e.checkPageBreak(height)
+	rect := semantic.Rectangle{
+		LLX: e.cursorX,
+		LLY: e.cursorY - height,
+		URX: e.cursorX + width,
+		URY: e.cursorY,
+	}
+
+	var field semantic.FormField
+	base := semantic.BaseFormField{
+		Name:  name,
+		Rect:  rect,
+		Color: []float64{0.9, 0.9, 0.9}, // Light gray background
+	}
+
+	switch typ {
+	case "checkbox":
+		width = height // Square
+		rect.URX = e.cursorX + width
+		base.Rect = rect
+		checked := hasAttr(n, "checked")
+		bf := &semantic.ButtonFormField{
+			BaseFormField: base,
+			IsCheck:       true,
+			Checked:       checked,
+			OnState:       "Yes",
+		}
+		if checked {
+			bf.AppearanceState = "Yes"
+		} else {
+			bf.AppearanceState = "Off"
+		}
+		field = bf
+	case "radio":
+		width = height // Square
+		rect.URX = e.cursorX + width
+		base.Rect = rect
+		checked := hasAttr(n, "checked")
+		bf := &semantic.ButtonFormField{
+			BaseFormField: base,
+			IsRadio:       true,
+			Checked:       checked,
+			OnState:       val,
+		}
+		if checked {
+			bf.AppearanceState = val
+		} else {
+			bf.AppearanceState = "Off"
+		}
+		field = bf
+	case "submit":
+		base.Color = []float64{0.8, 0.8, 0.8}
+		field = &semantic.ButtonFormField{
+			BaseFormField: base,
+			IsPush:        true,
+		}
+		// Draw label
+		e.currentPage.DrawText(val, e.cursorX+5, e.cursorY-fontSize-2, builder.TextOptions{
+			Font:     e.DefaultFont,
+			FontSize: fontSize,
+		})
+	default: // text, password, etc.
+		field = &semantic.TextFormField{
+			BaseFormField: base,
+			Value:         val,
+		}
+	}
+
+	e.currentPage.AddFormField(field)
+
+	// Draw visual box
+	e.currentPage.DrawRectangle(rect.LLX, rect.LLY, rect.URX-rect.LLX, rect.URY-rect.LLY, builder.RectOptions{
+		Fill:      true,
+		FillColor: builder.Color{R: base.Color[0], G: base.Color[1], B: base.Color[2]},
+		Stroke:    true,
+		LineWidth: 1,
+	})
+
+	e.cursorY -= height + 5 // Spacing
+}
+
+func (e *Engine) renderHTMLTextarea(n *html.Node) {
+	e.ensurePage()
+	fontSize := e.DefaultFontSize
+	height := fontSize * 4 // Multiline
+	width := 200.0
+
+	name := getAttr(n, "name")
+	val := extractText(n)
+
+	e.checkPageBreak(height)
+	rect := semantic.Rectangle{
+		LLX: e.cursorX,
+		LLY: e.cursorY - height,
+		URX: e.cursorX + width,
+		URY: e.cursorY,
+	}
+
+	field := &semantic.TextFormField{
+		BaseFormField: semantic.BaseFormField{
+			Name:  name,
+			Rect:  rect,
+			Color: []float64{0.9, 0.9, 0.9},
+			Flags: 4096, // Multiline
+		},
+		Value: val,
+	}
+
+	e.currentPage.AddFormField(field)
+
+	e.currentPage.DrawRectangle(rect.LLX, rect.LLY, rect.URX-rect.LLX, rect.URY-rect.LLY, builder.RectOptions{
+		Fill:      true,
+		FillColor: builder.Color{R: 0.9, G: 0.9, B: 0.9},
+		Stroke:    true,
+		LineWidth: 1,
+	})
+
+	e.cursorY -= height + 5
+}
+
+func (e *Engine) renderHTMLSelect(n *html.Node) {
+	e.ensurePage()
+	fontSize := e.DefaultFontSize
+	height := fontSize * 1.5
+	width := 120.0
+
+	name := getAttr(n, "name")
+
+	var options []string
+	var selected []string
+
+	// Parse options
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode && c.DataAtom == atom.Option {
+			val := getAttr(c, "value")
+			if val == "" {
+				val = extractText(c)
+			}
+			options = append(options, val)
+			if hasAttr(c, "selected") {
+				selected = append(selected, val)
+			}
+		}
+	}
+
+	e.checkPageBreak(height)
+	rect := semantic.Rectangle{
+		LLX: e.cursorX,
+		LLY: e.cursorY - height,
+		URX: e.cursorX + width,
+		URY: e.cursorY,
+	}
+
+	field := &semantic.ChoiceFormField{
+		BaseFormField: semantic.BaseFormField{
+			Name:  name,
+			Rect:  rect,
+			Color: []float64{0.9, 0.9, 0.9},
+		},
+		Options:  options,
+		Selected: selected,
+		IsCombo:  true, // Default to combo box style
+	}
+
+	e.currentPage.AddFormField(field)
+
+	e.currentPage.DrawRectangle(rect.LLX, rect.LLY, rect.URX-rect.LLX, rect.URY-rect.LLY, builder.RectOptions{
+		Fill:      true,
+		FillColor: builder.Color{R: 0.9, G: 0.9, B: 0.9},
+		Stroke:    true,
+		LineWidth: 1,
+	})
+
+	e.cursorY -= height + 5
+}
+
 func extractText(n *html.Node) string {
 	var sb strings.Builder
 	var f func(*html.Node)
@@ -185,4 +384,22 @@ func extractText(n *html.Node) string {
 	}
 	f(n)
 	return strings.TrimSpace(sb.String())
+}
+
+func getAttr(n *html.Node, key string) string {
+	for _, attr := range n.Attr {
+		if attr.Key == key {
+			return attr.Val
+		}
+	}
+	return ""
+}
+
+func hasAttr(n *html.Node, key string) bool {
+	for _, attr := range n.Attr {
+		if attr.Key == key {
+			return true
+		}
+	}
+	return false
 }
