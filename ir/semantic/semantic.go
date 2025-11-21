@@ -115,6 +115,14 @@ type DictOperand struct{ Values map[string]Operand }
 func (DictOperand) operand()     {}
 func (DictOperand) Type() string { return "dict" }
 
+type InlineImageOperand struct {
+	Image DictOperand
+	Data  []byte
+}
+
+func (InlineImageOperand) operand()     {}
+func (InlineImageOperand) Type() string { return "inline_image" }
+
 // Resources holds per-page resources with optional inheritance.
 type Resources struct {
 	Fonts       map[string]*Font

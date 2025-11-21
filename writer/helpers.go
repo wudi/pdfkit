@@ -481,6 +481,25 @@ func serializeContentStream(cs semantic.ContentStream) []byte {
 	}
 	var buf bytes.Buffer
 	for _, op := range cs.Operations {
+		if op.Operator == "INLINE_IMAGE" && len(op.Operands) > 0 {
+			if ii, ok := op.Operands[0].(semantic.InlineImageOperand); ok {
+				buf.WriteString("BI\n")
+				keys := make([]string, 0, len(ii.Image.Values))
+				for k := range ii.Image.Values {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				for _, k := range keys {
+					buf.WriteString("/" + k + " ")
+					buf.Write(serializeOperand(ii.Image.Values[k]))
+					buf.WriteByte('\n')
+				}
+				buf.WriteString("ID ")
+				buf.Write(ii.Data)
+				buf.WriteString("\nEI\n")
+				continue
+			}
+		}
 		for i, operand := range op.Operands {
 			if i > 0 {
 				buf.WriteByte(' ')

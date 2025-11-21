@@ -439,6 +439,41 @@ func parseOperations(data []byte) []semantic.Operation {
 			stack = append(stack, op)
 			i = next
 		case "op":
+			if tok.text == "BI" {
+				stack = stack[:0]
+				continue
+			}
+			if tok.text == "ID" {
+				dictOp := semantic.DictOperand{Values: make(map[string]semantic.Operand)}
+				for k := 0; k < len(stack); k += 2 {
+					if k+1 < len(stack) {
+						// Keys in inline image dicts are names without slash in raw PDF usually?
+						// No, they are names /BPC etc.
+						// But wait, in inline images, keys are often abbreviated names like /W /H /CS.
+						// lexTokens parses them as names if they start with /.
+						// If they don't start with /, lexTokens parses them as op or number.
+						// Inline image keys MUST be names.
+						if key, ok := stack[k].(semantic.NameOperand); ok {
+							dictOp.Values[key.Value] = stack[k+1]
+						}
+					}
+				}
+				stack = stack[:0]
+
+				var imgData []byte
+				if i+1 < len(tokens) && tokens[i+1].kind == "inlineImageData" {
+					imgData = tokens[i+1].bytes
+					i++
+				}
+				if i+1 < len(tokens) && tokens[i+1].text == "EI" {
+					i++
+				}
+				ops = append(ops, semantic.Operation{
+					Operator: "INLINE_IMAGE",
+					Operands: []semantic.Operand{semantic.InlineImageOperand{Image: dictOp, Data: imgData}},
+				})
+				continue
+			}
 			ops = append(ops, semantic.Operation{Operator: tok.text, Operands: stack})
 			stack = stack[:0]
 		}
@@ -972,6 +1007,30 @@ func lexTokens(data []byte) []token {
 			continue
 		}
 		text := string(data[i:j])
+
+		if text == "ID" {
+			// Start of image data
+			// Skip one whitespace after ID
+			dataStart := j
+			if dataStart < len(data) && isWhite(data[dataStart]) {
+				dataStart++
+			}
+			// Find EI
+			eiPos := findToken(data, dataStart, "EI")
+			if eiPos != -1 {
+				// Trim trailing whitespace which serves as delimiter for EI
+				end := eiPos
+				for end > dataStart && isWhite(data[end-1]) {
+					end--
+				}
+				imgData := data[dataStart:end]
+				tokens = append(tokens, token{kind: "op", text: "ID", pos: i})
+				tokens = append(tokens, token{kind: "inlineImageData", bytes: imgData, pos: dataStart})
+				i = eiPos
+				continue
+			}
+		}
+
 		if num, err := strconv.ParseFloat(text, 64); err == nil {
 			tokens = append(tokens, token{kind: "number", num: num, pos: i})
 		} else {

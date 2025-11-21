@@ -44,8 +44,8 @@ This document tracks the detailed implementation progress of features defined in
     - [x] Shading Patterns (Type 1-7).
 - [ ] **Images**:
     - [x] Image Dictionary (Basic).
-    - [ ] SMask (Soft Mask).
-    - [ ] Inline Images.
+    - [x] SMask (Soft Mask).
+    - [x] Inline Images.
 - [ ] **Transparency**:
     - [ ] Blend Modes (All 16).
     - [ ] Transparency Groups (Isolated, Knockout).
