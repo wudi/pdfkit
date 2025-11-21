@@ -3,10 +3,10 @@ package semantic
 import (
 	"fmt"
 
+	"context"
 	"pdflib/filters"
 	"pdflib/geo"
 	"pdflib/ir/raw"
-    "context"
 )
 
 type inheritedPageProps struct {

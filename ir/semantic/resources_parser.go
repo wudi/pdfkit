@@ -842,4 +842,3 @@ func parsePropertyList(obj raw.Object, resolver rawResolver) (PropertyList, erro
 
 	return nil, fmt.Errorf("unknown property list type %s", typ)
 }
-
