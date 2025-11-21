@@ -26,6 +26,15 @@ func (f *factoryImpl) NewTransform(src, dst Profile, intent RenderingIntent) (Tr
 		return &identityTransform{}, nil
 	}
 
+	// Try Matrix/TRC for RGB -> XYZ
+	if src.ColorSpace() == "RGB " && dst.ColorSpace() == "XYZ " {
+		if icc, ok := src.(*ICCProfile); ok {
+			if trc, err := tryCreateMatrixTRC(icc); err == nil {
+				return trc, nil
+			}
+		}
+	}
+
 	// In a full implementation, we would build a pipeline here.
 	// For now, we return a basic transform that might fail or do simple conversion.
 	return &basicTransform{src: src, dst: dst, intent: intent}, nil

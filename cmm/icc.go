@@ -141,6 +141,72 @@ func (p *ICCProfile) Data() []byte {
 	return p.data
 }
 
+// GetTag returns the raw data for a tag if it exists.
+func (p *ICCProfile) GetTag(sig string) ([]byte, bool) {
+	tag, ok := p.tags[sig]
+	if !ok {
+		return nil, false
+	}
+	if int(tag.Offset+tag.Size) > len(p.data) {
+		return nil, false
+	}
+	return p.data[tag.Offset : tag.Offset+tag.Size], true
+}
+
+// ReadXYZTag reads an XYZType tag (array of 3 XYZ numbers).
+func (p *ICCProfile) ReadXYZTag(sig string) ([3]float64, error) {
+	data, ok := p.GetTag(sig)
+	if !ok {
+		return [3]float64{}, errors.New("tag not found")
+	}
+	if len(data) < 20 { // 8 byte header + 12 bytes data
+		return [3]float64{}, errors.New("tag too short")
+	}
+	typeSig := binary.BigEndian.Uint32(data[0:4])
+	if typeSig != 0x58595A20 { // 'XYZ '
+		return [3]float64{}, errors.New("invalid tag type")
+	}
+	
+	x := s15Fixed16ToFloat(binary.BigEndian.Uint32(data[8:12]))
+	y := s15Fixed16ToFloat(binary.BigEndian.Uint32(data[12:16]))
+	z := s15Fixed16ToFloat(binary.BigEndian.Uint32(data[16:20]))
+	return [3]float64{x, y, z}, nil
+}
+
+// ReadCurveTag reads a curveType or parametricCurveType tag.
+// Returns a gamma value (if simple gamma) or error if complex/LUT.
+func (p *ICCProfile) ReadCurveTag(sig string) (float64, error) {
+	data, ok := p.GetTag(sig)
+	if !ok {
+		return 0, errors.New("tag not found")
+	}
+	if len(data) < 12 {
+		return 0, errors.New("tag too short")
+	}
+	typeSig := binary.BigEndian.Uint32(data[0:4])
+	if typeSig == 0x63757276 { // 'curv'
+		count := binary.BigEndian.Uint32(data[8:12])
+		if count == 0 {
+			return 1.0, nil // Identity
+		}
+		if count == 1 {
+			// u8Fixed8
+			val := binary.BigEndian.Uint16(data[12:14])
+			return float64(val) / 256.0, nil
+		}
+		return 0, errors.New("complex curve not supported")
+	}
+	// TODO: Support 'para' (parametricCurveType)
+	return 0, errors.New("unsupported curve type")
+}
+
+func s15Fixed16ToFloat(v uint32) float64 {
+	// Signed 15.16 fixed point number
+	// We treat it as int32 to handle sign correctly
+	i := int32(v)
+	return float64(i) / 65536.0
+}
+
 func uint32ToString(v uint32) string {
 	b := make([]byte, 4)
 	binary.BigEndian.PutUint32(b, v)

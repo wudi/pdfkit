@@ -1,6 +1,8 @@
 package cmm
 
 import (
+	"encoding/binary"
+	"math"
 	"testing"
 )
 
@@ -80,4 +82,104 @@ func makeProfileData(cs string) []byte {
 	// ColorSpace
 	copy(data[16:20], cs)
 	return data
+}
+
+func TestMatrixTRCTransform(t *testing.T) {
+	// Construct a profile with rXYZ, gXYZ, bXYZ, rTRC, gTRC, bTRC
+	// For simplicity, Identity Matrix and Gamma 1.0
+	// rXYZ = [1 0 0]
+	// gXYZ = [0 1 0]
+	// bXYZ = [0 0 1]
+	// TRC = Gamma 1.0 (count=0 or count=1 val=256)
+
+	data := make([]byte, 1024) // ample space
+	binary.BigEndian.PutUint32(data[0:4], 1024)
+	copy(data[36:40], "acsp")
+	copy(data[16:20], "RGB ")
+	copy(data[20:24], "XYZ ") // PCS
+
+	// Tags
+	tags := []struct {
+		sig  string
+		data []byte
+	}{
+		{"rXYZ", makeXYZ(1, 0, 0)},
+		{"gXYZ", makeXYZ(0, 1, 0)},
+		{"bXYZ", makeXYZ(0, 0, 1)},
+		{"rTRC", makeGamma(1.0)},
+		{"gTRC", makeGamma(1.0)},
+		{"bTRC", makeGamma(1.0)},
+	}
+
+	tagCount := uint32(len(tags))
+	binary.BigEndian.PutUint32(data[128:132], tagCount)
+
+	offset := uint32(132 + 12*len(tags))
+	tagTableOffset := 132
+
+	for _, tag := range tags {
+		// Write Tag Entry
+		binary.BigEndian.PutUint32(data[tagTableOffset:tagTableOffset+4], strToUint32(tag.sig))
+		binary.BigEndian.PutUint32(data[tagTableOffset+4:tagTableOffset+8], offset)
+		binary.BigEndian.PutUint32(data[tagTableOffset+8:tagTableOffset+12], uint32(len(tag.data)))
+		tagTableOffset += 12
+
+		// Write Tag Data
+		copy(data[offset:], tag.data)
+		offset += uint32(len(tag.data))
+	}
+
+	f := NewFactory()
+	src, err := f.NewProfile(data)
+	if err != nil {
+		t.Fatalf("NewProfile failed: %v", err)
+	}
+
+	// Destination: XYZ
+	dstData := makeProfileData("XYZ ")
+	dst, _ := f.NewProfile(dstData)
+
+	tr, err := f.NewTransform(src, dst, IntentPerceptual)
+	if err != nil {
+		t.Fatalf("NewTransform failed: %v", err)
+	}
+
+	// With Identity Matrix and Gamma 1.0, RGB -> XYZ should be Identity
+	in := []float64{0.1, 0.5, 0.9}
+	out, err := tr.Convert(in)
+	if err != nil {
+		t.Fatalf("Convert failed: %v", err)
+	}
+
+	for i := range in {
+		if math.Abs(out[i]-in[i]) > 0.001 {
+			t.Errorf("expected %f, got %f", in[i], out[i])
+		}
+	}
+}
+
+func makeXYZ(x, y, z float64) []byte {
+	b := make([]byte, 20)
+	copy(b[0:4], "XYZ ")
+	binary.BigEndian.PutUint32(b[8:12], floatToS15Fixed16(x))
+	binary.BigEndian.PutUint32(b[12:16], floatToS15Fixed16(y))
+	binary.BigEndian.PutUint32(b[16:20], floatToS15Fixed16(z))
+	return b
+}
+
+func makeGamma(g float64) []byte {
+	b := make([]byte, 14)
+	copy(b[0:4], "curv")
+	binary.BigEndian.PutUint32(b[8:12], 1) // Count 1
+	val := uint16(g * 256.0)
+	binary.BigEndian.PutUint16(b[12:14], val)
+	return b
+}
+
+func floatToS15Fixed16(f float64) uint32 {
+	return uint32(int32(f * 65536.0))
+}
+
+func strToUint32(s string) uint32 {
+	return binary.BigEndian.Uint32([]byte(s))
 }

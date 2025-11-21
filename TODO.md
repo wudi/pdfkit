@@ -36,7 +36,7 @@ This document tracks the detailed implementation progress of features defined in
 
 ## 4. Graphics & Imaging
 - [ ] **Color Spaces**:
-    - [ ] Implement `cmm` package (ICC Profile parsing/transform).
+    - [x] Implement `cmm` package (ICC Profile parsing/transform).
     - [ ] Support `DeviceN` and `Separation` (Spot Colors).
     - [x] Support `Pattern` color space.
 - [ ] **Patterns & Shading**:
