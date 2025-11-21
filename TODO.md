@@ -40,8 +40,8 @@ This document tracks the detailed implementation progress of features defined in
     - [x] Support `DeviceN` and `Separation` (Spot Colors).
     - [x] Support `Pattern` color space.
 - [ ] **Patterns & Shading**:
-    - [ ] Tiling Patterns (Type 1).
-    - [ ] Shading Patterns (Type 1-7).
+    - [x] Tiling Patterns (Type 1).
+    - [x] Shading Patterns (Type 1-7).
 - [ ] **Images**:
     - [x] Image Dictionary (Basic).
     - [ ] SMask (Soft Mask).

@@ -1096,6 +1096,11 @@ func (b *objectBuilder) ensurePattern(name string, p semantic.Pattern) raw.Objec
 		if pat.YStep > 0 {
 			dict.Set(raw.NameLiteral("YStep"), raw.NumberFloat(pat.YStep))
 		}
+		if pat.Resources != nil {
+			if resDict := b.serializeResources(pat.Resources); resDict != nil {
+				dict.Set(raw.NameLiteral("Resources"), resDict)
+			}
+		}
 		content := pat.Content
 		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(content))))
 		b.objects[ref] = raw.NewStream(dict, content)
@@ -1128,6 +1133,12 @@ func (b *objectBuilder) ensureShading(name string, s semantic.Shading) raw.Objec
 
 	switch sh := s.(type) {
 	case *semantic.FunctionShading:
+		if cropSet(sh.BBox) {
+			dict.Set(raw.NameLiteral("BBox"), rectArray(sh.BBox))
+		}
+		if sh.AntiAlias {
+			dict.Set(raw.NameLiteral("AntiAlias"), raw.Bool(true))
+		}
 		if len(sh.Coords) > 0 {
 			arr := raw.NewArray()
 			for _, c := range sh.Coords {
@@ -1165,6 +1176,12 @@ func (b *objectBuilder) ensureShading(name string, s semantic.Shading) raw.Objec
 		b.objects[ref] = dict
 
 	case *semantic.MeshShading:
+		if cropSet(sh.BBox) {
+			dict.Set(raw.NameLiteral("BBox"), rectArray(sh.BBox))
+		}
+		if sh.AntiAlias {
+			dict.Set(raw.NameLiteral("AntiAlias"), raw.Bool(true))
+		}
 		dict.Set(raw.NameLiteral("BitsPerCoordinate"), raw.NumberInt(int64(sh.BitsPerCoordinate)))
 		dict.Set(raw.NameLiteral("BitsPerComponent"), raw.NumberInt(int64(sh.BitsPerComponent)))
 		dict.Set(raw.NameLiteral("BitsPerFlag"), raw.NumberInt(int64(sh.BitsPerFlag)))
