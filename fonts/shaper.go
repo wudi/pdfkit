@@ -11,7 +11,7 @@ import (
 	"github.com/go-text/typesetting/shaping"
 	"golang.org/x/image/math/fixed"
 
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // ShapedGlyph represents a single shaped glyph with positioning information.

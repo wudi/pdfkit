@@ -1,7 +1,7 @@
 package layout
 
 import (
-	"pdflib/builder"
+	"github.com/wudi/pdfkit/builder"
 )
 
 // Engine handles the layout and rendering of structured content (Markdown/HTML) into PDF pages.

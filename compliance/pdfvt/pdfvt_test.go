@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"pdflib/compliance/pdfvt"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/compliance/pdfvt"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestPDFVTEnforcement(t *testing.T) {

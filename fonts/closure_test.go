@@ -40,6 +40,6 @@ func TestComputeClosureGSUB(t *testing.T) {
 			t.Errorf("initial GID %d not in closure", gid)
 		}
 	}
-	
+
 	t.Logf("Initial: %d, Closure: %d", len(initial), len(closure))
 }

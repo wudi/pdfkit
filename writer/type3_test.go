@@ -3,11 +3,12 @@ package writer
 import (
 	"bytes"
 	"context"
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
-	"pdflib/parser"
 	"strings"
 	"testing"
+
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/parser"
 )
 
 func TestWriter_Type3FontAndOCG(t *testing.T) {

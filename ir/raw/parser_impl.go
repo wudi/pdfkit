@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"pdflib/recovery"
-	"pdflib/scanner"
+	"github.com/wudi/pdfkit/recovery"
+	"github.com/wudi/pdfkit/scanner"
 )
 
 // ParserConfig controls raw parsing behavior.

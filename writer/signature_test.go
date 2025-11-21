@@ -5,9 +5,9 @@ import (
 	"context"
 	"testing"
 
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
-	"pdflib/parser"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/parser"
 )
 
 func TestWriter_SignatureField(t *testing.T) {

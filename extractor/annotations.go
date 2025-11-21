@@ -1,6 +1,6 @@
 package extractor
 
-import "pdflib/ir/raw"
+import "github.com/wudi/pdfkit/ir/raw"
 
 // AnnotationInfo summarizes a page annotation.
 type AnnotationInfo struct {

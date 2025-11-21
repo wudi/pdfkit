@@ -38,7 +38,7 @@ func TestParseCFF(t *testing.T) {
 	buf.Write([]byte{0, 0}) // Count 0
 
 	// Global Subr INDEX (Empty)
-	// Note: ParseCFF doesn't read Global Subr yet in my implementation, 
+	// Note: ParseCFF doesn't read Global Subr yet in my implementation,
 	// but usually it follows String INDEX.
 	// My implementation stopped after String INDEX.
 

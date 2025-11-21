@@ -7,10 +7,10 @@ import (
 	"strings"
 	"sync"
 
-	"pdflib/filters"
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
-	"pdflib/parser"
+	"github.com/wudi/pdfkit/filters"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/parser"
 )
 
 type EventType int

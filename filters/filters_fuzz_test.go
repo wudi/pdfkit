@@ -2,8 +2,9 @@ package filters
 
 import (
 	"context"
-	"pdflib/ir/raw"
 	"testing"
+
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 func FuzzFilters(f *testing.F) {

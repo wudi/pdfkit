@@ -10,10 +10,10 @@ import (
 	"sort"
 	"strconv"
 
-	"pdflib/filters"
-	"pdflib/ir/raw"
-	"pdflib/recovery"
-	"pdflib/scanner"
+	"github.com/wudi/pdfkit/filters"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/recovery"
+	"github.com/wudi/pdfkit/scanner"
 )
 
 // Table holds object offsets for classic and stream xref data.

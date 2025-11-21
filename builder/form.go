@@ -1,7 +1,7 @@
 package builder
 
 import (
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // FormBuilder provides a fluent API for form filling.

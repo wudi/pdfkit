@@ -5,11 +5,11 @@ import (
 	"context"
 	"testing"
 
-	"pdflib/builder"
-	"pdflib/ir/raw"
-	"pdflib/parser"
-	"pdflib/security"
-	"pdflib/xref"
+	"github.com/wudi/pdfkit/builder"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/parser"
+	"github.com/wudi/pdfkit/security"
+	"github.com/wudi/pdfkit/xref"
 )
 
 func TestAddLTV(t *testing.T) {

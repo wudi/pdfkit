@@ -1,7 +1,7 @@
 package editor
 
 import (
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // QuadTree implements a spatial index for rectangles.

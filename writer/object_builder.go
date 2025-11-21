@@ -2,11 +2,12 @@ package writer
 
 import (
 	"fmt"
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
-	"pdflib/security"
 	"sort"
 	"strings"
+
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/security"
 )
 
 type objectBuilder struct {

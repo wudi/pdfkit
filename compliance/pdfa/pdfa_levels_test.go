@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"pdflib/compliance"
-	"pdflib/compliance/pdfa"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/compliance"
+	"github.com/wudi/pdfkit/compliance/pdfa"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestPDFALevels(t *testing.T) {
@@ -17,7 +17,7 @@ func TestPDFALevels(t *testing.T) {
 	createBaseDoc := func() *semantic.Document {
 		return &semantic.Document{
 			OutputIntents: []semantic.OutputIntent{{
-				S: "GTS_PDFA1",
+				S:                 "GTS_PDFA1",
 				DestOutputProfile: []byte("mock profile"), // Mock, validation will fail on profile parsing but we ignore that for feature checks
 			}},
 			Pages: []*semantic.Page{

@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"testing"
 
-	"pdflib/ir/raw"
-	"pdflib/recovery"
-	"pdflib/scanner"
-	"pdflib/security"
-	"pdflib/xref"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/recovery"
+	"github.com/wudi/pdfkit/scanner"
+	"github.com/wudi/pdfkit/security"
+	"github.com/wudi/pdfkit/xref"
 )
 
 type mapCache struct {

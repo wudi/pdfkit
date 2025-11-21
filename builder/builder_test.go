@@ -3,10 +3,10 @@ package builder
 import (
 	"testing"
 
-	"pdflib/contentstream"
-	"pdflib/fonts"
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/contentstream"
+	"github.com/wudi/pdfkit/fonts"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 
 	"golang.org/x/image/font/gofont/goregular"
 )

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestSerializeBlendModes(t *testing.T) {

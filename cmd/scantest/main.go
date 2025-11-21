@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	p "pdflib/parser"
-	"pdflib/scanner"
+
+	p "github.com/wudi/pdfkit/parser"
+	"github.com/wudi/pdfkit/scanner"
 )
 
 func main() {

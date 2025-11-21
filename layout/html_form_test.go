@@ -3,11 +3,12 @@ package layout
 import (
 	"bytes"
 	"context"
-	"pdflib/builder"
-	"pdflib/ir/semantic"
-	"pdflib/parser"
-	"pdflib/writer"
 	"testing"
+
+	"github.com/wudi/pdfkit/builder"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/parser"
+	"github.com/wudi/pdfkit/writer"
 )
 
 func TestHTMLForms(t *testing.T) {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"sort"
 
-	"pdflib/fonts"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/fonts"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 type EditorImpl struct{}

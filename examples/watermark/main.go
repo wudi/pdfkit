@@ -7,9 +7,9 @@ import (
 	"math"
 	"os"
 
-	"pdflib/builder"
-	"pdflib/ir/semantic"
-	"pdflib/writer"
+	"github.com/wudi/pdfkit/builder"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/writer"
 )
 
 // Demonstrates how to add a diagonal watermark to every page of a PDF built
@@ -21,7 +21,7 @@ func main() {
 	}
 
 	b := builder.NewBuilder()
-	b.SetInfo(&semantic.DocumentInfo{Title: "Watermark Demo", Author: "pdflib"})
+	b.SetInfo(&semantic.DocumentInfo{Title: "Watermark Demo", Author: "pdfkit"})
 
 	// Page content that will sit behind the watermark.
 	b.NewPage(595, 842).

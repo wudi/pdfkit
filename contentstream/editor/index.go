@@ -1,8 +1,8 @@
 package editor
 
 import (
-	"pdflib/contentstream"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/contentstream"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 type OpSpatialIndex struct {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"pdflib/ir/decoded"
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/ir/decoded"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 // NewBuilder returns a minimal semantic builder that wraps decoded docs.

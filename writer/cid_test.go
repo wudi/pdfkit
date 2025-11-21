@@ -3,9 +3,10 @@ package writer
 import (
 	"bytes"
 	"context"
-	"pdflib/ir/semantic"
 	"strings"
 	"testing"
+
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestCIDFontEmbedding(t *testing.T) {

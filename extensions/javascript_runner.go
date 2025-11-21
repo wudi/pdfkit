@@ -1,8 +1,8 @@
 package extensions
 
 import (
-	"pdflib/ir/semantic"
-	"pdflib/scripting"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/scripting"
 )
 
 // JavaScriptRunner is a Transformer extension that executes JavaScript actions.

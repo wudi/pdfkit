@@ -2,9 +2,10 @@ package writer
 
 import (
 	"bytes"
-	"pdflib/ir/semantic"
 	"strings"
 	"testing"
+
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestSerializeInlineImage(t *testing.T) {

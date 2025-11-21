@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // ParseType1 parses PFB (font data) and returns a semantic.Font.

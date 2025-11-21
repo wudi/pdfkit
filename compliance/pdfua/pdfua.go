@@ -1,8 +1,8 @@
 package pdfua
 
 import (
-	"pdflib/compliance"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/compliance"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 type Level int

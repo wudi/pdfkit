@@ -24,10 +24,10 @@ typedef struct {
 	uint8_t *data;
 	size_t length;
 	size_t offset;
-} pdflib_jpx_buffer;
+} pdfkit_jpx_buffer;
 
-static void pdflib_jpx_buffer_free(void *user_data) {
-	pdflib_jpx_buffer *buffer = (pdflib_jpx_buffer*)user_data;
+static void pdfkit_jpx_buffer_free(void *user_data) {
+	pdfkit_jpx_buffer *buffer = (pdfkit_jpx_buffer*)user_data;
 	if (!buffer) {
 		return;
 	}
@@ -37,8 +37,8 @@ static void pdflib_jpx_buffer_free(void *user_data) {
 	free(buffer);
 }
 
-static pdflib_jpx_buffer* pdflib_jpx_buffer_from_cmem(uint8_t *data, size_t len) {
-	pdflib_jpx_buffer *buffer = (pdflib_jpx_buffer*)malloc(sizeof(pdflib_jpx_buffer));
+static pdfkit_jpx_buffer* pdfkit_jpx_buffer_from_cmem(uint8_t *data, size_t len) {
+	pdfkit_jpx_buffer *buffer = (pdfkit_jpx_buffer*)malloc(sizeof(pdfkit_jpx_buffer));
 	if (!buffer) {
 		return NULL;
 	}
@@ -48,8 +48,8 @@ static pdflib_jpx_buffer* pdflib_jpx_buffer_from_cmem(uint8_t *data, size_t len)
 	return buffer;
 }
 
-static OPJ_SIZE_T pdflib_jpx_stream_read(void *p_buffer, OPJ_SIZE_T nb_bytes, void *p_user_data) {
-	pdflib_jpx_buffer *buffer = (pdflib_jpx_buffer*)p_user_data;
+static OPJ_SIZE_T pdfkit_jpx_stream_read(void *p_buffer, OPJ_SIZE_T nb_bytes, void *p_user_data) {
+	pdfkit_jpx_buffer *buffer = (pdfkit_jpx_buffer*)p_user_data;
 	if (!buffer || nb_bytes == 0) {
 		return 0;
 	}
@@ -67,8 +67,8 @@ static OPJ_SIZE_T pdflib_jpx_stream_read(void *p_buffer, OPJ_SIZE_T nb_bytes, vo
 	return nb_bytes;
 }
 
-static OPJ_OFF_T pdflib_jpx_stream_skip(OPJ_OFF_T nb_bytes, void *p_user_data) {
-	pdflib_jpx_buffer *buffer = (pdflib_jpx_buffer*)p_user_data;
+static OPJ_OFF_T pdfkit_jpx_stream_skip(OPJ_OFF_T nb_bytes, void *p_user_data) {
+	pdfkit_jpx_buffer *buffer = (pdfkit_jpx_buffer*)p_user_data;
 	if (!buffer || nb_bytes <= 0) {
 		return 0;
 	}
@@ -84,8 +84,8 @@ static OPJ_OFF_T pdflib_jpx_stream_skip(OPJ_OFF_T nb_bytes, void *p_user_data) {
 	return (OPJ_OFF_T)request;
 }
 
-static OPJ_BOOL pdflib_jpx_stream_seek(OPJ_OFF_T nb_bytes, void *p_user_data) {
-	pdflib_jpx_buffer *buffer = (pdflib_jpx_buffer*)p_user_data;
+static OPJ_BOOL pdfkit_jpx_stream_seek(OPJ_OFF_T nb_bytes, void *p_user_data) {
+	pdfkit_jpx_buffer *buffer = (pdfkit_jpx_buffer*)p_user_data;
 	if (!buffer || nb_bytes < 0) {
 		return OPJ_FALSE;
 	}
@@ -97,7 +97,7 @@ static OPJ_BOOL pdflib_jpx_stream_seek(OPJ_OFF_T nb_bytes, void *p_user_data) {
 	return OPJ_TRUE;
 }
 
-static opj_stream_t* pdflib_jpx_stream_create_reader(pdflib_jpx_buffer *buffer) {
+static opj_stream_t* pdfkit_jpx_stream_create_reader(pdfkit_jpx_buffer *buffer) {
 	if (!buffer) {
 		return NULL;
 	}
@@ -105,31 +105,31 @@ static opj_stream_t* pdflib_jpx_stream_create_reader(pdflib_jpx_buffer *buffer) 
 	if (!stream) {
 		return NULL;
 	}
-	opj_stream_set_user_data(stream, buffer, pdflib_jpx_buffer_free);
+	opj_stream_set_user_data(stream, buffer, pdfkit_jpx_buffer_free);
 	opj_stream_set_user_data_length(stream, buffer->length);
-	opj_stream_set_read_function(stream, pdflib_jpx_stream_read);
-	opj_stream_set_skip_function(stream, pdflib_jpx_stream_skip);
-	opj_stream_set_seek_function(stream, pdflib_jpx_stream_seek);
+	opj_stream_set_read_function(stream, pdfkit_jpx_stream_read);
+	opj_stream_set_skip_function(stream, pdfkit_jpx_stream_skip);
+	opj_stream_set_seek_function(stream, pdfkit_jpx_stream_seek);
 	return stream;
 }
 
 void goJPXNativeLog(void *handle_ptr, const char *message);
 
-static void pdflib_jpx_error_callback(const char *msg, void *client_data) {
+static void pdfkit_jpx_error_callback(const char *msg, void *client_data) {
 	goJPXNativeLog(client_data, msg);
 }
 
-static opj_event_mgr_t* pdflib_jpx_create_event_mgr(void) {
+static opj_event_mgr_t* pdfkit_jpx_create_event_mgr(void) {
 	opj_event_mgr_t *mgr = (opj_event_mgr_t*)malloc(sizeof(opj_event_mgr_t));
 	if (!mgr) {
 		return NULL;
 	}
 	memset(mgr, 0, sizeof(opj_event_mgr_t));
-	mgr->error_handler = pdflib_jpx_error_callback;
+	mgr->error_handler = pdfkit_jpx_error_callback;
 	return mgr;
 }
 
-static void pdflib_jpx_install_event_mgr(opj_codec_t *codec, opj_event_mgr_t *mgr, void *handle_ptr) {
+static void pdfkit_jpx_install_event_mgr(opj_codec_t *codec, opj_event_mgr_t *mgr, void *handle_ptr) {
 	if (!codec || !mgr) {
 		return;
 	}
@@ -202,14 +202,14 @@ func jpxDecodeWithCodec(ctx context.Context, data []byte, format C.OPJ_CODEC_FOR
 	if cBuf == nil && len(data) > 0 {
 		return nil, errors.New("allocate JPX buffer")
 	}
-	buffer := C.pdflib_jpx_buffer_from_cmem((*C.uint8_t)(cBuf), C.size_t(len(data)))
+	buffer := C.pdfkit_jpx_buffer_from_cmem((*C.uint8_t)(cBuf), C.size_t(len(data)))
 	if buffer == nil {
 		if cBuf != nil {
 			C.free(cBuf)
 		}
 		return nil, errors.New("initialize JPX buffer")
 	}
-	stream := C.pdflib_jpx_stream_create_reader(buffer)
+	stream := C.pdfkit_jpx_stream_create_reader(buffer)
 	if stream == nil {
 		return nil, errors.New("create JPX stream")
 	}
@@ -232,12 +232,12 @@ func jpxDecodeWithCodec(ctx context.Context, data []byte, format C.OPJ_CODEC_FOR
 	defer C.free(handlePtr)
 	*(*cgo.Handle)(handlePtr) = handle
 
-	eventMgr := C.pdflib_jpx_create_event_mgr()
+	eventMgr := C.pdfkit_jpx_create_event_mgr()
 	if eventMgr == nil {
 		return nil, errors.New("create JPX event manager")
 	}
 	defer C.free(unsafe.Pointer(eventMgr))
-	C.pdflib_jpx_install_event_mgr(codec, eventMgr, handlePtr)
+	C.pdfkit_jpx_install_event_mgr(codec, eventMgr, handlePtr)
 
 	var params C.opj_dparameters_t
 	C.opj_set_default_decoder_parameters(&params)

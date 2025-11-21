@@ -13,7 +13,7 @@ import (
 	"errors"
 	"fmt"
 
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 type Permissions struct{ Print, Modify, Copy, ModifyAnnotations, FillForms, ExtractAccessible, Assemble, PrintHighQuality bool }
@@ -772,12 +772,12 @@ func objectKey(key []byte, objNum, gen, r int, useAES bool) []byte {
 	}
 	newKey := make([]byte, len(key)+5)
 	copy(newKey, key)
-	
+
 	// Append 3 bytes of Object Number (Little Endian)
 	newKey[len(key)] = byte(objNum)
 	newKey[len(key)+1] = byte(objNum >> 8)
 	newKey[len(key)+2] = byte(objNum >> 16)
-	
+
 	// Append 2 bytes of Generation Number (Little Endian)
 	newKey[len(key)+3] = byte(gen)
 	newKey[len(key)+4] = byte(gen >> 8)

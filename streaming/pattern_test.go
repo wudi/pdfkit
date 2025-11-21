@@ -3,9 +3,9 @@ package streaming_test
 import (
 	"testing"
 
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
-	"pdflib/streaming"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/streaming"
 )
 
 func TestParsePatternColorSpace(t *testing.T) {

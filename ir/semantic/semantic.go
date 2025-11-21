@@ -3,9 +3,9 @@ package semantic
 import (
 	"context"
 
-	"pdflib/geo"
-	"pdflib/ir/decoded"
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/geo"
+	"github.com/wudi/pdfkit/ir/decoded"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 // Document is the semantic representation of a PDF.

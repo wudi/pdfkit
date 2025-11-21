@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 
-	"pdflib/builder"
-	"pdflib/ir/semantic"
-	"pdflib/writer"
+	"github.com/wudi/pdfkit/builder"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/writer"
 )
 
 // Demonstrates how to embed a TrueType font and draw UTF-8 text with it.
@@ -36,7 +36,7 @@ func main() {
 	b := builder.NewBuilder()
 	b.SetInfo(&semantic.DocumentInfo{
 		Title:   "Embedded Font Demo",
-		Author:  "pdflib",
+		Author:  "pdfkit",
 		Subject: "TrueType example",
 	})
 	b.RegisterTrueTypeFont("SimHei-Regular", simHeiFontData)

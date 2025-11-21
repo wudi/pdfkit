@@ -7,9 +7,9 @@ import (
 	"io"
 	"testing"
 
-	"pdflib/ir/raw"
-	"pdflib/parser"
-	"pdflib/xref"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/parser"
+	"github.com/wudi/pdfkit/xref"
 )
 
 func buildSimplePDF() ([]byte, map[int]int64) {

@@ -3,10 +3,11 @@ package writer
 import (
 	"bytes"
 	"context"
-	"pdflib/ir/decoded"
-	"pdflib/ir/semantic"
-	"pdflib/parser"
 	"testing"
+
+	"github.com/wudi/pdfkit/ir/decoded"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/parser"
 )
 
 func TestStructureTree(t *testing.T) {
@@ -14,12 +15,12 @@ func TestStructureTree(t *testing.T) {
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{
 			{
-				Index: 0,
+				Index:    0,
 				MediaBox: semantic.Rectangle{URX: 595, URY: 842},
 			},
 		},
 	}
-	
+
 	// Create structure tree
 	tree := &semantic.StructureTree{
 		Type: "StructTreeRoot",
@@ -27,23 +28,23 @@ func TestStructureTree(t *testing.T) {
 			"MyPara": "P",
 		},
 	}
-	
+
 	// Create elements
 	p1 := &semantic.StructureElement{
-		Type: "StructElem",
-		S:    "MyPara",
+		Type:  "StructElem",
+		S:     "MyPara",
 		Title: "Paragraph 1",
-		Pg:   doc.Pages[0],
+		Pg:    doc.Pages[0],
 	}
-	
+
 	// Add content item (MCID 0)
 	p1.K = []semantic.StructureItem{
 		{MCID: 0},
 	}
-	
+
 	tree.K = []*semantic.StructureElement{p1}
 	doc.StructTree = tree
-	
+
 	// Write
 	var buf bytes.Buffer
 	wb := &WriterBuilder{}
@@ -52,44 +53,44 @@ func TestStructureTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
-	
+
 	// Parse back
 	p := parser.NewDocumentParser(parser.Config{})
 	rawDoc, err := p.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
-	
+
 	// Decode
 	dec := decoded.NewDecoder(nil)
 	decDoc, err := dec.Decode(context.Background(), rawDoc)
 	if err != nil {
 		t.Fatalf("Decode failed: %v", err)
 	}
-	
+
 	// Build semantic
 	sb := semantic.NewBuilder()
 	parsedDoc, err := sb.Build(context.Background(), decDoc)
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
-	
+
 	// Verify structure
 	if parsedDoc.StructTree == nil {
 		t.Fatal("StructTree is nil after parsing")
 	}
-	
+
 	if len(parsedDoc.StructTree.RoleMap) != 1 {
 		t.Errorf("Expected 1 RoleMap entry, got %d", len(parsedDoc.StructTree.RoleMap))
 	}
 	if v, ok := parsedDoc.StructTree.RoleMap["MyPara"]; !ok || v != "P" {
 		t.Errorf("RoleMap mismatch: expected MyPara->P, got %v->%v", "MyPara", v)
 	}
-	
+
 	if len(parsedDoc.StructTree.K) != 1 {
 		t.Fatalf("Expected 1 root kid, got %d", len(parsedDoc.StructTree.K))
 	}
-	
+
 	elem := parsedDoc.StructTree.K[0]
 	if elem.S != "MyPara" {
 		t.Errorf("Expected element type MyPara, got %s", elem.S)
@@ -97,11 +98,11 @@ func TestStructureTree(t *testing.T) {
 	if elem.Title != "Paragraph 1" {
 		t.Errorf("Expected title 'Paragraph 1', got '%s'", elem.Title)
 	}
-	
+
 	if len(elem.K) != 1 {
 		t.Fatalf("Expected 1 kid in element, got %d", len(elem.K))
 	}
-	
+
 	// Check MCID
 	kid := elem.K[0]
 	// writer/helpers.go writes MCR dictionary for MCID.

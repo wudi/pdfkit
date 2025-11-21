@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"pdflib/filters"
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/filters"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 type uppercaseDecoder struct{}

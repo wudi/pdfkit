@@ -1,8 +1,9 @@
 package streaming
 
 import (
-	"pdflib/ir/semantic"
 	"testing"
+
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestParseInlineImage(t *testing.T) {

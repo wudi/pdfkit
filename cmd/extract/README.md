@@ -1,6 +1,6 @@
 # Extract Command
 
-`cmd/extract` is a utility that exercises the `pdflib/extractor` helpers to pull common artifacts out of PDFs without writing custom code. It runs on top of the existing parser/decoder pipeline, so it benefits from any filter/security updates automatically.
+`cmd/extract` is a utility that exercises the `github.com/wudi/pdfkit/extractor` helpers to pull common artifacts out of PDFs without writing custom code. It runs on top of the existing parser/decoder pipeline, so it benefits from any filter/security updates automatically.
 
 ## Usage
 

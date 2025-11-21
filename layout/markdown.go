@@ -1,8 +1,9 @@
 package layout
 
 import (
-	"pdflib/builder"
 	"strings"
+
+	"github.com/wudi/pdfkit/builder"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"

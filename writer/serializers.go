@@ -1,8 +1,8 @@
 package writer
 
 import (
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // SerializationContext provides access to the writer's state for serializers.

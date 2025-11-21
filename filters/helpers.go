@@ -1,6 +1,6 @@
 package filters
 
-import "pdflib/ir/raw"
+import "github.com/wudi/pdfkit/ir/raw"
 
 // ExtractFilters reads Filter and DecodeParms entries from a stream dictionary.
 func ExtractFilters(dict raw.Dictionary) ([]string, []raw.Dictionary) {

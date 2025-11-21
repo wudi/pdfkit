@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"pdflib/builder"
-	"pdflib/ir/semantic"
-	"pdflib/writer"
+	"github.com/wudi/pdfkit/builder"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/writer"
 )
 
 type staticCtx struct{}

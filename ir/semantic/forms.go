@@ -1,6 +1,6 @@
 package semantic
 
-import "pdflib/ir/raw"
+import "github.com/wudi/pdfkit/ir/raw"
 
 // AcroForm represents form-level information.
 type AcroForm struct {

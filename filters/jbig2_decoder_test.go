@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 func TestJBIG2Decode_UsesResolver(t *testing.T) {

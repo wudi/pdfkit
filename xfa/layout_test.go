@@ -56,7 +56,7 @@ func TestLayoutEngine_Render(t *testing.T) {
 	if len(ops) == 0 {
 		t.Fatal("No operations generated")
 	}
-	
+
 	// Basic check for "Tj" operator
 	foundText := false
 	for _, op := range ops {
@@ -65,7 +65,7 @@ func TestLayoutEngine_Render(t *testing.T) {
 			break
 		}
 	}
-	
+
 	if !foundText {
 		t.Error("Expected Tj operator (text rendering)")
 	}

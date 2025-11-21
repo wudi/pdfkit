@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"pdflib/fonts"
-	"pdflib/ir/semantic"
 	"strings"
 	"testing"
+
+	"github.com/wudi/pdfkit/fonts"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestType1Embedding(t *testing.T) {

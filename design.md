@@ -291,7 +291,7 @@ type DocumentMetadata struct {
 package decoded
 
 import (
-    "pdflib/ir/raw"
+    "github.com/wudi/pdfkit/ir/raw"
 )
 
 // Object wraps a raw object with decoded stream data
@@ -328,8 +328,8 @@ type Decoder interface {
 package semantic
 
 import (
-    "pdflib/ir/decoded"
-    "pdflib/ir/raw"
+    "github.com/wudi/pdfkit/ir/decoded"
+    "github.com/wudi/pdfkit/ir/raw"
 )
 
 // Document is the semantic representation of a PDF
@@ -496,9 +496,9 @@ type Builder interface {
 package ir
 
 import (
-    "pdflib/ir/raw"
-    "pdflib/ir/decoded"
-    "pdflib/ir/semantic"
+    "github.com/wudi/pdfkit/ir/raw"
+    "github.com/wudi/pdfkit/ir/decoded"
+    "github.com/wudi/pdfkit/ir/semantic"
 )
 
 // Pipeline orchestrates IR transformations
@@ -2414,8 +2414,8 @@ package main
 
 import (
     "context"
-    "pdflib/parser"
-    "pdflib/ir/semantic"
+    "github.com/wudi/pdfkit/parser"
+    "github.com/wudi/pdfkit/ir/semantic"
 )
 
 func main() {
@@ -2458,8 +2458,8 @@ func extractText(page *semantic.Page) string {
 package main
 
 import (
-    "pdflib/builder"
-    "pdflib/writer"
+    "github.com/wudi/pdfkit/builder"
+    "github.com/wudi/pdfkit/writer"
 )
 
 func main() {
@@ -2499,8 +2499,8 @@ func main() {
 package main
 
 import (
-    "pdflib/fonts"
-    "pdflib/parser"
+    "github.com/wudi/pdfkit/fonts"
+    "github.com/wudi/pdfkit/parser"
 )
 
 func main() {
@@ -2533,9 +2533,9 @@ func main() {
 package main
 
 import (
-    "pdflib/pdfa"
-    "pdflib/parser"
-    "pdflib/writer"
+    "github.com/wudi/pdfkit/pdfa"
+    "github.com/wudi/pdfkit/parser"
+    "github.com/wudi/pdfkit/writer"
 )
 
 func main() {

@@ -1,9 +1,10 @@
 package layout
 
 import (
-	"pdflib/builder"
-	"pdflib/ir/semantic"
 	"strings"
+
+	"github.com/wudi/pdfkit/builder"
+	"github.com/wudi/pdfkit/ir/semantic"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"

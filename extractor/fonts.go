@@ -3,8 +3,8 @@ package extractor
 import (
 	"sort"
 
-	"pdflib/ir/decoded"
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/ir/decoded"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 // FontInfo groups font dictionaries referenced throughout the document.

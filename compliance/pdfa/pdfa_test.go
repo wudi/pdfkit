@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"pdflib/compliance/pdfa"
-	"pdflib/ir/semantic"
-	"pdflib/writer"
+	"github.com/wudi/pdfkit/compliance/pdfa"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/writer"
 )
 
 func TestPDFALevelSharedType(t *testing.T) {

@@ -1,6 +1,6 @@
 package extractor
 
-import "pdflib/ir/raw"
+import "github.com/wudi/pdfkit/ir/raw"
 
 // EmbeddedFile captures attached file specs surfaced via the Names tree.
 type EmbeddedFile struct {

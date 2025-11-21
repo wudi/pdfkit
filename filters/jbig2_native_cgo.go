@@ -10,12 +10,12 @@ package filters
 
 void goJBIG2Error(void *data, char *msg, Jbig2Severity severity, uint32_t seg_idx);
 
-static inline void pdflib_jbig2_error_thunk(void *data, const char *msg, Jbig2Severity severity, uint32_t seg_idx) {
+static inline void pdfkit_jbig2_error_thunk(void *data, const char *msg, Jbig2Severity severity, uint32_t seg_idx) {
 	goJBIG2Error(data, (char*)msg, severity, seg_idx);
 }
 
-static inline Jbig2Ctx* pdflib_jbig2_new_ctx(Jbig2GlobalCtx *global, void *user) {
-	return jbig2_ctx_new(NULL, JBIG2_OPTIONS_EMBEDDED, global, pdflib_jbig2_error_thunk, user);
+static inline Jbig2Ctx* pdfkit_jbig2_new_ctx(Jbig2GlobalCtx *global, void *user) {
+	return jbig2_ctx_new(NULL, JBIG2_OPTIONS_EMBEDDED, global, pdfkit_jbig2_error_thunk, user);
 }
 */
 import "C"
@@ -64,7 +64,7 @@ func decodeJBIG2Native(ctx context.Context, pageData, globalData []byte) ([]byte
 	*(*cgo.Handle)(handlePtr) = handle
 
 	globalCtx := (*C.Jbig2GlobalCtx)(nil)
-	pageCtx := C.pdflib_jbig2_new_ctx(nil, handlePtr)
+	pageCtx := C.pdfkit_jbig2_new_ctx(nil, handlePtr)
 	if pageCtx == nil {
 		return nil, errors.New("create JBIG2 context")
 	}
@@ -82,7 +82,7 @@ func decodeJBIG2Native(ctx context.Context, pageData, globalData []byte) ([]byte
 			return nil, err
 		}
 		globalCtx = C.jbig2_make_global_ctx(pageCtx)
-		pageCtx = C.pdflib_jbig2_new_ctx(globalCtx, handlePtr)
+		pageCtx = C.pdfkit_jbig2_new_ctx(globalCtx, handlePtr)
 		if pageCtx == nil {
 			return nil, errors.New("create JBIG2 page context")
 		}

@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"math"
 
-	"pdflib/contentstream"
-	"pdflib/fonts"
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/contentstream"
+	"github.com/wudi/pdfkit/fonts"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // PDFBuilder provides a fluent API for PDF construction.

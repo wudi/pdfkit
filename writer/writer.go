@@ -1,9 +1,9 @@
 package writer
 
 import (
-	"pdflib/compliance/pdfa"
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/compliance/pdfa"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 type PDFVersion string

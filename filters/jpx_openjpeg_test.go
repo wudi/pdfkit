@@ -20,7 +20,7 @@ package filters
 #include <openjpeg.h>
 #endif
 
-static int pdflib_jpx_test_encode_rgba(const char *path, const uint8_t *pixels, int width, int height) {
+static int pdfkit_jpx_test_encode_rgba(const char *path, const uint8_t *pixels, int width, int height) {
 	opj_cparameters_t params;
 	opj_set_default_encoder_parameters(&params);
 	params.tcp_numlayers = 1;
@@ -112,7 +112,7 @@ func TestJPXOpenJPEGNativeDecode(t *testing.T) {
 
 func encodeTestJPX(t *testing.T, rgba []byte, width, height int) []byte {
 	t.Helper()
-	file, err := os.CreateTemp("", "pdflib-jpx-encode-*.jp2")
+	file, err := os.CreateTemp("", "pdfkit-jpx-encode-*.jp2")
 	if err != nil {
 		t.Fatalf("create temp: %v", err)
 	}
@@ -125,7 +125,7 @@ func encodeTestJPX(t *testing.T, rgba []byte, width, height int) []byte {
 	}
 	cPath := C.CString(path)
 	defer C.free(unsafe.Pointer(cPath))
-	if C.pdflib_jpx_test_encode_rgba(cPath, pixelPtr, C.int(width), C.int(height)) == 0 {
+	if C.pdfkit_jpx_test_encode_rgba(cPath, pixelPtr, C.int(width), C.int(height)) == 0 {
 		t.Fatalf("openjpeg encode failed")
 	}
 	data, err := os.ReadFile(path)

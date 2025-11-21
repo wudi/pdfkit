@@ -2,7 +2,8 @@ package validation
 
 import (
 	"context"
-	"pdflib/ir/semantic"
+
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // LTVManager manages Long Term Validation (LTV) information in the PDF.

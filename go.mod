@@ -1,4 +1,4 @@
-module pdflib
+module github.com/wudi/pdfkit
 
 go 1.25.3
 

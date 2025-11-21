@@ -1,9 +1,9 @@
 package pdfx
 
 import (
-	"pdflib/compliance"
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/compliance"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 type Level int

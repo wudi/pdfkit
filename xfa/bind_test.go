@@ -80,7 +80,7 @@ func TestBinder_Bind(t *testing.T) {
 	if sub.Name != "address" {
 		t.Fatalf("Expected subform to be address, got %s", sub.Name)
 	}
-	
+
 	if len(sub.Fields) < 2 {
 		t.Fatal("Expected at least 2 fields in address subform")
 	}

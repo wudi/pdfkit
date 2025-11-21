@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"pdflib/builder"
-	"pdflib/ir/raw"
-	"pdflib/security"
-	"pdflib/xref"
+	"github.com/wudi/pdfkit/builder"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/security"
+	"github.com/wudi/pdfkit/xref"
 )
 
 func TestSign(t *testing.T) {

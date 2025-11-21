@@ -4,9 +4,10 @@ import (
 	"fmt"
 
 	"context"
-	"pdflib/filters"
-	"pdflib/geo"
-	"pdflib/ir/raw"
+
+	"github.com/wudi/pdfkit/filters"
+	"github.com/wudi/pdfkit/geo"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 type inheritedPageProps struct {

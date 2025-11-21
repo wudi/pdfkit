@@ -5,8 +5,8 @@ import (
 	"context"
 	"testing"
 
-	"pdflib/recovery"
-	"pdflib/xref"
+	"github.com/wudi/pdfkit/recovery"
+	"github.com/wudi/pdfkit/xref"
 )
 
 func TestResolverRepairsCorruptXRef(t *testing.T) {

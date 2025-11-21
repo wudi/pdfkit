@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"pdflib/recovery"
 	"strconv"
 	"unicode"
 	"unsafe"
+
+	"github.com/wudi/pdfkit/recovery"
 )
 
 type TokenType int

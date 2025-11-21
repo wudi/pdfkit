@@ -2,7 +2,8 @@ package editor
 
 import (
 	"context"
-	"pdflib/ir/semantic"
+
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // Editor provides high-level content editing capabilities.

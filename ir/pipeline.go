@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"io"
 
-	"pdflib/filters"
-	"pdflib/ir/decoded"
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
-	"pdflib/parser"
-	"pdflib/recovery"
-	"pdflib/security"
+	"github.com/wudi/pdfkit/filters"
+	"github.com/wudi/pdfkit/ir/decoded"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/parser"
+	"github.com/wudi/pdfkit/recovery"
+	"github.com/wudi/pdfkit/security"
 )
 
 type Pipeline struct {

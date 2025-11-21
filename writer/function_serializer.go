@@ -1,8 +1,8 @@
 package writer
 
 import (
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // FunctionSerializer serializes semantic functions into raw objects.

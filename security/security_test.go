@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 func TestStandardRC4RoundTrip(t *testing.T) {

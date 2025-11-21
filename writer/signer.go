@@ -9,9 +9,9 @@ import (
 	"io"
 	"time"
 
-	"pdflib/ir/raw"
-	"pdflib/security"
-	"pdflib/xref"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/security"
+	"github.com/wudi/pdfkit/xref"
 )
 
 // SignConfig configures the digital signature.

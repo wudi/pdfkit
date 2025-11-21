@@ -1,9 +1,10 @@
 package writer
 
 import (
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
 	"testing"
+
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestRemainingAnnotationsSerialization(t *testing.T) {

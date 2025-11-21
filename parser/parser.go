@@ -7,12 +7,12 @@ import (
 	"io"
 	"strings"
 
-	"pdflib/filters"
-	"pdflib/ir/raw"
-	"pdflib/recovery"
-	"pdflib/scanner"
-	"pdflib/security"
-	"pdflib/xref"
+	"github.com/wudi/pdfkit/filters"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/recovery"
+	"github.com/wudi/pdfkit/scanner"
+	"github.com/wudi/pdfkit/security"
+	"github.com/wudi/pdfkit/xref"
 )
 
 // Config controls high-level PDF parsing (xref resolution + object loading).

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"pdflib/recovery"
+	"github.com/wudi/pdfkit/recovery"
 )
 
 func newScanner(t *testing.T, data string, cfg Config) Scanner {

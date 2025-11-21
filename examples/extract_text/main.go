@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"pdflib/extractor"
-	"pdflib/ir"
+	"github.com/wudi/pdfkit/extractor"
+	"github.com/wudi/pdfkit/ir"
 )
 
 // Parses a PDF and uses the high-level extractor to dump page text.

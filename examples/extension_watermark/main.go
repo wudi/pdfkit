@@ -7,10 +7,10 @@ import (
 	"math"
 	"os"
 
-	"pdflib/builder"
-	"pdflib/extensions"
-	"pdflib/ir/semantic"
-	"pdflib/writer"
+	"github.com/wudi/pdfkit/builder"
+	"github.com/wudi/pdfkit/extensions"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/writer"
 )
 
 // WatermarkExtension implements the extensions.Extension interface
@@ -130,7 +130,7 @@ func main() {
 
 	// 1. Build a basic document
 	b := builder.NewBuilder()
-	b.SetInfo(&semantic.DocumentInfo{Title: "Extension Watermark Demo", Author: "pdflib"})
+	b.SetInfo(&semantic.DocumentInfo{Title: "Extension Watermark Demo", Author: "pdfkit"})
 	b.NewPage(595, 842).
 		DrawText("Confidential Report", 50, 780, builder.TextOptions{FontSize: 24}).
 		DrawText("This document is watermarked via an extension.", 50, 750, builder.TextOptions{FontSize: 12}).

@@ -63,7 +63,7 @@ func createSigningCertificateV2Attribute(cert *x509.Certificate) (attribute, err
 	return attribute{
 		Type: oidAttributeSigningCertificateV2,
 		Value: asn1.RawValue{
-			Tag:   4, // asn1.TagOctetString? No, it's a SET of AttributeValue.
+			Tag: 4, // asn1.TagOctetString? No, it's a SET of AttributeValue.
 			// AttributeValue is ANY.
 			// For this attribute, it's SigningCertificateV2.
 			// Wait, `attribute` struct in pkcs7.go has `Value asn1.RawValue 'asn1:"set"'`

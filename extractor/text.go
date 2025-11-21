@@ -9,9 +9,9 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"pdflib/ir/decoded"
-	"pdflib/ir/raw"
-	"pdflib/scanner"
+	"github.com/wudi/pdfkit/ir/decoded"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/scanner"
 )
 
 // PageText captures extracted text per page along with optional labels.

@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 
-	"pdflib/ir/decoded"
-	"pdflib/ir/raw"
-	"pdflib/scanner"
+	"github.com/wudi/pdfkit/ir/decoded"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/scanner"
 )
 
 // Extractor exposes helper routines for pulling structured data out of a decoded PDF.

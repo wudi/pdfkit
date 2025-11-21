@@ -3,7 +3,7 @@ package fonts
 import (
 	"sort"
 
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 type Subset struct {

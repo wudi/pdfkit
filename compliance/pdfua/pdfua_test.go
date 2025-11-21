@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"pdflib/compliance/pdfua"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/compliance/pdfua"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestValidate(t *testing.T) {

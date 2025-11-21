@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"pdflib/extractor"
-	"pdflib/ir"
+	"github.com/wudi/pdfkit/extractor"
+	"github.com/wudi/pdfkit/ir"
 )
 
 type featureSelection struct {

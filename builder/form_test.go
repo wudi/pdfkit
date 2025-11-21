@@ -3,7 +3,7 @@ package builder
 import (
 	"testing"
 
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestBuilder_AddFormField(t *testing.T) {

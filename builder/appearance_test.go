@@ -1,9 +1,10 @@
 package builder
 
 import (
-	"pdflib/ir/semantic"
 	"strings"
 	"testing"
+
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestGenerateTextAppearance(t *testing.T) {

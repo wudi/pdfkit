@@ -5,7 +5,7 @@ import (
 	"context"
 	"testing"
 
-	"pdflib/recovery"
+	"github.com/wudi/pdfkit/recovery"
 )
 
 func FuzzDocumentParser(f *testing.F) {

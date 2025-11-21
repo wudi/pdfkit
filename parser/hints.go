@@ -4,7 +4,7 @@ import (
 	"errors"
 	"io"
 
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 // HintTable and PageOffsetHint are now in ir/raw

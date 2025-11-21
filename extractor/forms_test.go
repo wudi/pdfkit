@@ -3,8 +3,8 @@ package extractor
 import (
 	"testing"
 
-	"pdflib/ir/decoded"
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/ir/decoded"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 func TestExtractor_AcroForm(t *testing.T) {

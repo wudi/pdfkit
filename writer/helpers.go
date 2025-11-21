@@ -10,14 +10,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
-	"pdflib/security"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/security"
 )
 
 func pdfVersion(cfg Config) string {

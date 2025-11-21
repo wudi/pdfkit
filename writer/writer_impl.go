@@ -3,10 +3,11 @@ package writer
 import (
 	"bytes"
 	"fmt"
-	"pdflib/fonts"
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
 	"sort"
+
+	"github.com/wudi/pdfkit/fonts"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 type impl struct {

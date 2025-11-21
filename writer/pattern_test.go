@@ -3,10 +3,11 @@ package writer
 import (
 	"bytes"
 	"context"
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
-	"pdflib/parser"
 	"testing"
+
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/parser"
 )
 
 func TestWriter_TilingPattern(t *testing.T) {

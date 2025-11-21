@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
-	"pdflib/parser"
-	"pdflib/xref"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/parser"
+	"github.com/wudi/pdfkit/xref"
 )
 
 func TestLinearization(t *testing.T) {

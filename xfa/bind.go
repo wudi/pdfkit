@@ -62,10 +62,10 @@ func (b *Binder) bindSubform(subform *Subform, dataNode *Node) {
 	// Recurse Subforms
 	for i := range subform.Subforms {
 		childSubform := &subform.Subforms[i]
-		
+
 		// Determine binding for the child subform
 		var childDataNode *Node
-		
+
 		bindingName := childSubform.Name
 		if childSubform.Bind != nil && childSubform.Bind.Match == "dataRef" && childSubform.Bind.Ref != "" {
 			bindingName = b.resolveRef(childSubform.Bind.Ref)
@@ -111,9 +111,9 @@ func (b *Binder) bindField(field *Field, dataNode *Node) {
 		if field.Value == nil {
 			field.Value = &Value{}
 		}
-		
+
 		val := strings.TrimSpace(targetNode.Content)
-		
+
 		// Populate the correct field in Value based on what's currently there or UI type
 		// For now, we populate Text as a generic container, and specific ones if they exist.
 		if field.Value.Integer != "" {

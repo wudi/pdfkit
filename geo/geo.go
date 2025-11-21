@@ -1,6 +1,6 @@
 package geo
 
-import "pdflib/ir/raw"
+import "github.com/wudi/pdfkit/ir/raw"
 
 // Viewport specifies a rectangular region of a page (PDF 2.0).
 type Viewport struct {

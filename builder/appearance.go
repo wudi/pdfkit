@@ -3,8 +3,9 @@ package builder
 import (
 	"bytes"
 	"fmt"
-	"pdflib/ir/semantic"
 	"strings"
+
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // AppearanceGenerator handles the generation of appearance streams for form fields.

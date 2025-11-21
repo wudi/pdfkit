@@ -13,7 +13,7 @@ import (
 	"image/png"
 	"testing"
 
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 func TestFlateDecode(t *testing.T) {

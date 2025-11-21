@@ -2,7 +2,8 @@ package semantic
 
 import (
 	"fmt"
-	"pdflib/ir/raw"
+
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 func parseResources(obj raw.Object, resolver rawResolver) (*Resources, error) {

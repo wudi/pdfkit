@@ -3,8 +3,8 @@ package contentstream
 import (
 	"math"
 
-	"pdflib/coords"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/coords"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // OpBBox represents the bounding box of an operation.

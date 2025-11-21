@@ -1,6 +1,6 @@
 package semantic
 
-import "pdflib/ir/raw"
+import "github.com/wudi/pdfkit/ir/raw"
 
 // StructureTree is the root of the logical structure.
 type StructureTree struct {

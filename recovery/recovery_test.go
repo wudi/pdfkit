@@ -5,8 +5,8 @@ import (
 	"context"
 	"testing"
 
-	"pdflib/parser"
-	"pdflib/recovery"
+	"github.com/wudi/pdfkit/parser"
+	"github.com/wudi/pdfkit/recovery"
 )
 
 func TestRecoveryStrategies(t *testing.T) {

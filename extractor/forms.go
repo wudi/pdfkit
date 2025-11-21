@@ -3,8 +3,8 @@ package extractor
 import (
 	"fmt"
 
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // ExtractAcroForm extracts the AcroForm dictionary and its fields.

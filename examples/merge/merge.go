@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"pdflib/builder"
-	"pdflib/ir"
-	"pdflib/writer"
+	"github.com/wudi/pdfkit/builder"
+	"github.com/wudi/pdfkit/ir"
+	"github.com/wudi/pdfkit/writer"
 )
 
 func main() {

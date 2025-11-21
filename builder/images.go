@@ -7,7 +7,7 @@ import (
 	_ "image/png"
 	"os"
 
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // ImageFromFile loads an image from a file path and converts it to *semantic.Image.

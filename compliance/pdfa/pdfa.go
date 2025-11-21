@@ -1,10 +1,10 @@
 package pdfa
 
 import (
-	"pdflib/cmm"
-	"pdflib/compliance"
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/cmm"
+	"github.com/wudi/pdfkit/compliance"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // Level represents a PDF/A conformance level shared across writer and enforcer.

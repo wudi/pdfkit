@@ -3,7 +3,7 @@ package semantic
 import (
 	"testing"
 
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 func TestParsePages(t *testing.T) {

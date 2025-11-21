@@ -23,7 +23,7 @@ import (
 	"golang.org/x/image/ccitt"
 	_ "golang.org/x/image/webp"
 
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 type Decoder interface {
@@ -415,7 +415,7 @@ func decodeJPXExternal(ctx context.Context, data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	input, err := os.CreateTemp("", "pdflib-jpx-*.jpx")
+	input, err := os.CreateTemp("", "pdfkit-jpx-*.jpx")
 	if err != nil {
 		return nil, err
 	}
@@ -426,7 +426,7 @@ func decodeJPXExternal(ctx context.Context, data []byte) ([]byte, error) {
 	}
 	input.Close()
 
-	output, err := os.CreateTemp("", "pdflib-jpx-out-*.png")
+	output, err := os.CreateTemp("", "pdfkit-jpx-out-*.png")
 	if err != nil {
 		return nil, err
 	}
@@ -451,7 +451,7 @@ func decodeJBIG2External(ctx context.Context, data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	input, err := os.CreateTemp("", "pdflib-jb2-*.jb2")
+	input, err := os.CreateTemp("", "pdfkit-jb2-*.jb2")
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +462,7 @@ func decodeJBIG2External(ctx context.Context, data []byte) ([]byte, error) {
 	}
 	input.Close()
 
-	output, err := os.CreateTemp("", "pdflib-jb2-out-*.png")
+	output, err := os.CreateTemp("", "pdfkit-jb2-out-*.png")
 	if err != nil {
 		return nil, err
 	}

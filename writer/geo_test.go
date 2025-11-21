@@ -5,10 +5,10 @@ import (
 	"context"
 	"testing"
 
-	"pdflib/geo"
-	"pdflib/ir/decoded"
-	"pdflib/ir/semantic"
-	"pdflib/parser"
+	"github.com/wudi/pdfkit/geo"
+	"github.com/wudi/pdfkit/ir/decoded"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/parser"
 )
 
 func TestGeoPDF(t *testing.T) {

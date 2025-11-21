@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestSubsettingPipeline_Integration(t *testing.T) {

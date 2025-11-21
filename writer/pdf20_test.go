@@ -5,8 +5,8 @@ import (
 	"context"
 	"testing"
 
-	"pdflib/ir"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestPDF20_BlackPointCompensation(t *testing.T) {

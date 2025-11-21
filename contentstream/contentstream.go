@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"pdflib/coords"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/coords"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 type Processor interface {

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"pdflib/ir/raw"
-	"pdflib/security"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/security"
 )
 
 func TestDocumentParserParsesClassicXRef(t *testing.T) {

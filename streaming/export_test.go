@@ -1,8 +1,8 @@
 package streaming
 
 import (
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func ParseColorSpace(doc *raw.Document, obj raw.Object) semantic.ColorSpace {

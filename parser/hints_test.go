@@ -3,7 +3,7 @@ package parser
 import (
 	"testing"
 
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 func TestParseHintStreamHeader(t *testing.T) {

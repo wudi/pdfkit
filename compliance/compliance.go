@@ -2,7 +2,8 @@ package compliance
 
 import (
 	"context"
-	"pdflib/ir/semantic"
+
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // Context is an alias for context.Context to allow for future expansion.

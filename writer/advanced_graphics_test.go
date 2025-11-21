@@ -1,9 +1,10 @@
 package writer
 
 import (
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
 	"testing"
+
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestAdvancedGraphicsSerialization(t *testing.T) {
@@ -72,7 +73,7 @@ func TestAdvancedGraphicsSerialization(t *testing.T) {
 			// Actually, the builder creates separate objects for pages, but Resources are embedded in the Page dict usually,
 			// unless they are indirect. In object_builder.go, Resources are built inline into the Page dict.
 			// Wait, ExtGState entries are inline dictionaries inside the ExtGState resource dictionary.
-			
+
 			// Let's find the Page object first.
 			if typeName, ok := dict.Get(raw.NameLiteral("Type")); ok {
 				if name, ok := typeName.(raw.NameObj); ok && name.Val == "Page" {
@@ -92,7 +93,7 @@ func TestAdvancedGraphicsSerialization(t *testing.T) {
 					if !ok {
 						continue
 					}
-					
+
 					// Check GS1
 					if gs1, ok := extGDict.Get(raw.NameLiteral("GS1")); ok {
 						gs1Dict := gs1.(*raw.DictObj)

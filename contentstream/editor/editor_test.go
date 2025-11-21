@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"pdflib/contentstream/editor"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/contentstream/editor"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestReplaceText(t *testing.T) {

@@ -3,7 +3,7 @@ package decoded
 import (
 	"context"
 
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 // Object wraps a raw object after decoding.

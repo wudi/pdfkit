@@ -3,8 +3,8 @@ package writer
 import (
 	"testing"
 
-	"pdflib/ir/raw"
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 type mockSerializationContext struct {

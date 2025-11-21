@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"pdflib/builder"
-	"pdflib/writer"
+	"github.com/wudi/pdfkit/builder"
+	"github.com/wudi/pdfkit/writer"
 )
 
 func main() {

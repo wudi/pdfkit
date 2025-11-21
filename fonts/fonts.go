@@ -9,7 +9,7 @@ import (
 	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // LoadTrueType parses a TrueType/OpenType font, extracts basic metrics, and

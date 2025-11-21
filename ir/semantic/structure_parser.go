@@ -2,7 +2,8 @@ package semantic
 
 import (
 	"fmt"
-	"pdflib/ir/raw"
+
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 // parseStructureTree parses the logical structure tree from the catalog.

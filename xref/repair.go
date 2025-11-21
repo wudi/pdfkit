@@ -5,8 +5,8 @@ import (
 	"errors"
 	"io"
 
-	"pdflib/ir/raw"
-	"pdflib/scanner"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/scanner"
 )
 
 // repair scans the entire file to reconstruct the xref table.

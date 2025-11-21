@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"sync"
 
-	"pdflib/filters"
-	"pdflib/ir/raw"
+	"github.com/wudi/pdfkit/filters"
+	"github.com/wudi/pdfkit/ir/raw"
 )
 
 // NewDecoder constructs a basic Decoder that applies filter decoding to streams.

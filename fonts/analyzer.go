@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-text/typesetting/language"
 
-	"pdflib/ir/semantic"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // Analyzer identifies used glyphs in a document.

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"io"
 
-	"pdflib/ir/raw"
-	"pdflib/parser"
-	"pdflib/security"
-	"pdflib/xref"
+	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/parser"
+	"github.com/wudi/pdfkit/security"
+	"github.com/wudi/pdfkit/xref"
 )
 
 // AddLTV adds Long Term Validation (LTV) data (DSS dictionary) to an existing PDF.

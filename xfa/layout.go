@@ -3,7 +3,8 @@ package xfa
 import (
 	"context"
 	"math"
-	"pdflib/ir/semantic"
+
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 // LayoutEngine renders an XFA Form into PDF pages.
@@ -31,7 +32,7 @@ func (e *LayoutEngineImpl) Render(ctx context.Context, form *Form) ([]*semantic.
 
 	// 2. Layout
 	pages := []*semantic.Page{}
-	
+
 	// Create Resources with a default font
 	resources := &semantic.Resources{
 		Fonts: map[string]*semantic.Font{
@@ -133,7 +134,7 @@ func (e *LayoutEngineImpl) renderSubform(ctx *LayoutContext, subform *Subform) {
 		// The child modifies ctx.Y directly if it flows.
 		e.renderSubform(ctx, &child)
 	}
-	
+
 	// Restore context if not flow
 	if subform.Layout != "tb" {
 		ctx.X = originalX
@@ -142,7 +143,7 @@ func (e *LayoutEngineImpl) renderSubform(ctx *LayoutContext, subform *Subform) {
 		// If flow, we keep the new Y (moved down)
 		// But we restore X
 		ctx.X = originalX
-		
+
 		// If explicit height was set, enforce it?
 		if h > 0 {
 			ctx.Y = originalY - h
@@ -201,7 +202,7 @@ func (e *LayoutEngineImpl) renderDraw(ctx *LayoutContext, draw *Draw) {
 
 	// If flow, x/y might be 0 or relative.
 	// If positioned, they are offsets.
-	
+
 	pdfX := ctx.X + x
 	pdfY := ctx.Y - y // Y is current cursor
 
@@ -228,7 +229,6 @@ func (e *LayoutEngineImpl) renderField(ctx *LayoutContext, field *Field) {
 	}
 }
 
-
 func (e *LayoutEngineImpl) addText(page *semantic.Page, x, y float64, text string) {
 	ops := []semantic.Operation{
 		{Operator: "BT", Operands: nil},
@@ -245,7 +245,7 @@ func (e *LayoutEngineImpl) addText(page *semantic.Page, x, y float64, text strin
 		}},
 		{Operator: "ET", Operands: nil},
 	}
-	
+
 	// Append to the last content stream
 	if len(page.Contents) > 0 {
 		page.Contents[len(page.Contents)-1].Operations = append(page.Contents[len(page.Contents)-1].Operations, ops...)
