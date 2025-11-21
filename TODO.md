@@ -35,7 +35,7 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **Crypt**: Filter specifically for decrypting streams.
 
 ## 4. Graphics & Imaging
-- [ ] **Color Spaces**:
+- [x] **Color Spaces**:
     - [x] Implement `cmm` package (ICC Profile parsing).
 	- [x] **CMM Transform**: Implement actual color conversion logic (Basic Gray/RGB/CMYK support added).
 	- [x] Support `DeviceN` and `Separation` (Spot Colors).
@@ -53,7 +53,6 @@ This document tracks the detailed implementation progress of features defined in
 
 ## 5. Fonts & Text
 - [x] **TrueType**: Parsing and extraction.
-## 5. Fonts & Text
 - [x] **Type 1**: Parsing .pfb/.pfm (PFB parsing with metrics extraction implemented).
     - [x] Handle Length1/Length2/Length3 for embedding.
 - [x] **Type 3**: Custom glyphs.
@@ -83,7 +82,7 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **HTML Forms**: Recognition/Embedding.
 
 ## 8. Compliance
-- [ ] **PDF/A**:
+- [x] **PDF/A**:
     - [x] PDF/A-1b Basic enforcement.
     - [x] **Validation**: Deep check of Action dictionaries (JS, Launch).
     - [x] **OutputIntent**: Embed valid ICC profile (sRGB embedded).
