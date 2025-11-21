@@ -229,6 +229,17 @@ type DeviceNAttributes struct {
 	Subtype string
 }
 
+// IndexedColorSpace represents an Indexed color space.
+type IndexedColorSpace struct {
+	Base        ColorSpace
+	Hival       int
+	Lookup      []byte // Can be stream or string
+	OriginalRef raw.ObjectRef
+	Dirty       bool
+}
+
+func (cs *IndexedColorSpace) ColorSpaceName() string { return "Indexed" }
+
 // SpectrallyDefinedColorSpace represents a CxF-based color space (PDF 2.0).
 type SpectrallyDefinedColorSpace struct {
 	Data        []byte // CxF XML
@@ -237,6 +248,13 @@ type SpectrallyDefinedColorSpace struct {
 }
 
 func (cs *SpectrallyDefinedColorSpace) ColorSpaceName() string { return "SpectrallyDefined" }
+
+// PatternColorSpace represents the Pattern color space.
+type PatternColorSpace struct {
+	Underlying ColorSpace // Optional, for uncolored patterns
+}
+
+func (cs *PatternColorSpace) ColorSpaceName() string { return "Pattern" }
 
 // XObject describes a referenced object (limited to simple images).
 type XObject struct {

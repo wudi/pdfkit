@@ -664,6 +664,12 @@ func (s *defaultColorSpaceSerializer) Serialize(cs semantic.ColorSpace, ctx Seri
 			arr.Append(attr)
 		}
 		return arr
+
+	case *semantic.PatternColorSpace:
+		if t.Underlying != nil {
+			return raw.NewArray(raw.NameLiteral("Pattern"), s.Serialize(t.Underlying, ctx))
+		}
+		return raw.NameLiteral("Pattern")
 	}
 	return raw.NameLiteral(cs.ColorSpaceName())
 }

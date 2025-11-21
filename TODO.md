@@ -38,7 +38,7 @@ This document tracks the detailed implementation progress of features defined in
 - [ ] **Color Spaces**:
     - [ ] Implement `cmm` package (ICC Profile parsing/transform).
     - [ ] Support `DeviceN` and `Separation` (Spot Colors).
-    - [ ] Support `Pattern` color space.
+    - [x] Support `Pattern` color space.
 - [ ] **Patterns & Shading**:
     - [ ] Tiling Patterns (Type 1).
     - [ ] Shading Patterns (Type 1-7).

@@ -508,6 +508,62 @@ func parseColorSpace(doc *raw.Document, obj raw.Object) semantic.ColorSpace {
 	if n, ok := obj.(raw.NameObj); ok {
 		return &semantic.DeviceColorSpace{Name: n.Value()}
 	}
+	if arr, ok := obj.(*raw.ArrayObj); ok && arr.Len() > 0 {
+		if name, ok := arr.Items[0].(raw.NameObj); ok {
+			switch name.Value() {
+			case "Pattern":
+				pcs := &semantic.PatternColorSpace{}
+				if arr.Len() > 1 {
+					pcs.Underlying = parseColorSpace(doc, arr.Items[1])
+				}
+				return pcs
+			case "ICCBased":
+				if arr.Len() > 1 {
+					// ICCBased is usually a stream containing the profile.
+					// For now, we just return a placeholder or partial implementation.
+					// Ideally we should parse the stream to get the alternate CS.
+					return &semantic.ICCBasedColorSpace{}
+				}
+			case "Separation":
+				if arr.Len() > 3 {
+					// [/Separation name alternateSpace tintTransform]
+					scs := &semantic.SeparationColorSpace{}
+					if n, ok := arr.Items[1].(raw.NameObj); ok {
+						scs.Name = n.Value()
+					}
+					scs.Alternate = parseColorSpace(doc, arr.Items[2])
+					scs.TintTransform = parseFunction(doc, arr.Items[3])
+					return scs
+				}
+			case "DeviceN":
+				if arr.Len() > 3 {
+					// [/DeviceN names alternateSpace tintTransform attributes?]
+					dn := &semantic.DeviceNColorSpace{}
+					if namesArr, ok := arr.Items[1].(*raw.ArrayObj); ok {
+						for _, it := range namesArr.Items {
+							if n, ok := it.(raw.NameObj); ok {
+								dn.Names = append(dn.Names, n.Value())
+							}
+						}
+					}
+					dn.Alternate = parseColorSpace(doc, arr.Items[2])
+					dn.TintTransform = parseFunction(doc, arr.Items[3])
+					return dn
+				}
+			case "Indexed":
+				if arr.Len() > 3 {
+					// [/Indexed base hival lookup]
+					ics := &semantic.IndexedColorSpace{}
+					ics.Base = parseColorSpace(doc, arr.Items[1])
+					if n, ok := arr.Items[2].(raw.NumberObj); ok {
+						ics.Hival = int(n.Int())
+					}
+					// Lookup can be stream or string, skipping for now
+					return ics
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -538,9 +594,7 @@ func parseXObject(doc *raw.Document, obj raw.Object) *semantic.XObject {
 						}
 					}
 					if cs, ok := xoDict.Get(raw.NameLiteral("ColorSpace")); ok {
-						if n, ok := cs.(raw.NameObj); ok {
-							xo.ColorSpace = &semantic.DeviceColorSpace{Name: n.Value()}
-						}
+						xo.ColorSpace = parseColorSpace(doc, cs)
 					}
 					xo.Data = decodeStream(stream)
 					return &xo
@@ -1382,9 +1436,7 @@ func parseShading(doc *raw.Document, obj raw.Object) semantic.Shading {
 
 	var cs semantic.ColorSpace
 	if csObj, ok := shDict.Get(raw.NameLiteral("ColorSpace")); ok {
-		if n, ok := csObj.(raw.NameObj); ok {
-			cs = &semantic.DeviceColorSpace{Name: n.Value()}
-		}
+		cs = parseColorSpace(doc, csObj)
 	}
 
 	if stype >= 4 && stype <= 7 {
