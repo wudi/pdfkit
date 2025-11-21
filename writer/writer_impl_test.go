@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"compress/lzw"
+	"compress/zlib"
 	"context"
 	"io"
 	"os"
@@ -438,11 +439,14 @@ func TestWriter_ContentStreamCompression(t *testing.T) {
 			continue
 		}
 		found = true
-		r := flate.NewReader(bytes.NewReader(stream.Data))
+		r, err := zlib.NewReader(bytes.NewReader(stream.Data))
+		if err != nil {
+			t.Fatalf("zlib reader: %v", err)
+		}
 		defer r.Close()
 		decoded, err := io.ReadAll(r)
 		if err != nil {
-			t.Fatalf("read flate: %v", err)
+			t.Fatalf("read zlib: %v", err)
 		}
 		if !strings.Contains(string(decoded), "compress me") {
 			t.Fatalf("decoded stream missing text: %q", decoded)
