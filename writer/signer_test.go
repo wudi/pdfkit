@@ -116,3 +116,61 @@ func TestSign(t *testing.T) {
 		t.Error("Trailer missing Prev entry")
 	}
 }
+
+func TestSign_PAdES(t *testing.T) {
+	// 1. Create a minimal valid PDF
+	b := builder.NewBuilder()
+	b.NewPage(612, 792).DrawText("PAdES Test", 100, 700, builder.TextOptions{FontSize: 12}).Finish()
+	doc, err := b.Build()
+	if err != nil {
+		t.Fatalf("Failed to build PDF doc: %v", err)
+	}
+
+	var buf bytes.Buffer
+	w := (&WriterBuilder{}).Build()
+	err = w.Write(context.Background(), doc, &buf, Config{Version: PDF17})
+	if err != nil {
+		t.Fatalf("Failed to write PDF: %v", err)
+	}
+	pdfContent := buf.Bytes()
+
+	// 2. Create a signer
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName: "PAdES Signer",
+		},
+		NotBefore: time.Now(),
+		NotAfter:  time.Now().Add(time.Hour),
+		KeyUsage:  x509.KeyUsageDigitalSignature,
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer := security.NewRSASigner(key, []*x509.Certificate{cert})
+
+	// 3. Sign with PAdES enabled
+	var signedBuf bytes.Buffer
+	err = Sign(context.Background(), bytes.NewReader(pdfContent), int64(len(pdfContent)), &signedBuf, signer, SignConfig{
+		Reason: "PAdES Check",
+		PAdES:  true,
+	})
+	if err != nil {
+		t.Fatalf("Sign failed: %v", err)
+	}
+
+	// 4. Verify SubFilter
+	signedData := signedBuf.Bytes()
+	if !bytes.Contains(signedData, []byte("/SubFilter /ETSI.CAdES.detached")) {
+		t.Error("Expected /SubFilter /ETSI.CAdES.detached in signed PDF")
+	}
+}

@@ -19,6 +19,7 @@ type Signer interface {
 type RSASigner struct {
 	priv  *rsa.PrivateKey
 	chain []*x509.Certificate
+	pades bool
 }
 
 // NewRSASigner creates a new RSA signer.
@@ -29,6 +30,12 @@ func NewRSASigner(priv *rsa.PrivateKey, chain []*x509.Certificate) *RSASigner {
 	}
 }
 
+// SetPAdES enables or disables PAdES (ETSI.CAdES.detached) support.
+// When enabled, the signing-certificate-v2 attribute is included.
+func (s *RSASigner) SetPAdES(enable bool) {
+	s.pades = enable
+}
+
 func (s *RSASigner) Sign(data []byte) ([]byte, error) {
 	// data is the digest of the PDF content (calculated by the caller).
 
@@ -37,7 +44,16 @@ func (s *RSASigner) Sign(data []byte) ([]byte, error) {
 	}
 	cert := s.chain[0]
 
-	return createPKCS7Signature(s.priv, cert, s.chain, data)
+	var extraAttrs []attribute
+	if s.pades {
+		attr, err := createSigningCertificateV2Attribute(cert)
+		if err != nil {
+			return nil, err
+		}
+		extraAttrs = append(extraAttrs, attr)
+	}
+
+	return createPKCS7Signature(s.priv, cert, s.chain, data, extraAttrs)
 }
 
 func (s *RSASigner) Certificate() []*x509.Certificate {

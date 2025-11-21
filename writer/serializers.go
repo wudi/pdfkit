@@ -665,6 +665,14 @@ func (s *defaultColorSpaceSerializer) Serialize(cs semantic.ColorSpace, ctx Seri
 		}
 		return arr
 
+	case *semantic.SpectrallyDefinedColorSpace:
+		ref := ctx.NextRef()
+		dict := raw.Dict()
+		dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(t.Data))))
+		stream := raw.NewStream(dict, t.Data)
+		ctx.AddObject(ref, stream)
+		return raw.NewArray(raw.NameLiteral("SpectrallyDefined"), raw.Ref(ref.Num, ref.Gen))
+
 	case *semantic.PatternColorSpace:
 		if t.Underlying != nil {
 			return raw.NewArray(raw.NameLiteral("Pattern"), s.Serialize(t.Underlying, ctx))

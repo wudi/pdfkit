@@ -139,7 +139,7 @@ func checkStructure(elements []*semantic.StructureElement, report *compliance.Re
 				Location:    "StructElem " + elem.S,
 			})
 		}
-		
+
 		// Recurse
 		var children []*semantic.StructureElement
 		for _, item := range elem.K {

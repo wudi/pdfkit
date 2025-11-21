@@ -93,17 +93,17 @@ This document tracks the detailed implementation progress of features defined in
     - [ ] AES-256 (PDF 2.0).
 - [ ] **Signatures**:
     - [x] Basic PKCS#7.
-    - [ ] PAdES (ETSI).
-    - [ ] LTV (DSS, OCSP/CRL).
+    - [x] PAdES (ETSI).
+    - [x] LTV (DSS, OCSP/CRL).
 
 ## 10. Structure & Metadata
 - [x] **Metadata**: Info Dict, XMP.
-- [ ] **Tagged PDF**:
-    - [ ] Full StructTree support (Writer/Parser).
-    - [ ] RoleMap.
-- [ ] **GeoSpatial**: GeoPDF support.
+- [x] **Tagged PDF**:
+    - [x] Full StructTree support (Writer/Parser).
+    - [x] RoleMap.
+- [x] **GeoSpatial**: GeoPDF support.
 
 ## 11. PDF 2.0 Specifics
-- [ ] Page-level Output Intents.
-- [ ] Black Point Compensation.
-- [ ] CxF support.
+- [x] Page-level Output Intents.
+- [x] Black Point Compensation.
+- [x] CxF support.

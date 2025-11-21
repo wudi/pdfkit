@@ -63,7 +63,7 @@ type attribute struct {
 }
 
 // createPKCS7Signature creates a detached PKCS#7 signature for the given content digest.
-func createPKCS7Signature(priv *rsa.PrivateKey, cert *x509.Certificate, chain []*x509.Certificate, contentDigest []byte) ([]byte, error) {
+func createPKCS7Signature(priv *rsa.PrivateKey, cert *x509.Certificate, chain []*x509.Certificate, contentDigest []byte, extraAttrs []attribute) ([]byte, error) {
 	if cert == nil {
 		return nil, fmt.Errorf("signer certificate is required")
 	}
@@ -96,6 +96,9 @@ func createPKCS7Signature(priv *rsa.PrivateKey, cert *x509.Certificate, chain []
 			},
 		},
 	}
+
+	// Add extra attributes (e.g. PAdES signing-certificate-v2)
+	attrs = append(attrs, extraAttrs...)
 
 	// Marshal attributes to bytes for signing
 	// Note: The tag for AuthenticatedAttributes is [0] IMPLICIT SET OF Attribute

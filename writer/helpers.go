@@ -597,7 +597,9 @@ func buildStructureTree(tree *semantic.StructureTree, pageRefs []raw.ObjectRef, 
 		ref := nextRef()
 		dict := raw.Dict()
 		dict.Set(raw.NameLiteral("Type"), raw.NameLiteral("StructElem"))
-		if elem.Type != "" {
+		if elem.S != "" {
+			dict.Set(raw.NameLiteral("S"), raw.NameLiteral(elem.S))
+		} else if elem.Type != "" && elem.Type != "StructElem" {
 			dict.Set(raw.NameLiteral("S"), raw.NameLiteral(elem.Type))
 		}
 		if elem.Title != "" {
@@ -618,6 +620,24 @@ func buildStructureTree(tree *semantic.StructureTree, pageRefs []raw.ObjectRef, 
 				if childRef != nil {
 					kArr.Append(raw.Ref(childRef.Num, childRef.Gen))
 				}
+				continue
+			}
+			if kid.ObjRef.Num != 0 {
+				objr := raw.Dict()
+				objr.Set(raw.NameLiteral("Type"), raw.NameLiteral("OBJR"))
+				objr.Set(raw.NameLiteral("Obj"), raw.Ref(kid.ObjRef.Num, kid.ObjRef.Gen))
+				var pg *semantic.Page
+				if kid.MCR != nil {
+					pg = kid.MCR.Pg
+				} else {
+					pg = elem.Pg
+				}
+				if pg != nil {
+					if pgRef := pageRefAt(pageRefs, pg.Index); pgRef != nil {
+						objr.Set(raw.NameLiteral("Pg"), raw.Ref(pgRef.Num, pgRef.Gen))
+					}
+				}
+				kArr.Append(objr)
 				continue
 			}
 			if kid.MCID != -1 {

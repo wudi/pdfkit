@@ -160,18 +160,19 @@ type Font struct {
 
 // ExtGState captures graphics state defaults such as transparency.
 type ExtGState struct {
-	LineWidth     *float64
-	StrokeAlpha   *float64
-	FillAlpha     *float64
-	BlendMode     string // /BM (Normal, Multiply, Screen, Overlay, Darken, Lighten, ColorDodge, ColorBurn, HardLight, SoftLight, Difference, Exclusion)
-	AlphaSource   *bool  // /AIS (Alpha Is Shape)
-	TextKnockout  *bool  // /TK
-	Overprint     *bool  // /OP
-	OverprintFill *bool  // /op
-	OverprintMode *int   // /OPM
-	SoftMask      *SoftMaskDict
-	OriginalRef   raw.ObjectRef
-	Dirty         bool
+	LineWidth      *float64
+	StrokeAlpha    *float64
+	FillAlpha      *float64
+	BlendMode      string // /BM (Normal, Multiply, Screen, Overlay, Darken, Lighten, ColorDodge, ColorBurn, HardLight, SoftLight, Difference, Exclusion)
+	AlphaSource    *bool  // /AIS (Alpha Is Shape)
+	TextKnockout   *bool  // /TK
+	Overprint      *bool  // /OP
+	OverprintFill  *bool  // /op
+	OverprintMode  *int   // /OPM
+	UseBlackPtComp *bool  // /UseBlackPtComp (PDF 2.0)
+	SoftMask       *SoftMaskDict
+	OriginalRef    raw.ObjectRef
+	Dirty          bool
 }
 
 // SoftMaskDict represents a soft-mask dictionary used in ExtGState.

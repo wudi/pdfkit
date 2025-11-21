@@ -20,6 +20,7 @@ type SignConfig struct {
 	Location  string
 	Contact   string
 	FieldName string // Name of the signature field (optional)
+	PAdES     bool   // Enable PAdES (ETSI.CAdES.detached)
 }
 
 // Sign appends a digital signature to an existing PDF.
@@ -54,7 +55,17 @@ func Sign(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, signer se
 
 	// Object Header
 	fmt.Fprintf(&updateBuf, "%d 0 obj\n", sigObjID)
-	updateBuf.WriteString("<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached")
+
+	subFilter := "/adbe.pkcs7.detached"
+	if cfg.PAdES {
+		subFilter = "/ETSI.CAdES.detached"
+		// Auto-configure RSASigner if possible
+		if rsaSigner, ok := signer.(*security.RSASigner); ok {
+			rsaSigner.SetPAdES(true)
+		}
+	}
+
+	updateBuf.WriteString("<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter " + subFilter)
 
 	if cfg.Reason != "" {
 		fmt.Fprintf(&updateBuf, " /Reason (%s)", cfg.Reason)

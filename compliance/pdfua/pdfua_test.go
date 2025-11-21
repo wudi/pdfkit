@@ -115,7 +115,7 @@ func TestAltText(t *testing.T) {
 	if rep.Compliant {
 		t.Fatal("Expected violation for missing Alt text")
 	}
-	
+
 	found := false
 	for _, v := range rep.Violations {
 		if v.Code == "UA006" {

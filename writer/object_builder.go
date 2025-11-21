@@ -351,6 +351,102 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 			}
 			pageDict.Set(raw.NameLiteral("Trans"), transDict)
 		}
+		// Viewports
+		if len(p.Viewports) > 0 {
+			vpArr := raw.NewArray()
+			for _, vp := range p.Viewports {
+				vpDict := raw.Dict()
+				vpDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Viewport"))
+				if len(vp.BBox) == 4 {
+					vpDict.Set(raw.NameLiteral("BBox"), raw.NewArray(
+						raw.NumberFloat(vp.BBox[0]),
+						raw.NumberFloat(vp.BBox[1]),
+						raw.NumberFloat(vp.BBox[2]),
+						raw.NumberFloat(vp.BBox[3]),
+					))
+				}
+				if vp.Name != "" {
+					vpDict.Set(raw.NameLiteral("Name"), raw.Str([]byte(vp.Name)))
+				}
+				if vp.Measure != nil {
+					mDict := raw.Dict()
+					mDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Measure"))
+					if vp.Measure.Subtype != "" {
+						mDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral(vp.Measure.Subtype))
+					}
+					if len(vp.Measure.Bounds) > 0 {
+						arr := raw.NewArray()
+						for _, v := range vp.Measure.Bounds {
+							arr.Append(raw.NumberFloat(v))
+						}
+						mDict.Set(raw.NameLiteral("Bounds"), arr)
+					}
+					if len(vp.Measure.GPTS) > 0 {
+						arr := raw.NewArray()
+						for _, v := range vp.Measure.GPTS {
+							arr.Append(raw.NumberFloat(v))
+						}
+						mDict.Set(raw.NameLiteral("GPTS"), arr)
+					}
+					if len(vp.Measure.LPTS) > 0 {
+						arr := raw.NewArray()
+						for _, v := range vp.Measure.LPTS {
+							arr.Append(raw.NumberFloat(v))
+						}
+						mDict.Set(raw.NameLiteral("LPTS"), arr)
+					}
+					if vp.Measure.GCS != nil {
+						gcsDict := raw.Dict()
+						if vp.Measure.GCS.Type != "" {
+							gcsDict.Set(raw.NameLiteral("Type"), raw.NameLiteral(vp.Measure.GCS.Type))
+						}
+						if vp.Measure.GCS.WKT != "" {
+							gcsDict.Set(raw.NameLiteral("WKT"), raw.Str([]byte(vp.Measure.GCS.WKT)))
+						}
+						if vp.Measure.GCS.EPSG != 0 {
+							gcsDict.Set(raw.NameLiteral("EPSG"), raw.NumberInt(int64(vp.Measure.GCS.EPSG)))
+						}
+						mDict.Set(raw.NameLiteral("GCS"), gcsDict)
+					}
+					vpDict.Set(raw.NameLiteral("Measure"), mDict)
+				}
+				vpArr.Append(vpDict)
+			}
+			pageDict.Set(raw.NameLiteral("VP"), vpArr)
+		}
+		// OutputIntents (Page Level)
+		if len(p.OutputIntents) > 0 {
+			arr := raw.NewArray()
+			for _, oi := range p.OutputIntents {
+				dict := raw.Dict()
+				dict.Set(raw.NameLiteral("Type"), raw.NameLiteral("OutputIntent"))
+				if oi.S != "" {
+					dict.Set(raw.NameLiteral("S"), raw.NameLiteral(oi.S))
+				}
+				if oi.OutputConditionIdentifier != "" {
+					dict.Set(raw.NameLiteral("OutputConditionIdentifier"), raw.Str([]byte(oi.OutputConditionIdentifier)))
+				}
+				if oi.Info != "" {
+					dict.Set(raw.NameLiteral("Info"), raw.Str([]byte(oi.Info)))
+				}
+				var profileRef *raw.ObjectRef
+				if len(oi.DestOutputProfile) > 0 {
+					pr := b.nextRef()
+					profileRef = &pr
+					pd := raw.Dict()
+					pd.Set(raw.NameLiteral("N"), raw.NumberInt(3)) // Default to 3 components?
+					pd.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(oi.DestOutputProfile))))
+					b.objects[pr] = raw.NewStream(pd, oi.DestOutputProfile)
+				}
+				if profileRef != nil {
+					dict.Set(raw.NameLiteral("DestOutputProfile"), raw.Ref(profileRef.Num, profileRef.Gen))
+				}
+				ref := b.nextRef()
+				b.objects[ref] = dict
+				arr.Append(raw.Ref(ref.Num, ref.Gen))
+			}
+			pageDict.Set(raw.NameLiteral("OutputIntents"), arr)
+		}
 		// Resources
 		resDict := raw.Dict()
 		fontResDict := raw.Dict()
@@ -398,6 +494,9 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 				}
 				if gs.OverprintMode != nil {
 					entry.Set(raw.NameLiteral("OPM"), raw.NumberInt(int64(*gs.OverprintMode)))
+				}
+				if gs.UseBlackPtComp != nil {
+					entry.Set(raw.NameLiteral("UseBlackPtComp"), raw.Bool(*gs.UseBlackPtComp))
 				}
 				if gs.SoftMask != nil {
 					smDict := raw.Dict()
@@ -1298,6 +1397,9 @@ func (b *objectBuilder) serializeResources(res *semantic.Resources) raw.Dictiona
 			}
 			if gs.OverprintMode != nil {
 				entry.Set(raw.NameLiteral("OPM"), raw.NumberInt(int64(*gs.OverprintMode)))
+			}
+			if gs.UseBlackPtComp != nil {
+				entry.Set(raw.NameLiteral("UseBlackPtComp"), raw.Bool(*gs.UseBlackPtComp))
 			}
 			if gs.SoftMask != nil {
 				smDict := raw.Dict()
