@@ -345,7 +345,7 @@ func isFontEmbedded(f *semantic.Font) bool {
 
 func isForbiddenAnnotation(a semantic.Annotation, level Level) bool {
 	subtype := a.Base().Subtype
-	
+
 	// Common forbidden types for A-1
 	if level.IsLevelA1() {
 		switch subtype {
@@ -375,7 +375,7 @@ func isForbiddenAnnotation(a semantic.Annotation, level Level) bool {
 			return true
 		}
 	}
-	
+
 	return false
 }
 

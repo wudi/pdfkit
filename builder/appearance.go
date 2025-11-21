@@ -60,9 +60,18 @@ func (g *AppearanceGenerator) generateTextAppearance(field *semantic.TextFormFie
 	writeColor(&buf, color)
 
 	// Position text
-	// TODO: Handle Quadding (alignment)
-	// Simple left alignment with padding
-	buf.WriteString("2 2 Td\n")
+	// Handle Quadding (alignment)
+	textWidth := g.measureText(field.Value, fontName, fontSize)
+
+	x := 2.0 // Default padding
+	switch field.Quadding {
+	case 1: // Center
+		x = (width - textWidth) / 2
+	case 2: // Right
+		x = width - textWidth - 2
+	}
+
+	buf.WriteString(fmt.Sprintf("%.2f 2 Td\n", x))
 
 	// Draw text
 	text := escapeText(field.Value)
@@ -83,12 +92,35 @@ func (g *AppearanceGenerator) generateTextAppearance(field *semantic.TextFormFie
 	return xobj, nil
 }
 
-func (g *AppearanceGenerator) generateButtonAppearance(field *semantic.ButtonFormField) (*semantic.XObject, error) {
-	// Only handling Checkboxes for now
-	if !field.IsCheck {
-		return nil, nil // TODO: Push buttons and Radio buttons
+func (g *AppearanceGenerator) measureText(text string, fontName string, fontSize float64) float64 {
+	// Try to find font in DefaultResources
+	var font *semantic.Font
+	if g.Form.DefaultResources != nil && g.Form.DefaultResources.Fonts != nil {
+		font = g.Form.DefaultResources.Fonts[fontName]
 	}
 
+	if font == nil {
+		// Fallback: assume average width of 0.5 em
+		return float64(len(text)) * fontSize * 0.5
+	}
+
+	width := 0.0
+	for _, r := range text {
+		// Simple lookup for WinAnsi/Standard encoding
+		// TODO: Handle complex encodings/CMaps
+		w := 0
+		if font.Widths != nil {
+			w = font.Widths[int(r)]
+		}
+		if w == 0 {
+			w = 500 // Default 500/1000 em
+		}
+		width += float64(w) / 1000.0 * fontSize
+	}
+	return width
+}
+
+func (g *AppearanceGenerator) generateButtonAppearance(field *semantic.ButtonFormField) (*semantic.XObject, error) {
 	rect := field.FieldRect()
 	width := rect.URX - rect.LLX
 	height := rect.URY - rect.LLY
@@ -96,27 +128,84 @@ func (g *AppearanceGenerator) generateButtonAppearance(field *semantic.ButtonFor
 	var buf bytes.Buffer
 	buf.WriteString("q\n")
 
-	// Draw border/background (simplified)
-	// 1 g (white background)
-	// 0 0 0 RG (black border)
-	// 0.5 w (line width)
-	buf.WriteString("1 g\n0 0 0 RG\n0.5 w\n")
-	buf.WriteString(fmt.Sprintf("0 0 %.2f %.2f re\n", width, height))
-	buf.WriteString("B\n") // Fill and stroke
+	if field.IsRadio {
+		// Draw Circle
+		// 1 g (white background)
+		// 0 0 0 RG (black border)
+		// 0.5 w (line width)
+		buf.WriteString("1 g\n0 0 0 RG\n0.5 w\n")
 
-	if field.Checked {
-		// Draw checkmark using ZapfDingbats if available, or simple lines
-		// Assuming ZapfDingbats is available as /ZaDb
-		// But we don't know the resource name for ZapfDingbats without looking at DR.
-		// For now, let's draw a simple cross (X) using lines.
+		// Circle approximation using Bezier curves is complex to write manually.
+		// We'll use a simplified approach or just a square for now if we want to be lazy,
+		// but "Zero Compromise" suggests we should try.
+		// Or we can use a font glyph if available (ZapfDingbats l/m/n).
+		// Let's draw a circle path.
+		cx, cy := width/2, height/2
+		r := (min(width, height) / 2) - 1
 
-		buf.WriteString("0 g\n") // Black
-		buf.WriteString("1 w\n")
+		// Draw circle (simplified as 4 curves)
+		magic := r * 0.551784
+		buf.WriteString(fmt.Sprintf("%.2f %.2f m\n", cx+r, cy))
+		buf.WriteString(fmt.Sprintf("%.2f %.2f %.2f %.2f %.2f %.2f c\n", cx+r, cy+magic, cx+magic, cy+r, cx, cy+r))
+		buf.WriteString(fmt.Sprintf("%.2f %.2f %.2f %.2f %.2f %.2f c\n", cx-magic, cy+r, cx-r, cy+magic, cx-r, cy))
+		buf.WriteString(fmt.Sprintf("%.2f %.2f %.2f %.2f %.2f %.2f c\n", cx-r, cy-magic, cx-magic, cy-r, cx, cy-r))
+		buf.WriteString(fmt.Sprintf("%.2f %.2f %.2f %.2f %.2f %.2f c\n", cx+magic, cy-r, cx+r, cy-magic, cx+r, cy))
+		buf.WriteString("B\n") // Fill and stroke
 
-		// Draw X
-		padding := 3.0
-		buf.WriteString(fmt.Sprintf("%.2f %.2f m %.2f %.2f l S\n", padding, padding, width-padding, height-padding))
-		buf.WriteString(fmt.Sprintf("%.2f %.2f m %.2f %.2f l S\n", padding, height-padding, width-padding, padding))
+		if field.Checked {
+			// Draw Dot (smaller circle, filled black)
+			r2 := r / 2
+			magic2 := r2 * 0.551784
+			buf.WriteString("0 g\n")
+			buf.WriteString(fmt.Sprintf("%.2f %.2f m\n", cx+r2, cy))
+			buf.WriteString(fmt.Sprintf("%.2f %.2f %.2f %.2f %.2f %.2f c\n", cx+r2, cy+magic2, cx+magic2, cy+r2, cx, cy+r2))
+			buf.WriteString(fmt.Sprintf("%.2f %.2f %.2f %.2f %.2f %.2f c\n", cx-magic2, cy+r2, cx-r2, cy+magic2, cx-r2, cy))
+			buf.WriteString(fmt.Sprintf("%.2f %.2f %.2f %.2f %.2f %.2f c\n", cx-r2, cy-magic2, cx-magic2, cy-r2, cx, cy-r2))
+			buf.WriteString(fmt.Sprintf("%.2f %.2f %.2f %.2f %.2f %.2f c\n", cx+magic2, cy-r2, cx+r2, cy-magic2, cx+r2, cy))
+			buf.WriteString("f\n") // Fill
+		}
+	} else if field.IsCheck {
+		// Draw Checkbox (Square)
+		// 1 g (white background)
+		// 0 0 0 RG (black border)
+		// 0.5 w (line width)
+		buf.WriteString("1 g\n0 0 0 RG\n0.5 w\n")
+		buf.WriteString(fmt.Sprintf("0 0 %.2f %.2f re\n", width, height))
+		buf.WriteString("B\n") // Fill and stroke
+
+		if field.Checked {
+			// Draw X
+			buf.WriteString("0 g\n") // Black
+			buf.WriteString("1 w\n")
+			padding := 3.0
+			buf.WriteString(fmt.Sprintf("%.2f %.2f m %.2f %.2f l S\n", padding, padding, width-padding, height-padding))
+			buf.WriteString(fmt.Sprintf("%.2f %.2f m %.2f %.2f l S\n", padding, height-padding, width-padding, padding))
+		}
+	} else {
+		// Push Button (Label)
+		// Draw Bevel effect?
+		buf.WriteString("0.75 g\n") // Light gray
+		buf.WriteString(fmt.Sprintf("0 0 %.2f %.2f re\n", width, height))
+		buf.WriteString("f\n")
+
+		// Draw Label (Caption)
+		// Assuming field.OnState or Name is the label?
+		// Usually PushButtons have a caption in MK dictionary (CA/RC).
+		// We'll use field.Name as fallback or "Button"
+		label := "Button"
+		// TODO: Get actual caption from widget annotation MK dict if available
+
+		// Center text
+		fontSize := 12.0
+		textWidth := g.measureText(label, "Helv", fontSize)
+		x := (width - textWidth) / 2
+		y := (height - fontSize) / 2
+
+		buf.WriteString("0 g\n") // Black text
+		buf.WriteString("BT\n/Helv 12 Tf\n")
+		buf.WriteString(fmt.Sprintf("%.2f %.2f Td\n", x, y))
+		buf.WriteString(fmt.Sprintf("(%s) Tj\n", escapeText(label)))
+		buf.WriteString("ET\n")
 	}
 
 	buf.WriteString("Q\n")
@@ -128,6 +217,13 @@ func (g *AppearanceGenerator) generateButtonAppearance(field *semantic.ButtonFor
 		Data:      buf.Bytes(),
 	}
 	return xobj, nil
+}
+
+func min(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func parseDA(da string) (fontName string, fontSize float64, color []float64) {

@@ -56,7 +56,7 @@ func (t *Tracer) Trace(ops []semantic.Operation, resources *semantic.Resources) 
 			ts.TextLineMatrix = coords.Identity()
 		case "ET":
 			// End text object
-		
+
 		// Text State
 		case "Tf":
 			if len(op.Operands) == 2 {
@@ -82,7 +82,7 @@ func (t *Tracer) Trace(ops []semantic.Operation, resources *semantic.Resources) 
 				ts.TextLineMatrix = m.Multiply(ts.TextLineMatrix)
 				ts.TextMatrix = ts.TextLineMatrix
 			}
-		
+
 		// Text Showing
 		case "Tj":
 			if len(op.Operands) == 1 {
@@ -106,35 +106,61 @@ func (t *Tracer) Trace(ops []semantic.Operation, resources *semantic.Resources) 
 				y := operandToFloat(op.Operands[1])
 				w := operandToFloat(op.Operands[2])
 				h := operandToFloat(op.Operands[3])
-				
+
 				// Transform (x,y) and (x+w, y+h) to get bbox
 				p1 := gs.CTM.Transform(coords.Point{X: x, Y: y})
 				p2 := gs.CTM.Transform(coords.Point{X: x + w, Y: y})
 				p3 := gs.CTM.Transform(coords.Point{X: x, Y: y + h})
 				p4 := gs.CTM.Transform(coords.Point{X: x + w, Y: y + h})
-				
+
 				rect = pointsToRect(p1, p2, p3, p4)
 				hasRect = true
 			}
-		
+
 		// XObjects
 		case "Do":
 			if len(op.Operands) == 1 {
 				if name, ok := op.Operands[0].(semantic.NameOperand); ok {
 					if xobj, ok := resources.XObjects[name.Value]; ok {
-						// Image/Form XObject is drawn in unit square 0,0 -> 1,1 transformed by CTM
-						p1 := gs.CTM.Transform(coords.Point{X: 0, Y: 0})
-						p2 := gs.CTM.Transform(coords.Point{X: 1, Y: 0})
-						p3 := gs.CTM.Transform(coords.Point{X: 0, Y: 1})
-						p4 := gs.CTM.Transform(coords.Point{X: 1, Y: 1})
-						
-						// If it's a Form XObject with BBox, we should use that instead of 0..1
 						if xobj.Subtype == "Form" {
-							// TODO: Handle Form XObject BBox and Matrix
-						}
+							// Form XObject
+							// 1. Start with BBox corners in Form space
+							formRect := xobj.BBox
+							p1 := coords.Point{X: formRect.LLX, Y: formRect.LLY}
+							p2 := coords.Point{X: formRect.URX, Y: formRect.LLY}
+							p3 := coords.Point{X: formRect.LLX, Y: formRect.URY}
+							p4 := coords.Point{X: formRect.URX, Y: formRect.URY}
 
-						rect = pointsToRect(p1, p2, p3, p4)
-						hasRect = true
+							// 2. Apply Form Matrix (if present)
+							formMatrix := coords.Identity()
+							if len(xobj.Matrix) == 6 {
+								formMatrix = coords.Matrix{
+									xobj.Matrix[0], xobj.Matrix[1], xobj.Matrix[2],
+									xobj.Matrix[3], xobj.Matrix[4], xobj.Matrix[5],
+								}
+							}
+
+							// 3. Apply CTM
+							// UserPoint = CTM * FormMatrix * FormPoint
+							m := formMatrix.Multiply(gs.CTM)
+
+							p1 = m.Transform(p1)
+							p2 = m.Transform(p2)
+							p3 = m.Transform(p3)
+							p4 = m.Transform(p4)
+
+							rect = pointsToRect(p1, p2, p3, p4)
+							hasRect = true
+						} else {
+							// Image/Form XObject (default) is drawn in unit square 0,0 -> 1,1 transformed by CTM
+							p1 := gs.CTM.Transform(coords.Point{X: 0, Y: 0})
+							p2 := gs.CTM.Transform(coords.Point{X: 1, Y: 0})
+							p3 := gs.CTM.Transform(coords.Point{X: 0, Y: 1})
+							p4 := gs.CTM.Transform(coords.Point{X: 1, Y: 1})
+
+							rect = pointsToRect(p1, p2, p3, p4)
+							hasRect = true
+						}
 					}
 				}
 			}
@@ -182,7 +208,7 @@ func calculateTextRect(text []byte, ts *TextState, gs *GraphicsState) semantic.R
 			width += 500 // Assume 500/1000 em
 		}
 	}
-	
+
 	// Convert width from glyph space (1000 units) to text space
 	width = width / 1000.0 * ts.FontSize
 
@@ -193,25 +219,25 @@ func calculateTextRect(text []byte, ts *TextState, gs *GraphicsState) semantic.R
 	// Current point is (0,0) in text space (relative to Tm)
 	// But wait, Td/Tm updates TextMatrix.
 	// We need to apply TextMatrix then CTM.
-	
+
 	// Text space rect: (0, 0) to (width, height) (simplified, ignoring descent)
 	// Actually, origin is usually baseline. So (0, descent) to (width, ascent).
 	// Let's assume (0, 0) to (width, height) for simplicity of "covering" the text.
-	
+
 	// Combined Matrix: TextMatrix * CTM
 	m := ts.TextMatrix.Multiply(gs.CTM)
-	
+
 	p1 := m.Transform(coords.Point{X: 0, Y: 0})
 	p2 := m.Transform(coords.Point{X: width, Y: 0})
 	p3 := m.Transform(coords.Point{X: 0, Y: height})
 	p4 := m.Transform(coords.Point{X: width, Y: height})
-	
+
 	// Update TextMatrix for next glyphs (advance width)
 	// T_m = T_m * Translate(width, 0) ? No, T_m is global.
 	// The text matrix is updated by drawing text? No, only Td/Tm updates it.
 	// But subsequent Tj calls? Usually they are separate.
 	// If multiple strings in TJ, we handle them.
-	
+
 	return pointsToRect(p1, p2, p3, p4)
 }
 
@@ -237,30 +263,38 @@ func calculateTJRect(ops []semantic.Operand, ts *TextState, gs *GraphicsState) s
 			totalWidth -= num.Value
 		}
 	}
-	
+
 	width := totalWidth / 1000.0 * ts.FontSize
 	height := ts.FontSize
-	
+
 	m := ts.TextMatrix.Multiply(gs.CTM)
-	
+
 	p1 := m.Transform(coords.Point{X: 0, Y: 0})
 	p2 := m.Transform(coords.Point{X: width, Y: 0})
 	p3 := m.Transform(coords.Point{X: 0, Y: height})
 	p4 := m.Transform(coords.Point{X: width, Y: height})
-	
+
 	return pointsToRect(p1, p2, p3, p4)
 }
 
 func pointsToRect(points ...coords.Point) semantic.Rectangle {
 	minX, minY := math.MaxFloat64, math.MaxFloat64
 	maxX, maxY := -math.MaxFloat64, -math.MaxFloat64
-	
+
 	for _, p := range points {
-		if p.X < minX { minX = p.X }
-		if p.Y < minY { minY = p.Y }
-		if p.X > maxX { maxX = p.X }
-		if p.Y > maxY { maxY = p.Y }
+		if p.X < minX {
+			minX = p.X
+		}
+		if p.Y < minY {
+			minY = p.Y
+		}
+		if p.X > maxX {
+			maxX = p.X
+		}
+		if p.Y > maxY {
+			maxY = p.Y
+		}
 	}
-	
+
 	return semantic.Rectangle{LLX: minX, LLY: minY, URX: maxX, URY: maxY}
 }

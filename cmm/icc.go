@@ -194,9 +194,28 @@ func (p *ICCProfile) ReadCurveTag(sig string) (float64, error) {
 			val := binary.BigEndian.Uint16(data[12:14])
 			return float64(val) / 256.0, nil
 		}
-		return 0, errors.New("complex curve not supported")
+		// Simple LUT support: if count > 1, we can't return a single gamma.
+		// But the interface returns float64. We need to change the interface or return error.
+		// For now, let's approximate or return error.
+		// Ideally, ReadCurveTag should return a Curve interface or struct.
+		return 0, errors.New("LUT curves not supported in simple gamma interface")
 	}
-	// TODO: Support 'para' (parametricCurveType)
+
+	if typeSig == 0x70617261 { // 'para'
+		// Parametric curve
+		// 8-10: Function type
+		// 10-12: Reserved
+		funcType := binary.BigEndian.Uint16(data[8:10])
+
+		// Parameters start at 12
+		// We only support type 0 (gamma) for this simple interface
+		if funcType == 0 {
+			g := s15Fixed16ToFloat(binary.BigEndian.Uint32(data[12:16]))
+			return g, nil
+		}
+		return 0, errors.New("unsupported parametric curve type")
+	}
+
 	return 0, errors.New("unsupported curve type")
 }
 
