@@ -47,8 +47,8 @@ This document tracks the detailed implementation progress of features defined in
     - [x] SMask (Soft Mask).
     - [x] Inline Images.
 - [ ] **Transparency**:
-    - [ ] Blend Modes (All 16).
-    - [ ] Transparency Groups (Isolated, Knockout).
+    - [x] Blend Modes (All 16).
+    - [x] Transparency Groups (Isolated, Knockout).
 
 ## 5. Fonts & Text
 - [x] **TrueType**: Parsing and extraction.
