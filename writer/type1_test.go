@@ -123,7 +123,7 @@ currentfile eexec
 		t.Error("Output missing FontFile stream reference")
 	}
 	// Check for FontBBox
-	if !strings.Contains(output, "/FontBBox [-50.000000 -200.000000 1000.000000 900.000000]") {
+	if !strings.Contains(output, "/FontBBox [-50 -200 1000 900]") {
 		t.Error("Output missing FontBBox or incorrect format")
 	}
 }

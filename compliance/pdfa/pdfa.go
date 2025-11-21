@@ -12,18 +12,77 @@ type Level int
 
 const (
 	PDFA1B Level = iota
+	PDFA2B
+	PDFA2U
 	PDFA3B
+	PDFA3U
+	PDFA4
+	PDFA4E
+	PDFA4F
 )
 
 func (l Level) String() string {
 	switch l {
 	case PDFA1B:
 		return "PDF/A-1b"
+	case PDFA2B:
+		return "PDF/A-2b"
+	case PDFA2U:
+		return "PDF/A-2u"
 	case PDFA3B:
 		return "PDF/A-3b"
+	case PDFA3U:
+		return "PDF/A-3u"
+	case PDFA4:
+		return "PDF/A-4"
+	case PDFA4E:
+		return "PDF/A-4e"
+	case PDFA4F:
+		return "PDF/A-4f"
 	default:
 		return "Unknown"
 	}
+}
+
+// IsLevelA1 returns true if the level is PDF/A-1.
+func (l Level) IsLevelA1() bool {
+	return l == PDFA1B
+}
+
+// IsLevelA2 returns true if the level is PDF/A-2.
+func (l Level) IsLevelA2() bool {
+	return l == PDFA2B || l == PDFA2U
+}
+
+// IsLevelA3 returns true if the level is PDF/A-3.
+func (l Level) IsLevelA3() bool {
+	return l == PDFA3B || l == PDFA3U
+}
+
+// IsLevelA4 returns true if the level is PDF/A-4.
+func (l Level) IsLevelA4() bool {
+	return l == PDFA4 || l == PDFA4E || l == PDFA4F
+}
+
+// AllowsTransparency returns true if the level allows transparency (A-2+).
+func (l Level) AllowsTransparency() bool {
+	return !l.IsLevelA1()
+}
+
+// AllowsLayers returns true if the level allows optional content (A-2+).
+func (l Level) AllowsLayers() bool {
+	return !l.IsLevelA1()
+}
+
+// AllowsAttachment returns true if the level allows file attachments.
+// A-1: No. A-2: Yes (PDF/A). A-3: Yes (Any). A-4: Yes (Any/PDF/A depending on f/e).
+func (l Level) AllowsAttachment() bool {
+	return !l.IsLevelA1()
+}
+
+// AllowsArbitraryAttachment returns true if the level allows non-PDF/A attachments.
+func (l Level) AllowsArbitraryAttachment() bool {
+	return l.IsLevelA3() || l == PDFA4 || l == PDFA4F
 }
 
 // PDFALevel is kept for compatibility; use Level instead.
@@ -70,7 +129,7 @@ func (e *enforcerImpl) Enforce(ctx compliance.Context, doc *semantic.Document, l
 		}
 		var validAnnots []semantic.Annotation
 		for _, annot := range p.Annotations {
-			if !isForbiddenAnnotation(annot) {
+			if !isForbiddenAnnotation(annot, level) {
 				validAnnots = append(validAnnots, annot)
 			}
 		}
@@ -118,48 +177,135 @@ func (e *enforcerImpl) Validate(ctx compliance.Context, doc *semantic.Document, 
 	}
 
 	// 3. Font embedding required
-	// We need to check all fonts used in the document.
-	// Since fonts are stored in Page Resources, we iterate pages.
-	// To avoid duplicate checks, we track visited fonts by pointer or name.
 	visitedFonts := make(map[*semantic.Font]bool)
+
+	// 4. Transparency and Layers (if forbidden)
+	checkTransparency := !level.AllowsTransparency()
+	checkLayers := !level.AllowsLayers()
 
 	for i, p := range doc.Pages {
 		if err := checkCancelled(ctx); err != nil {
 			return nil, err
 		}
-		if p.Resources == nil {
-			continue
-		}
-		for name, font := range p.Resources.Fonts {
-			if visitedFonts[font] {
-				continue
-			}
-			visitedFonts[font] = true
+		pageLoc := "Page " + string(rune(i+1))
 
-			if !isFontEmbedded(font) {
-				report.Violations = append(report.Violations, compliance.Violation{
-					Code:        "FNT001",
-					Description: "Font must be embedded: " + font.BaseFont,
-					Location:    "Page " + string(rune(i+1)) + " Resource " + name,
-				})
+		if p.Resources != nil {
+			// Check Fonts
+			for name, font := range p.Resources.Fonts {
+				if visitedFonts[font] {
+					continue
+				}
+				visitedFonts[font] = true
+
+				if !isFontEmbedded(font) {
+					report.Violations = append(report.Violations, compliance.Violation{
+						Code:        "FNT001",
+						Description: "Font must be embedded: " + font.BaseFont,
+						Location:    pageLoc + " Resource " + name,
+					})
+				}
+			}
+
+			// Check Transparency in ExtGState
+			if checkTransparency {
+				for name, gs := range p.Resources.ExtGStates {
+					if isTransparent(gs) {
+						report.Violations = append(report.Violations, compliance.Violation{
+							Code:        "TRN001",
+							Description: "Transparency is forbidden in " + level.String(),
+							Location:    pageLoc + " ExtGState " + name,
+						})
+					}
+				}
+			}
+
+			// Check Layers (Optional Content)
+			if checkLayers {
+				for name, prop := range p.Resources.Properties {
+					if _, ok := prop.(*semantic.OptionalContentGroup); ok {
+						report.Violations = append(report.Violations, compliance.Violation{
+							Code:        "LYR001",
+							Description: "Optional Content (Layers) is forbidden in " + level.String(),
+							Location:    pageLoc + " Property " + name,
+						})
+					}
+					if _, ok := prop.(*semantic.OptionalContentMembership); ok {
+						report.Violations = append(report.Violations, compliance.Violation{
+							Code:        "LYR001",
+							Description: "Optional Content (Layers) is forbidden in " + level.String(),
+							Location:    pageLoc + " Property " + name,
+						})
+					}
+				}
+			}
+
+			// Check XObjects for Transparency (SMask)
+			if checkTransparency {
+				for name, xobj := range p.Resources.XObjects {
+					if xobj.SMask != nil {
+						report.Violations = append(report.Violations, compliance.Violation{
+							Code:        "TRN002",
+							Description: "Image SMask (Transparency) is forbidden in " + level.String(),
+							Location:    pageLoc + " XObject " + name,
+						})
+					}
+					if xobj.Group != nil {
+						// Transparency Group XObject
+						report.Violations = append(report.Violations, compliance.Violation{
+							Code:        "TRN003",
+							Description: "Transparency Group XObject is forbidden in " + level.String(),
+							Location:    pageLoc + " XObject " + name,
+						})
+					}
+				}
 			}
 		}
 
-		// 4. Forbidden Actions (Launch, Sound, Movie, JavaScript)
-		// Check Annotations
+		// 5. Annotations
 		for _, annot := range p.Annotations {
-			if isForbiddenAnnotation(annot) {
+			if isForbiddenAnnotation(annot, level) {
 				report.Violations = append(report.Violations, compliance.Violation{
 					Code:        "ACT001",
-					Description: "Forbidden annotation type or action: " + annot.Base().Subtype,
-					Location:    "Page " + string(rune(i+1)),
+					Description: "Forbidden annotation type or action for " + level.String() + ": " + annot.Base().Subtype,
+					Location:    pageLoc,
 				})
 			}
 		}
 	}
 
+	// 6. Embedded Files
+	if len(doc.EmbeddedFiles) > 0 {
+		if !level.AllowsAttachment() {
+			report.Violations = append(report.Violations, compliance.Violation{
+				Code:        "ATT001",
+				Description: "Embedded files are forbidden in " + level.String(),
+				Location:    "Catalog",
+			})
+		} else if !level.AllowsArbitraryAttachment() {
+			// Must check if attachments are PDF/A compliant (not implemented fully here, assuming non-compliant for now if we can't verify)
+			// For now, we just warn or allow. Real validator would recursively check embedded PDFs.
+			// We'll skip deep validation for now.
+		}
+	}
+
 	report.Compliant = len(report.Violations) == 0
 	return report, nil
+}
+
+func isTransparent(gs semantic.ExtGState) bool {
+	if gs.SoftMask != nil {
+		return true
+	}
+	if gs.StrokeAlpha != nil && *gs.StrokeAlpha < 1.0 {
+		return true
+	}
+	if gs.FillAlpha != nil && *gs.FillAlpha < 1.0 {
+		return true
+	}
+	if gs.BlendMode != "" && gs.BlendMode != "Normal" && gs.BlendMode != "Compatible" {
+		return true
+	}
+	return false
 }
 
 func isFontEmbedded(f *semantic.Font) bool {
@@ -183,18 +329,33 @@ func isFontEmbedded(f *semantic.Font) bool {
 	return false
 }
 
-func isForbiddenAnnotation(a semantic.Annotation) bool {
-	switch a.Base().Subtype {
-	case "Movie", "Sound", "Screen", "3D":
-		return true
+func isForbiddenAnnotation(a semantic.Annotation, level Level) bool {
+	subtype := a.Base().Subtype
+	
+	// Common forbidden types for A-1
+	if level.IsLevelA1() {
+		switch subtype {
+		case "Movie", "Sound", "Screen", "3D", "FileAttachment":
+			return true
+		}
+	} else {
+		// A-2+ allows more
+		switch subtype {
+		case "Movie", "Sound": // Still forbidden in A-2 (Screen used instead)
+			return true
+		}
 	}
+
 	// Check for JavaScript in URI (simplified check)
-	// Real implementation would check the Action dictionary
 	if link, ok := a.(*semantic.LinkAnnotation); ok {
 		if len(link.URI) > 11 && link.URI[:11] == "javascript:" {
 			return true
 		}
 	}
+	
+	// Check Actions
+	// TODO: Deep check of Action dictionary for JS, Launch, etc.
+
 	return false
 }
 

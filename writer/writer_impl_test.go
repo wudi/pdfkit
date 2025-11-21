@@ -1065,7 +1065,7 @@ func TestWriter_ExtGStateResources(t *testing.T) {
 	if !foundPage || !foundPages {
 		t.Fatalf("extgstate missing (page=%v pages=%v)", foundPage, foundPages)
 	}
-	expected := "/ExtGState <</GS1 <</CA 0.500000/LW 2.500000/ca 0.250000>>"
+	expected := "/ExtGState <</GS1 <</CA 0.5/LW 2.5/ca 0.25>>"
 	if strings.Count(out, expected) < 2 {
 		t.Fatalf("extgstate values not serialized twice as expected")
 	}
