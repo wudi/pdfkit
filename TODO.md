@@ -55,8 +55,8 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **Type 1**: Parsing .pfb/.pfm.
 - [x] **Type 3**: Custom glyphs.
 - [x] **OpenType/CFF**: Parsing.
-- [ ] **Composite Fonts**: CID-Keyed (Type 0) full support.
-- [ ] **ToUnicode**: Full generation/parsing.
+- [x] **Composite Fonts**: CID-Keyed (Type 0) full support.
+- [x] **ToUnicode**: Full generation/parsing.
 
 ## 6. Interactivity
 - [ ] **Annotations**:
