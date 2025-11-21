@@ -35,18 +35,18 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **Crypt**: Filter specifically for decrypting streams.
 
 ## 4. Graphics & Imaging
-- [ ] **Color Spaces**:
+- [x] **Color Spaces**:
     - [x] Implement `cmm` package (ICC Profile parsing/transform).
     - [x] Support `DeviceN` and `Separation` (Spot Colors).
     - [x] Support `Pattern` color space.
-- [ ] **Patterns & Shading**:
+- [x] **Patterns & Shading**:
     - [x] Tiling Patterns (Type 1).
     - [x] Shading Patterns (Type 1-7).
-- [ ] **Images**:
+- [x] **Images**:
     - [x] Image Dictionary (Basic).
     - [x] SMask (Soft Mask).
     - [x] Inline Images.
-- [ ] **Transparency**:
+- [x] **Transparency**:
     - [x] Blend Modes (All 16).
     - [x] Transparency Groups (Isolated, Knockout).
 
@@ -59,11 +59,11 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **ToUnicode**: Full generation/parsing.
 
 ## 6. Interactivity
-- [ ] **Annotations**:
+- [x] **Annotations**:
     - [x] Basic (Text, Link, Widget).
     - [x] Markup (Highlight, Underline, etc.).
     - [x] Advanced (3D, Redact, Projection, Sound, Movie).
-- [ ] **Actions**:
+- [x] **Actions**:
     - [x] Basic (GoTo, URI).
     - [x] JavaScript (Need Engine).
     - [x] RichMedia/3D.
@@ -73,7 +73,7 @@ This document tracks the detailed implementation progress of features defined in
     - [x] Basic Fields (Text, Button, Choice).
     - [x] Appearance Generation (NeedAppearances=false).
     - [x] Calculation Order.
-- [ ] **XFA**:
+- [x] **XFA**:
     - [x] Full Schema Implementation.
     - [x] Data Binding.
     - [x] Layout Engine.
@@ -91,7 +91,7 @@ This document tracks the detailed implementation progress of features defined in
     - [x] RC4 (40/128).
     - [x] AES (128).
     - [x] AES-256 (PDF 2.0).
-- [ ] **Signatures**:
+- [x] **Signatures**:
     - [x] Basic PKCS#7.
     - [x] PAdES (ETSI).
     - [x] LTV (DSS, OCSP/CRL).
