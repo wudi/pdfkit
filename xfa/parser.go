@@ -28,7 +28,7 @@ func (p *ParserImpl) Parse(r io.Reader) (*Form, error) {
 // Form represents the root of the XFA DOM.
 // Note: This is a simplified representation. XFA is huge.
 type Form struct {
-	XMLName       xml.Name       `xml:"xdp:xdp"`
+	XMLName       xml.Name       `xml:"xdp"`
 	Config        *Config        `xml:"config"`
 	Template      *Template      `xml:"template"`
 	Datasets      *Datasets      `xml:"datasets"`
@@ -209,11 +209,37 @@ type Datasets struct {
 }
 
 type Data struct {
-	// XML data structure matching the form
-	// This is dynamic, so we might need to use xml.Node or similar if we want to traverse it generically.
-	// For now, we leave it as a placeholder or use a generic map/struct if possible.
-	// But standard encoding/xml doesn't support generic "any XML" well without custom UnmarshalXML.
-	Raw []byte `xml:",innerxml"`
+	Nodes []*Node `xml:",any"`
+}
+
+type Node struct {
+	XMLName  xml.Name
+	Attrs    []xml.Attr
+	Content  string
+	Children []*Node
+}
+
+func (n *Node) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	n.XMLName = start.Name
+	n.Attrs = start.Attr
+	for {
+		t, err := d.Token()
+		if err != nil {
+			return err
+		}
+		switch token := t.(type) {
+		case xml.StartElement:
+			child := &Node{}
+			if err := child.UnmarshalXML(d, token); err != nil {
+				return err
+			}
+			n.Children = append(n.Children, child)
+		case xml.CharData:
+			n.Content += string(token)
+		case xml.EndElement:
+			return nil
+		}
+	}
 }
 
 type LocaleSet struct {

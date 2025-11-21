@@ -75,8 +75,8 @@ This document tracks the detailed implementation progress of features defined in
     - [x] Calculation Order.
 - [ ] **XFA**:
     - [x] Full Schema Implementation.
-    - [ ] Data Binding.
-    - [ ] Layout Engine.
+    - [x] Data Binding.
+    - [x] Layout Engine.
 - [ ] **HTML Forms**: Recognition/Embedding.
 
 ## 8. Compliance
