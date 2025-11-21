@@ -41,7 +41,7 @@ func TestSerializeInlineImage(t *testing.T) {
 
 	expectedStart := "BI\n"
 	expectedEnd := "\nEI\n"
-	
+
 	if !bytes.HasPrefix(serialized, []byte(expectedStart)) {
 		t.Errorf("expected prefix %q, got %q", expectedStart, serialized)
 	}
@@ -59,7 +59,7 @@ func TestSerializeInlineImage(t *testing.T) {
 	dataStart := idIndex + 3
 	dataEnd := len(serialized) - len(expectedEnd)
 	actualData := serialized[dataStart:dataEnd]
-	
+
 	if !bytes.Equal(actualData, data) {
 		t.Errorf("expected data %v, got %v", data, actualData)
 	}

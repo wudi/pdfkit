@@ -52,8 +52,8 @@ This document tracks the detailed implementation progress of features defined in
 
 ## 5. Fonts & Text
 - [x] **TrueType**: Parsing and extraction.
-- [ ] **Type 1**: Parsing .pfb/.pfm.
-- [ ] **Type 3**: Custom glyphs.
+- [x] **Type 1**: Parsing .pfb/.pfm.
+- [x] **Type 3**: Custom glyphs.
 - [ ] **OpenType/CFF**: Parsing.
 - [ ] **Composite Fonts**: CID-Keyed (Type 0) full support.
 - [ ] **ToUnicode**: Full generation/parsing.
