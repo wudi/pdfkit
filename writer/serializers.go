@@ -407,8 +407,62 @@ func (s *defaultAnnotationSerializer) Serialize(a semantic.Annotation, ctx Seria
 		dict.Set(raw.NameLiteral("AS"), raw.NameLiteral(base.AppearanceState))
 	}
 
+	if len(base.AssociatedFiles) > 0 {
+		if af := SerializeAssociatedFiles(base.AssociatedFiles, ctx); af != nil {
+			dict.Set(raw.NameLiteral("AF"), af)
+		}
+	}
+
 	ctx.AddObject(ref, dict)
 	return ref, nil
+}
+
+// SerializeAssociatedFiles serializes a list of embedded files into an AF array.
+func SerializeAssociatedFiles(files []semantic.EmbeddedFile, ctx SerializationContext) raw.Object {
+	if len(files) == 0 {
+		return nil
+	}
+	arr := raw.NewArray()
+	for _, ef := range files {
+		if len(ef.Data) == 0 && ef.Name == "" {
+			continue
+		}
+		// Create EmbeddedFile Stream
+		streamRef := ctx.NextRef()
+		streamDict := raw.Dict()
+		streamDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("EmbeddedFile"))
+		if ef.Subtype != "" {
+			streamDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral(ef.Subtype))
+		}
+		streamDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(ef.Data))))
+		ctx.AddObject(streamRef, raw.NewStream(streamDict, ef.Data))
+
+		// Create Filespec
+		fsRef := ctx.NextRef()
+		fsDict := raw.Dict()
+		fsDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Filespec"))
+		fsDict.Set(raw.NameLiteral("F"), raw.Str([]byte(ef.Name)))
+		fsDict.Set(raw.NameLiteral("UF"), raw.Str([]byte(ef.Name)))
+		if ef.Description != "" {
+			fsDict.Set(raw.NameLiteral("Desc"), raw.Str([]byte(ef.Description)))
+		}
+		rel := ef.Relationship
+		if rel == "" {
+			rel = "Unspecified"
+		}
+		fsDict.Set(raw.NameLiteral("AFRelationship"), raw.NameLiteral(rel))
+
+		efDict := raw.Dict()
+		efDict.Set(raw.NameLiteral("F"), raw.Ref(streamRef.Num, streamRef.Gen))
+		fsDict.Set(raw.NameLiteral("EF"), efDict)
+
+		ctx.AddObject(fsRef, fsDict)
+		arr.Append(raw.Ref(fsRef.Num, fsRef.Gen))
+	}
+	if arr.Len() == 0 {
+		return nil
+	}
+	return arr
 }
 
 type defaultActionSerializer struct{}

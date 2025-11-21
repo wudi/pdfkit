@@ -165,8 +165,8 @@
     - [x] 包含 Level A, B, U (Unicode 映射)。
 - [x] **PDF/A-3**:
     - [x] 允许嵌入**任意**文件格式 (作为附件)，只要主文件符合 A-2。
-- [ ] **PDF/A-4 (Based on PDF 2.0)**:
-    - [ ] 移除 Level A/B/U 分级，改为基本级、F (File 附件) 和 E (Engineering)。
+- [x] **PDF/A-4 (Based on PDF 2.0)**:
+    - [x] 移除 Level A/B/U 分级，改为基本级、F (File 附件) 和 E (Engineering)。
 
 #### 2. ISO 15930 (PDF/X) - 图形交换/印刷
 - [x] 强制 OutputIntent (ICC Profile)。
@@ -215,7 +215,7 @@
     - [x] Standard Structure Types (P, H1, Table, Figure, etc.).
     - [x] **RoleMap**: 自定义标签映射。
     - [x] **PDF 2.0 Namespaces**: 支持多命名空间标签 (如 MathML)。
-- [ ] **Associated Files (AF)**: PDF 2.0/A-3 特性，文件级或对象级的文件关联。
+- [x] **Associated Files (AF)**: PDF 2.0/A-3 特性，文件级或对象级的文件关联。
 - [x] **GeoSpatial**: GeoPDF 特性，视口与地理坐标的映射 (Lat/Lon)。
 
 ---

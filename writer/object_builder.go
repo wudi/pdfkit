@@ -447,6 +447,12 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 			}
 			pageDict.Set(raw.NameLiteral("OutputIntents"), arr)
 		}
+		// Associated Files (Page Level)
+		if len(p.AssociatedFiles) > 0 {
+			if af := SerializeAssociatedFiles(p.AssociatedFiles, b); af != nil {
+				pageDict.Set(raw.NameLiteral("AF"), af)
+			}
+		}
 		// Resources
 		resDict := raw.Dict()
 		fontResDict := raw.Dict()
@@ -1162,6 +1168,11 @@ func (b *objectBuilder) ensureXObject(name string, xo semantic.XObject) raw.Obje
 		maskName := fmt.Sprintf("%s:SMask", name)
 		maskRef := b.ensureXObject(maskName, *xo.SMask)
 		dict.Set(raw.NameLiteral("SMask"), raw.Ref(maskRef.Num, maskRef.Gen))
+	}
+	if len(xo.AssociatedFiles) > 0 {
+		if af := SerializeAssociatedFiles(xo.AssociatedFiles, b); af != nil {
+			dict.Set(raw.NameLiteral("AF"), af)
+		}
 	}
 	dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(xo.Data))))
 	b.objects[ref] = raw.NewStream(dict, xo.Data)
