@@ -151,7 +151,10 @@ func (o *objectLoader) loadAtOffset(objNum int, offset int64, gen int) (raw.Obje
 		}
 		o.scanner = scanner.New(o.reader, cfg)
 	}
-	s := o.scanner
+	return o.scanObject(o.scanner, objNum, offset, gen)
+}
+
+func (o *objectLoader) scanObject(s scanner.Scanner, objNum int, offset int64, gen int) (raw.Object, error) {
 	if err := s.SeekTo(offset); err != nil {
 		return nil, err
 	}
@@ -632,5 +635,15 @@ func (o *objectLoader) loadReferencedObject(ref raw.ObjectRef) (raw.Object, erro
 	if !ok {
 		return nil, fmt.Errorf("object %d missing for length reference", ref.Num)
 	}
-	return o.loadAtOffset(ref.Num, offset, gen)
+	// Use a temporary scanner to avoid clobbering the shared scanner state
+	cfg := scanner.Config{
+		Recovery:        o.recovery,
+		MaxStringLength: o.limits.MaxStringLength,
+		MaxArrayDepth:   o.limits.MaxIndirectDepth,
+		MaxDictDepth:    o.limits.MaxIndirectDepth,
+		MaxBufferSize:   o.limits.MaxDecompressedSize,
+		MaxStreamLength: o.limits.MaxStreamLength,
+	}
+	tmpScanner := scanner.New(o.reader, cfg)
+	return o.scanObject(tmpScanner, ref.Num, offset, gen)
 }

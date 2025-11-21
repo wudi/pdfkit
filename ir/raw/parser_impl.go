@@ -88,6 +88,13 @@ func (p *parserImpl) Parse(ctx context.Context, r io.ReaderAt) (*Document, error
 
 		// Streams: if the next token is a stream payload, wrap the dictionary.
 		if dict, ok := obj.(*DictObj); ok {
+			// Hint the scanner with stream length if available directly.
+			if lenObj, ok := dict.Get(NameObj{Val: "Length"}); ok {
+				if num, ok := lenObj.(Number); ok && num.IsInteger() {
+					s.SetNextStreamLength(num.Int())
+				}
+			}
+
 			if streamTok, err := tr.next(); err == nil {
 				if streamTok.Type == scanner.TokenStream {
 					obj = NewStream(dict, streamTok.Bytes)

@@ -2,8 +2,8 @@ package writer
 
 import (
 	"bytes"
-	"compress/flate"
 	"compress/lzw"
+	"compress/zlib"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/ascii85"
@@ -106,7 +106,7 @@ func pickContentFilter(cfg Config) ContentFilter {
 
 func flateEncode(data []byte, level int) ([]byte, error) {
 	var buf bytes.Buffer
-	w, err := flate.NewWriter(&buf, level)
+	w, err := zlib.NewWriterLevel(&buf, level)
 	if err != nil {
 		return nil, err
 	}

@@ -3,8 +3,10 @@ package semantic
 import (
 	"fmt"
 
+	"pdflib/filters"
 	"pdflib/geo"
 	"pdflib/ir/raw"
+    "context"
 )
 
 type inheritedPageProps struct {
@@ -91,7 +93,7 @@ func parsePages(obj raw.Object, resolver rawResolver, inherited inheritedPagePro
 	for _, kid := range kidsArr.Items {
 		subPages, err := parsePages(kid, resolver, newInherited)
 		if err != nil {
-			fmt.Printf("Warning: failed to parse kid: %v\n", err)
+			// Warning: failed to parse kid
 			continue
 		}
 		pages = append(pages, subPages...)
@@ -141,7 +143,7 @@ func parsePage(dict *raw.DictObj, resolver rawResolver, inherited inheritedPageP
 		if err == nil {
 			page.Resources = res
 		} else {
-			fmt.Printf("Warning: failed to parse resources: %v\n", err)
+			// Warning: failed to parse resources
 		}
 	} else if inherited.Resources != nil {
 		res, err := parseResources(inherited.Resources, resolver)
@@ -150,11 +152,21 @@ func parsePage(dict *raw.DictObj, resolver rawResolver, inherited inheritedPageP
 		}
 	}
 
+	// Contents
+	if contentsObj, ok := dict.Get(raw.NameLiteral("Contents")); ok {
+		streams, err := parseContentStreams(contentsObj, resolver)
+		if err != nil {
+			// Warning: failed to parse content streams
+		} else {
+			page.Contents = streams
+		}
+	}
+
 	// Parse Viewports
 	if vpObj, ok := dict.Get(raw.NameLiteral("VP")); ok {
 		vps, err := parseViewports(vpObj, resolver)
 		if err != nil {
-			fmt.Printf("Warning: failed to parse viewports: %v\n", err)
+			// Warning: failed to parse viewports
 		} else {
 			page.Viewports = vps
 		}
@@ -164,7 +176,7 @@ func parsePage(dict *raw.DictObj, resolver rawResolver, inherited inheritedPageP
 	if oiObj, ok := dict.Get(raw.NameLiteral("OutputIntents")); ok {
 		ois, err := parseOutputIntents(oiObj, resolver)
 		if err != nil {
-			fmt.Printf("Warning: failed to parse page OutputIntents: %v\n", err)
+			// Warning: failed to parse page OutputIntents
 		} else {
 			page.OutputIntents = ois
 		}
@@ -390,4 +402,101 @@ func parseRectangleFromObj(obj raw.Object) *Rectangle {
 		return nil
 	}
 	return &Rectangle{LLX: nums[0], LLY: nums[1], URX: nums[2], URY: nums[3]}
+}
+
+func parseContentStreams(obj raw.Object, resolver rawResolver) ([]ContentStream, error) {
+	// Resolve if reference
+	if ref, ok := obj.(raw.Reference); ok {
+		resolved, err := resolver.Resolve(ref.Ref())
+		if err != nil {
+			return nil, err
+		}
+		obj = resolved
+	}
+
+	var streams []ContentStream
+
+	// Single Stream
+	if stream, ok := obj.(*raw.StreamObj); ok {
+		data, err := decodeStream(stream)
+		if err != nil {
+			// Warning: failed to decode stream
+			data = stream.Data
+		}
+		streams = append(streams, ContentStream{RawBytes: data})
+		return streams, nil
+	}
+
+	// Array of Streams
+	if arr, ok := obj.(*raw.ArrayObj); ok {
+		for _, item := range arr.Items {
+			// Resolve item
+			if ref, ok := item.(raw.Reference); ok {
+				resolved, err := resolver.Resolve(ref.Ref())
+				if err != nil {
+					return nil, err
+				}
+				item = resolved
+			}
+
+			if stream, ok := item.(*raw.StreamObj); ok {
+				data, err := decodeStream(stream)
+				if err != nil {
+					// Warning: failed to decode stream
+					data = stream.Data
+				}
+				streams = append(streams, ContentStream{RawBytes: data})
+			}
+		}
+		return streams, nil
+	}
+
+	return nil, fmt.Errorf("Contents is not a stream or array, got %T", obj)
+}
+
+func decodeStream(stream *raw.StreamObj) ([]byte, error) {
+	filterObj, ok := stream.Dict.Get(raw.NameLiteral("Filter"))
+	if !ok {
+		return stream.Data, nil
+	}
+
+	var filterNames []string
+	if name, ok := filterObj.(raw.NameObj); ok {
+		filterNames = []string{name.Value()}
+	} else if arr, ok := filterObj.(*raw.ArrayObj); ok {
+		for _, item := range arr.Items {
+			if name, ok := item.(raw.NameObj); ok {
+				filterNames = append(filterNames, name.Value())
+			}
+		}
+	}
+
+	if len(filterNames) == 0 {
+		return stream.Data, nil
+	}
+
+	var params []raw.Dictionary
+	if paramObj, ok := stream.Dict.Get(raw.NameLiteral("DecodeParms")); ok {
+		if dict, ok := paramObj.(*raw.DictObj); ok {
+			params = []raw.Dictionary{dict}
+		} else if arr, ok := paramObj.(*raw.ArrayObj); ok {
+			for _, item := range arr.Items {
+				if dict, ok := item.(*raw.DictObj); ok {
+					params = append(params, dict)
+				} else {
+					params = append(params, nil)
+				}
+			}
+		}
+	}
+
+	pipeline := filters.NewPipeline([]filters.Decoder{
+		filters.NewFlateDecoder(),
+		filters.NewASCII85Decoder(),
+		filters.NewASCIIHexDecoder(),
+		filters.NewLZWDecoder(),
+		filters.NewRunLengthDecoder(),
+	}, filters.Limits{MaxDecompressedSize: 100 * 1024 * 1024})
+
+	return pipeline.Decode(context.Background(), stream.Data, filterNames, params)
 }

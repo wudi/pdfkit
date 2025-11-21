@@ -115,3 +115,11 @@ This document tracks the detailed implementation progress of features defined in
 - [x] Page-level Output Intents.
 - [x] Black Point Compensation.
 - [x] CxF support.
+
+## 12. Planned Examples
+- [x] **Merge PDFs**: Combine multiple PDF files into a single document.
+- [x] **Split PDF**: Split a PDF into individual pages or ranges.
+- [ ] **Rotate Pages**: Rotate specific pages in a PDF.
+- [ ] **Encrypt PDF**: Add password protection to a PDF.
+- [ ] **Add Metadata**: Update document information (Title, Author, etc.).
+- [ ] **Add Image**: Insert an image into an existing PDF page.
