@@ -65,8 +65,8 @@ This document tracks the detailed implementation progress of features defined in
     - [x] Advanced (3D, Redact, Projection, Sound, Movie).
 - [ ] **Actions**:
     - [x] Basic (GoTo, URI).
-    - [ ] JavaScript (Need Engine).
-    - [ ] RichMedia/3D.
+    - [x] JavaScript (Need Engine).
+    - [x] RichMedia/3D.
 
 ## 7. Forms
 - [x] **AcroForms**:
