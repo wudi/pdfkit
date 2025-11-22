@@ -123,3 +123,5 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **Encrypt PDF**: Add password protection to a PDF.
 - [x] **Add Metadata**: Update document information (Title, Author, etc.).
 - [x] **Add Image**: Insert an image into an existing PDF page.
+- [x] **PDF/A Basic**: Create a PDF/A-1b compliant document.
+- [x] **PDF/A Advanced**: Create a PDF/A-3b compliant document with embedded XML (ZUGFeRD).
