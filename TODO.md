@@ -125,3 +125,4 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **Add Image**: Insert an image into an existing PDF page.
 - [x] **PDF/A Basic**: Create a PDF/A-1b compliant document.
 - [x] **PDF/A Advanced**: Create a PDF/A-3b compliant document with embedded XML (ZUGFeRD).
+- [x] **Dashboard**: Create a complex one-page executive dashboard with charts, tables, and forms.

@@ -41,7 +41,7 @@ func main() {
 			LineWidth:   1,
 		}).
 		DrawTable(builder.Table{
-			Columns: []float64{250, 80, 80, 85},
+			Columns:    []float64{250, 80, 80, 85},
 			HeaderRows: 1,
 			Rows: []builder.TableRow{
 				{Cells: []builder.TableCell{
