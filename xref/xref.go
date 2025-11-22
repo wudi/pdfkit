@@ -432,6 +432,7 @@ func parseXRefStream(ctx context.Context, r io.ReaderAt, offset int64, cfg Resol
 		objstm int
 		idx    int
 	}), trailer: dict}
+
 	cursor := 0
 	entrySize := w[0] + w[1] + w[2]
 	for i := 0; i < len(indexes); i += 2 {

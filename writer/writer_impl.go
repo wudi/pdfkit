@@ -70,6 +70,10 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		return w.writeLinearized(ctx, doc, out, cfg)
 	}
 
+	if cfg.ObjectStreams {
+		cfg.XRefStreams = true
+	}
+
 	version := pdfVersion(cfg)
 	incr := incrementalContext(doc, out, cfg)
 	idPair := fileID(doc, cfg)
@@ -91,9 +95,10 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	} else {
 		buf.WriteString("%PDF-" + version + "\n%\xE2\xE3\xCF\xD3\n")
 	}
-	offsets := make(map[int]int64)
+
+	xrefEntries := make(map[int]xrefEntry)
 	for k, v := range incr.prevOffsets {
-		offsets[k] = v
+		xrefEntries[k] = xrefEntry{typ: 1, field2: v, field3: 0}
 	}
 
 	ordered := make([]raw.ObjectRef, 0, len(objects))
@@ -101,35 +106,157 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		ordered = append(ordered, ref)
 	}
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Num < ordered[j].Num })
+
+	// Object Stream Buffer
+	type bufferedObj struct {
+		ref raw.ObjectRef
+		obj raw.Object
+	}
+	var objStmBuffer []bufferedObj
+
+	flushObjStm := func() error {
+		if len(objStmBuffer) == 0 {
+			return nil
+		}
+		stmRef := builder.nextRef()
+
+		// Serialize objects into stream data
+		var dataBuf bytes.Buffer
+		var headerBuf bytes.Buffer
+
+		for i, item := range objStmBuffer {
+			if i == 0 {
+				// First object offset is 0 relative to First
+			}
+
+			// Serialize object content (primitive only)
+			content := serializePrimitive(item.obj)
+
+			// Append to header: objNum offset
+			headerBuf.WriteString(fmt.Sprintf("%d %d ", item.ref.Num, dataBuf.Len()))
+
+			// Append to data
+			dataBuf.Write(content)
+			dataBuf.WriteByte(' ') // Separator
+
+			// Record XRef entry
+			xrefEntries[item.ref.Num] = xrefEntry{
+				typ:    2,
+				field2: int64(stmRef.Num),
+				field3: i,
+			}
+		}
+
+		// Create ObjStm object
+		stmDict := raw.Dict()
+		stmDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("ObjStm"))
+		stmDict.Set(raw.NameLiteral("N"), raw.NumberInt(int64(len(objStmBuffer))))
+		stmDict.Set(raw.NameLiteral("First"), raw.NumberInt(int64(headerBuf.Len())))
+
+		// Combine header and data
+		fullData := append(headerBuf.Bytes(), dataBuf.Bytes()...)
+
+		// Compress if needed
+		if cfg.Compression > 0 {
+			compressed, err := flateEncode(fullData, cfg.Compression)
+			if err == nil {
+				fullData = compressed
+				stmDict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("FlateDecode"))
+			}
+		}
+		stmDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(fullData))))
+
+		stmObj := raw.NewStream(stmDict, fullData)
+
+		// Write ObjStm
+		offset := initialOffset + int64(buf.Len())
+		serialized, _ := w.SerializeObject(stmRef, stmObj)
+		buf.Write(serialized)
+		xrefEntries[stmRef.Num] = xrefEntry{typ: 1, field2: offset, field3: 0}
+
+		objStmBuffer = objStmBuffer[:0]
+		return nil
+	}
+
 	for _, ref := range ordered {
 		if err := checkCancelled(); err != nil {
 			return err
 		}
-		offset := initialOffset + int64(buf.Len())
-		serialized, _ := w.SerializeObject(ref, objects[ref])
-		buf.Write(serialized)
-		offsets[ref.Num] = offset
+
+		obj := objects[ref]
+
+		// Check if suitable for ObjStm
+		isSuitable := false
+		if cfg.ObjectStreams {
+			switch obj.(type) {
+			case *raw.StreamObj:
+				isSuitable = false
+			case raw.RefObj:
+				isSuitable = true // Indirect references are fine
+			default:
+				// Exclude Encryption, Linearization, etc. if we can identify them.
+				// For now, exclude if it's the Encrypt dictionary
+				if encryptRef != nil && ref == *encryptRef {
+					isSuitable = false
+				} else if infoRef != nil && ref == *infoRef {
+					isSuitable = true // Info can be compressed
+				} else {
+					isSuitable = true
+				}
+			}
+			// Generation must be 0
+			if ref.Gen != 0 {
+				isSuitable = false
+			}
+		}
+
+		if isSuitable {
+			objStmBuffer = append(objStmBuffer, bufferedObj{ref, obj})
+			if len(objStmBuffer) >= 100 { // Batch size
+				if err := flushObjStm(); err != nil {
+					return err
+				}
+			}
+		} else {
+			offset := initialOffset + int64(buf.Len())
+			serialized, _ := w.SerializeObject(ref, obj)
+			buf.Write(serialized)
+			xrefEntries[ref.Num] = xrefEntry{typ: 1, field2: offset, field3: ref.Gen}
+		}
 	}
+	// Flush remaining
+	if err := flushObjStm(); err != nil {
+		return err
+	}
+
 	// XRef
 	if cfg.XRefStreams {
 		xrefRef := builder.nextRef()
 		maxObjNum := xrefRef.Num
-		if len(offsets) > 0 {
-			for n := range offsets {
-				if n > maxObjNum {
-					maxObjNum = n
-				}
+		for n := range xrefEntries {
+			if n > maxObjNum {
+				maxObjNum = n
 			}
 		}
 		xrefOffset := initialOffset + int64(buf.Len())
-		offsets[xrefRef.Num] = xrefOffset
+		xrefEntries[xrefRef.Num] = xrefEntry{typ: 1, field2: xrefOffset, field3: 0}
 		size := maxInt(maxObjNum, incr.prevMaxObj) + 1
 
 		trailer := buildTrailer(size, catalogRef, infoRef, encryptRef, doc, cfg, incr.prevOffset, idPair)
 		trailer.Set(raw.NameLiteral("Type"), raw.NameLiteral("XRef"))
 		trailer.Set(raw.NameLiteral("W"), raw.NewArray(raw.NumberInt(1), raw.NumberInt(4), raw.NumberInt(1)))
-		indexArr, entries := xrefStreamIndexAndEntries(offsets)
+		indexArr, entries := xrefStreamIndexAndEntries(xrefEntries)
 		trailer.Set(raw.NameLiteral("Index"), indexArr)
+		trailer.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(entries))))
+
+		// Compress XRef stream
+		if cfg.Compression > 0 {
+			compressed, err := flateEncode(entries, cfg.Compression)
+			if err == nil {
+				entries = compressed
+				trailer.Set(raw.NameLiteral("Filter"), raw.NameLiteral("FlateDecode"))
+			}
+		}
 		trailer.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(entries))))
 
 		xrefStream := raw.NewStream(trailer, entries)
@@ -146,9 +273,13 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 		buf.WriteString(fmt.Sprintf("%d\n", size))
 		buf.WriteString("0000000000 65535 f \n")
 		for i := 1; i <= maxObjNum; i++ {
-			if off, ok := offsets[i]; ok {
-				buf.WriteString(fmt.Sprintf("%010d 00000 n \n", off))
+			if e, ok := xrefEntries[i]; ok && e.typ == 1 {
+				buf.WriteString(fmt.Sprintf("%010d %05d n \n", e.field2, e.field3))
 			} else {
+				// For ObjStm objects (type 2), they are not in standard xref table.
+				// But wait, if we are NOT using XRefStreams, we CANNOT use ObjStm.
+				// The code at the top forces XRefStreams if ObjectStreams is true.
+				// So we should be safe here.
 				buf.WriteString("0000000000 65535 f \n")
 			}
 		}

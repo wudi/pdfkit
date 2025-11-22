@@ -211,7 +211,7 @@ func (o *objectLoader) loadFromObjectStream(ctx context.Context, ref raw.ObjectR
 		o.objstm = make(map[int]map[int]raw.Object)
 	}
 	if objs, ok := o.objstm[objStreamNum]; ok {
-		if obj, ok2 := objs[idx]; ok2 {
+		if obj, ok2 := objs[ref.Num]; ok2 {
 			return obj, nil
 		}
 	}

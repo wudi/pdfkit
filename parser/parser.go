@@ -109,7 +109,12 @@ func (p *DocumentParser) Parse(ctx context.Context, r io.ReaderAt) (*raw.Documen
 		}
 		_, gen, found := table.Lookup(objNum)
 		if !found {
-			continue
+			if _, _, ok := table.ObjStream(objNum); ok {
+				gen = 0
+				found = true
+			} else {
+				continue
+			}
 		}
 		ref := raw.ObjectRef{Num: objNum, Gen: gen}
 		obj, err := loader.Load(ctx, ref)

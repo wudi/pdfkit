@@ -842,13 +842,19 @@ func buildTrailer(size int, catalogRef raw.ObjectRef, infoRef *raw.ObjectRef, en
 	return trailer
 }
 
-func xrefStreamIndexAndEntries(offsets map[int]int64) (*raw.ArrayObj, []byte) {
-	offCopy := make(map[int]int64, len(offsets)+1)
-	for k, v := range offsets {
+type xrefEntry struct {
+	typ    int   // 0=free, 1=normal, 2=compressed
+	field2 int64 // offset or objStmNum
+	field3 int   // gen or index
+}
+
+func xrefStreamIndexAndEntries(entries map[int]xrefEntry) (*raw.ArrayObj, []byte) {
+	offCopy := make(map[int]xrefEntry, len(entries)+1)
+	for k, v := range entries {
 		offCopy[k] = v
 	}
 	if _, ok := offCopy[0]; !ok {
-		offCopy[0] = 0
+		offCopy[0] = xrefEntry{typ: 0, field2: 0, field3: 65535}
 	}
 	keys := make([]int, 0, len(offCopy))
 	for k := range offCopy {
@@ -856,7 +862,7 @@ func xrefStreamIndexAndEntries(offsets map[int]int64) (*raw.ArrayObj, []byte) {
 	}
 	sort.Ints(keys)
 	indexArr := raw.NewArray()
-	var entries []byte
+	var buf []byte
 	segStart := -1
 	prev := -1
 	for _, k := range keys {
@@ -870,22 +876,14 @@ func xrefStreamIndexAndEntries(offsets map[int]int64) (*raw.ArrayObj, []byte) {
 		}
 		prev = k
 
-		off := offCopy[k]
-		typ := 0
-		gen := 0
-		if k == 0 {
-			gen = 65535
-		}
-		if off > 0 {
-			typ = 1
-		}
-		entries = appendXRefStreamEntry(entries, typ, off, gen)
+		e := offCopy[k]
+		buf = appendXRefStreamEntry(buf, e.typ, e.field2, e.field3)
 	}
 	if segStart != -1 {
 		indexArr.Append(raw.NumberInt(int64(segStart)))
 		indexArr.Append(raw.NumberInt(int64(prev - segStart + 1)))
 	}
-	return indexArr, entries
+	return indexArr, buf
 }
 
 func appendXRefStreamEntry(buf []byte, typ int, field2 int64, gen int) []byte {
