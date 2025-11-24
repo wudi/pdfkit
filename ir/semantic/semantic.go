@@ -142,7 +142,10 @@ type Font struct {
 	Subtype        string // Type1 (default), TrueType, Type0, Type3
 	BaseFont       string
 	Encoding       string
-	Widths         map[int]int // character code -> width
+	EncodingDict   *EncodingDict // For custom encodings
+	EncodingCMap   []byte        // For custom CMap (Type 0)
+	ToUnicodeCMap  []byte        // ToUnicode CMap stream
+	Widths         map[int]int   // character code -> width
 	ToUnicode      map[int][]rune
 	CIDSystemInfo  *CIDSystemInfo
 	DescendantFont *CIDFont
@@ -156,6 +159,18 @@ type Font struct {
 	ref         raw.ObjectRef
 	OriginalRef raw.ObjectRef
 	Dirty       bool
+}
+
+// EncodingDict represents a custom encoding dictionary.
+type EncodingDict struct {
+	BaseEncoding string
+	Differences  []EncodingDifference
+}
+
+// EncodingDifference represents a difference in encoding.
+type EncodingDifference struct {
+	Code int
+	Name string
 }
 
 // ExtGState captures graphics state defaults such as transparency.
@@ -384,29 +399,32 @@ type CIDSystemInfo struct {
 
 // CIDFont describes a descendant font for Type0 fonts.
 type CIDFont struct {
-	Subtype       string // CIDFontType0 or CIDFontType2
-	BaseFont      string
-	CIDSystemInfo CIDSystemInfo
-	DW            int
-	W             map[int]int // CID -> width
-	Descriptor    *FontDescriptor
+	Subtype         string // CIDFontType0 or CIDFontType2
+	BaseFont        string
+	CIDSystemInfo   CIDSystemInfo
+	DW              int
+	W               map[int]int // CID -> width
+	CIDToGIDMap     []byte      // Stream data for CIDToGIDMap
+	CIDToGIDMapName string      // Name for CIDToGIDMap (e.g., "Identity")
+	Descriptor      *FontDescriptor
 }
 
 // FontDescriptor carries metrics and font file embedding details.
 type FontDescriptor struct {
-	FontName     string
-	Flags        int
-	ItalicAngle  float64
-	Ascent       float64
-	Descent      float64
-	CapHeight    float64
-	StemV        int
-	FontBBox     [4]float64
-	FontFile     []byte
-	FontFileType string // FontFile2 (TrueType) or FontFile3
-	Length1      int    // Length of the ASCII segment (Type 1)
-	Length2      int    // Length of the encrypted segment (Type 1)
-	Length3      int    // Length of the fixed-content segment (Type 1)
+	FontName        string
+	Flags           int
+	ItalicAngle     float64
+	Ascent          float64
+	Descent         float64
+	CapHeight       float64
+	StemV           int
+	FontBBox        [4]float64
+	FontFile        []byte
+	FontFileType    string // FontFile2 (TrueType) or FontFile3
+	FontFileSubtype string // Subtype of the font file stream (e.g. Type1C, CIDFontType0C)
+	Length1         int    // Length of the ASCII segment (Type 1)
+	Length2         int    // Length of the encrypted segment (Type 1)
+	Length3         int    // Length of the fixed-content segment (Type 1)
 }
 
 type Catalog struct{}

@@ -940,7 +940,14 @@ func (b *objectBuilder) addFontDescriptor(fd *semantic.FontDescriptor) *raw.Obje
 	d.Set(raw.NameLiteral("FontBBox"), bbox)
 	if len(fd.FontFile) > 0 {
 		streamDict := raw.Dict()
-		streamDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(fd.FontFile))))
+		streamData := fd.FontFile
+		if b.cfg.Compression > 0 {
+			if compressed, err := flateEncode(streamData, b.cfg.Compression); err == nil {
+				streamData = compressed
+				streamDict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("FlateDecode"))
+			}
+		}
+		streamDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(streamData))))
 		if fd.Length1 > 0 {
 			streamDict.Set(raw.NameLiteral("Length1"), raw.NumberInt(int64(fd.Length1)))
 		}
@@ -950,8 +957,11 @@ func (b *objectBuilder) addFontDescriptor(fd *semantic.FontDescriptor) *raw.Obje
 		if fd.Length3 > 0 {
 			streamDict.Set(raw.NameLiteral("Length3"), raw.NumberInt(int64(fd.Length3)))
 		}
+		if fd.FontFileSubtype != "" {
+			streamDict.Set(raw.NameLiteral("Subtype"), raw.NameLiteral(fd.FontFileSubtype))
+		}
 		streamRef := b.nextRef()
-		b.objects[streamRef] = raw.NewStream(streamDict, fd.FontFile)
+		b.objects[streamRef] = raw.NewStream(streamDict, streamData)
 		key := "FontFile2"
 		if fd.FontFileType != "" {
 			key = fd.FontFileType
@@ -963,7 +973,24 @@ func (b *objectBuilder) addFontDescriptor(fd *semantic.FontDescriptor) *raw.Obje
 }
 
 func (b *objectBuilder) addToUnicode(font *semantic.Font) *raw.ObjectRef {
-	if font == nil || len(font.ToUnicode) == 0 {
+	if font == nil {
+		return nil
+	}
+	if len(font.ToUnicodeCMap) > 0 {
+		ref := b.nextRef()
+		d := raw.Dict()
+		data := font.ToUnicodeCMap
+		if b.cfg.Compression > 0 {
+			if compressed, err := flateEncode(data, b.cfg.Compression); err == nil {
+				data = compressed
+				d.Set(raw.NameLiteral("Filter"), raw.NameLiteral("FlateDecode"))
+			}
+		}
+		d.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(data))))
+		b.objects[ref] = raw.NewStream(d, data)
+		return &ref
+	}
+	if len(font.ToUnicode) == 0 {
 		return nil
 	}
 	cmap := buildToUnicodeCMap(font)
@@ -1002,10 +1029,26 @@ func (b *objectBuilder) ensureFont(font *semantic.Font) raw.ObjectRef {
 
 	if subtype == "Type0" {
 		desc := font.DescendantFont
-		if encoding == "" {
-			encoding = "Identity-H"
+
+		if len(font.EncodingCMap) > 0 {
+			cmapRef := b.nextRef()
+			cmapDict := raw.Dict()
+			cmapData := font.EncodingCMap
+			if b.cfg.Compression > 0 {
+				if compressed, err := flateEncode(cmapData, b.cfg.Compression); err == nil {
+					cmapData = compressed
+					cmapDict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("FlateDecode"))
+				}
+			}
+			cmapDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(cmapData))))
+			b.objects[cmapRef] = raw.NewStream(cmapDict, cmapData)
+			fontDict.Set(raw.NameLiteral("Encoding"), raw.Ref(cmapRef.Num, cmapRef.Gen))
+		} else {
+			if encoding == "" {
+				encoding = "Identity-H"
+			}
+			fontDict.Set(raw.NameLiteral("Encoding"), raw.NameLiteral(encoding))
 		}
-		fontDict.Set(raw.NameLiteral("Encoding"), raw.NameLiteral(encoding))
 
 		descRef := b.nextRef()
 		descDict := raw.Dict()
@@ -1056,6 +1099,27 @@ func (b *objectBuilder) ensureFont(font *semantic.Font) raw.ObjectRef {
 		if len(widths) > 0 {
 			descDict.Set(raw.NameLiteral("W"), encodeCIDWidths(widths))
 		}
+
+		// CIDToGIDMap
+		if desc != nil {
+			if desc.CIDToGIDMapName != "" {
+				descDict.Set(raw.NameLiteral("CIDToGIDMap"), raw.NameLiteral(desc.CIDToGIDMapName))
+			} else if len(desc.CIDToGIDMap) > 0 {
+				mapRef := b.nextRef()
+				mapDict := raw.Dict()
+				mapData := desc.CIDToGIDMap
+				if b.cfg.Compression > 0 {
+					if compressed, err := flateEncode(mapData, b.cfg.Compression); err == nil {
+						mapData = compressed
+						mapDict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("FlateDecode"))
+					}
+				}
+				mapDict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(mapData))))
+				b.objects[mapRef] = raw.NewStream(mapDict, mapData)
+				descDict.Set(raw.NameLiteral("CIDToGIDMap"), raw.Ref(mapRef.Num, mapRef.Gen))
+			}
+		}
+
 		if fd := b.addFontDescriptor(fontDescriptor(desc, font)); fd != nil {
 			descDict.Set(raw.NameLiteral("FontDescriptor"), raw.Ref(fd.Num, fd.Gen))
 		}
@@ -1097,11 +1161,45 @@ func (b *objectBuilder) ensureFont(font *semantic.Font) raw.ObjectRef {
 			fontDict.Set(raw.NameLiteral("LastChar"), raw.NumberInt(int64(last)))
 			fontDict.Set(raw.NameLiteral("Widths"), widthsArr)
 		}
-		if encoding != "" {
+		if font.EncodingDict != nil {
+			encRef := b.nextRef()
+			encDict := raw.Dict()
+			encDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Encoding"))
+			if font.EncodingDict.BaseEncoding != "" {
+				encDict.Set(raw.NameLiteral("BaseEncoding"), raw.NameLiteral(font.EncodingDict.BaseEncoding))
+			}
+			if len(font.EncodingDict.Differences) > 0 {
+				diffArr := raw.NewArray()
+				for _, diff := range font.EncodingDict.Differences {
+					diffArr.Append(raw.NumberInt(int64(diff.Code)))
+					diffArr.Append(raw.NameLiteral(diff.Name))
+				}
+				encDict.Set(raw.NameLiteral("Differences"), diffArr)
+			}
+			b.objects[encRef] = encDict
+			fontDict.Set(raw.NameLiteral("Encoding"), raw.Ref(encRef.Num, encRef.Gen))
+		} else if encoding != "" {
 			fontDict.Set(raw.NameLiteral("Encoding"), raw.NameLiteral(encoding))
 		}
 	} else {
-		if encoding != "" {
+		if font != nil && font.EncodingDict != nil {
+			encRef := b.nextRef()
+			encDict := raw.Dict()
+			encDict.Set(raw.NameLiteral("Type"), raw.NameLiteral("Encoding"))
+			if font.EncodingDict.BaseEncoding != "" {
+				encDict.Set(raw.NameLiteral("BaseEncoding"), raw.NameLiteral(font.EncodingDict.BaseEncoding))
+			}
+			if len(font.EncodingDict.Differences) > 0 {
+				diffArr := raw.NewArray()
+				for _, diff := range font.EncodingDict.Differences {
+					diffArr.Append(raw.NumberInt(int64(diff.Code)))
+					diffArr.Append(raw.NameLiteral(diff.Name))
+				}
+				encDict.Set(raw.NameLiteral("Differences"), diffArr)
+			}
+			b.objects[encRef] = encDict
+			fontDict.Set(raw.NameLiteral("Encoding"), raw.Ref(encRef.Num, encRef.Gen))
+		} else if encoding != "" {
 			fontDict.Set(raw.NameLiteral("Encoding"), raw.NameLiteral(encoding))
 		}
 		if font != nil && len(font.Widths) > 0 {
@@ -1175,8 +1273,34 @@ func (b *objectBuilder) ensureXObject(name string, xo semantic.XObject) raw.Obje
 			dict.Set(raw.NameLiteral("AF"), af)
 		}
 	}
-	dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(xo.Data))))
-	b.objects[ref] = raw.NewStream(dict, xo.Data)
+
+	streamData := xo.Data
+	switch filter := pickContentFilter(b.cfg); filter {
+	case FilterFlate:
+		if b.cfg.Compression > 0 {
+			if compressed, err := flateEncode(streamData, b.cfg.Compression); err == nil {
+				streamData = compressed
+				dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("FlateDecode"))
+			}
+		}
+	case FilterASCIIHex:
+		streamData = asciiHexEncode(streamData)
+		dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("ASCIIHexDecode"))
+	case FilterASCII85:
+		streamData = ascii85Encode(streamData)
+		dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("ASCII85Decode"))
+	case FilterRunLength:
+		streamData = runLengthEncode(streamData)
+		dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("RunLengthDecode"))
+	case FilterLZW:
+		if data, err := lzwEncode(streamData); err == nil {
+			streamData = data
+			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("LZWDecode"))
+		}
+	}
+
+	dict.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(streamData))))
+	b.objects[ref] = raw.NewStream(dict, streamData)
 	b.xobjectRefs[key] = ref
 	return ref
 }

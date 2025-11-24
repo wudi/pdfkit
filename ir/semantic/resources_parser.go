@@ -156,7 +156,11 @@ func parseColorSpace(obj raw.Object, resolver rawResolver) (ColorSpace, error) {
 			}
 		}
 		if stream, ok := streamObj.(*raw.StreamObj); ok {
-			return &SpectrallyDefinedColorSpace{Data: stream.Data}, nil
+			data, err := decodeStream(stream)
+			if err != nil {
+				data = stream.Data
+			}
+			return &SpectrallyDefinedColorSpace{Data: data}, nil
 		}
 		return nil, fmt.Errorf("SpectrallyDefined second element is not stream")
 	}
@@ -261,6 +265,28 @@ func parseFont(obj raw.Object, resolver rawResolver) (*Font, error) {
 	if s, ok := dict.Get(raw.NameLiteral("Encoding")); ok {
 		if name, ok := s.(raw.NameObj); ok {
 			f.Encoding = name.Value()
+		} else {
+			// Handle Dictionary (or Reference to Dictionary)
+			// Resolve if reference
+			if ref, ok := s.(raw.Reference); ok {
+				resolved, err := resolver.Resolve(ref.Ref())
+				if err == nil {
+					s = resolved
+				}
+			}
+
+			if name, ok := s.(raw.NameObj); ok {
+				f.Encoding = name.Value()
+			} else if encDict, ok := resolveDict(s, resolver); ok {
+				f.EncodingDict = parseEncodingDict(encDict, resolver)
+			} else if stream, ok := s.(*raw.StreamObj); ok {
+				// It's a Stream (CMap)
+				data, err := decodeStream(stream)
+				if err != nil {
+					data = stream.Data
+				}
+				f.EncodingCMap = data
+			}
 		}
 	}
 
@@ -273,25 +299,21 @@ func parseFont(obj raw.Object, resolver rawResolver) (*Font, error) {
 				}
 			}
 		}
-		if _, ok := dict.Get(raw.NameLiteral("ToUnicode")); ok {
-			// Parse ToUnicode CMap (simplified: just store raw stream or parse if needed)
-			// For now, we might need to parse it to populate ToUnicode map if we want to support text extraction or re-encoding.
-			// But for pass-through, we might just want to keep the reference?
-			// The semantic model has ToUnicode map[int][]rune.
-			// Parsing CMap is complex. For now, let's skip deep parsing and rely on what we have or implement a basic parser later.
-			// Actually, builder uses ToUnicode map to regenerate the stream.
-			// If we don't parse it, we lose the mapping.
-			// Let's leave it empty for now and see if we can get away with it for merge (pass-through might not need it if we don't modify text).
-			// Wait, builder.go: ensureFont calls buildToUnicodeCMap(font). If map is empty, it returns nil.
-			// So we lose ToUnicode.
-			// However, for merge, we might not need to regenerate ToUnicode if we preserve the original object?
-			// The builder creates NEW objects.
-			// So we MUST parse ToUnicode if we want it in the output.
-			// This is a big task.
-			// Alternatively, we can store the raw ToUnicode stream in the Font struct and use it if available?
-			// The Font struct doesn't have a RawToUnicode field.
-			// Let's check if we can add it or if we should parse.
-			// For this fix, I'll skip ToUnicode parsing to avoid huge complexity, but note it.
+		if tuObj, ok := dict.Get(raw.NameLiteral("ToUnicode")); ok {
+			// Preserve ToUnicode CMap
+			if ref, ok := tuObj.(raw.Reference); ok {
+				resolved, err := resolver.Resolve(ref.Ref())
+				if err == nil {
+					tuObj = resolved
+				}
+			}
+			if stream, ok := tuObj.(*raw.StreamObj); ok {
+				data, err := decodeStream(stream)
+				if err != nil {
+					data = stream.Data
+				}
+				f.ToUnicodeCMap = data
+			}
 		}
 	} else {
 		// Simple Font Widths
@@ -352,6 +374,30 @@ func parseCIDFont(dict *raw.DictObj, resolver rawResolver) *CIDFont {
 			cf.CIDSystemInfo = parseCIDSystemInfo(csiDict)
 		}
 	}
+
+	// CIDToGIDMap
+	if mapObj, ok := dict.Get(raw.NameLiteral("CIDToGIDMap")); ok {
+		// It can be a Name (e.g. /Identity) or a Stream
+		if name, ok := mapObj.(raw.NameObj); ok {
+			cf.CIDToGIDMapName = name.Value()
+		} else {
+			// Resolve if reference
+			if ref, ok := mapObj.(raw.Reference); ok {
+				resolved, err := resolver.Resolve(ref.Ref())
+				if err == nil {
+					mapObj = resolved
+				}
+			}
+			if stream, ok := mapObj.(*raw.StreamObj); ok {
+				data, err := decodeStream(stream)
+				if err != nil {
+					data = stream.Data
+				}
+				cf.CIDToGIDMap = data
+			}
+		}
+	}
+
 	// FontDescriptor
 	if fdObj, ok := dict.Get(raw.NameLiteral("FontDescriptor")); ok {
 		if fdDict, ok := resolveDict(fdObj, resolver); ok {
@@ -425,6 +471,38 @@ func parseCIDSystemInfo(dict *raw.DictObj) CIDSystemInfo {
 	return csi
 }
 
+func parseEncodingDict(dict *raw.DictObj, resolver rawResolver) *EncodingDict {
+	ed := &EncodingDict{}
+	if base, ok := dict.Get(raw.NameLiteral("BaseEncoding")); ok {
+		if name, ok := base.(raw.NameObj); ok {
+			ed.BaseEncoding = name.Value()
+		}
+	}
+	if diff, ok := dict.Get(raw.NameLiteral("Differences")); ok {
+		if arr, ok := resolveArray(diff, resolver); ok {
+			ed.Differences = parseEncodingDifferences(arr)
+		}
+	}
+	return ed
+}
+
+func parseEncodingDifferences(arr *raw.ArrayObj) []EncodingDifference {
+	var diffs []EncodingDifference
+	currentCode := 0
+	for _, item := range arr.Items {
+		if n, ok := item.(raw.NumberObj); ok {
+			currentCode = int(n.Int())
+		} else if name, ok := item.(raw.NameObj); ok {
+			diffs = append(diffs, EncodingDifference{
+				Code: currentCode,
+				Name: name.Value(),
+			})
+			currentCode++
+		}
+	}
+	return diffs
+}
+
 func parseFontDescriptor(dict *raw.DictObj, resolver rawResolver) *FontDescriptor {
 	fd := &FontDescriptor{}
 	if n, ok := dict.Get(raw.NameLiteral("FontName")); ok {
@@ -482,8 +560,19 @@ func parseFontDescriptor(dict *raw.DictObj, resolver rawResolver) *FontDescripto
 				}
 			}
 			if stream, ok := ffObj.(*raw.StreamObj); ok {
-				fd.FontFile = stream.Data
+				data, err := decodeStream(stream)
+				if err != nil {
+					// Warning: failed to decode font stream
+					data = stream.Data
+				}
+				fd.FontFile = data
 				fd.FontFileType = key
+				// Subtype
+				if s, ok := stream.Dict.Get(raw.NameLiteral("Subtype")); ok {
+					if name, ok := s.(raw.NameObj); ok {
+						fd.FontFileSubtype = name.Value()
+					}
+				}
 				// Lengths
 				if l1, ok := stream.Dict.Get(raw.NameLiteral("Length1")); ok {
 					if n, ok := l1.(raw.NumberObj); ok {
