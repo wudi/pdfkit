@@ -1275,27 +1275,32 @@ func (b *objectBuilder) ensureXObject(name string, xo semantic.XObject) raw.Obje
 	}
 
 	streamData := xo.Data
-	switch filter := pickContentFilter(b.cfg); filter {
-	case FilterFlate:
-		if b.cfg.Compression > 0 {
-			if compressed, err := flateEncode(streamData, b.cfg.Compression); err == nil {
-				streamData = compressed
-				dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("FlateDecode"))
+	if xo.Filter != "" {
+		// Pre-encoded data (e.g. optimized JPEG)
+		dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral(xo.Filter))
+	} else {
+		switch filter := pickContentFilter(b.cfg); filter {
+		case FilterFlate:
+			if b.cfg.Compression > 0 {
+				if compressed, err := flateEncode(streamData, b.cfg.Compression); err == nil {
+					streamData = compressed
+					dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("FlateDecode"))
+				}
 			}
-		}
-	case FilterASCIIHex:
-		streamData = asciiHexEncode(streamData)
-		dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("ASCIIHexDecode"))
-	case FilterASCII85:
-		streamData = ascii85Encode(streamData)
-		dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("ASCII85Decode"))
-	case FilterRunLength:
-		streamData = runLengthEncode(streamData)
-		dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("RunLengthDecode"))
-	case FilterLZW:
-		if data, err := lzwEncode(streamData); err == nil {
-			streamData = data
-			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("LZWDecode"))
+		case FilterASCIIHex:
+			streamData = asciiHexEncode(streamData)
+			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("ASCIIHexDecode"))
+		case FilterASCII85:
+			streamData = ascii85Encode(streamData)
+			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("ASCII85Decode"))
+		case FilterRunLength:
+			streamData = runLengthEncode(streamData)
+			dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("RunLengthDecode"))
+		case FilterLZW:
+			if data, err := lzwEncode(streamData); err == nil {
+				streamData = data
+				dict.Set(raw.NameLiteral("Filter"), raw.NameLiteral("LZWDecode"))
+			}
 		}
 	}
 
