@@ -111,5 +111,3 @@ func (b *WriterBuilder) Build() Writer {
 type WriterAt interface {
 	Write(p []byte) (n int, err error)
 }
-
-type Context interface{ Done() <-chan struct{} }
