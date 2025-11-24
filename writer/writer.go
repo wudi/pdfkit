@@ -4,6 +4,7 @@ import (
 	"github.com/wudi/pdfkit/compliance/pdfa"
 	"github.com/wudi/pdfkit/ir/raw"
 	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/optimize"
 )
 
 type PDFVersion string
@@ -44,6 +45,7 @@ type Config struct {
 	ObjectStreams bool
 	SubsetFonts   bool
 	PDFALevel     pdfa.Level
+	Optimizer     *optimize.Optimizer
 }
 
 type Writer interface {

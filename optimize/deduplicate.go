@@ -76,6 +76,13 @@ func (o *Optimizer) combineDuplicateDirectObjects(ctx context.Context, doc *sema
 	if rawDoc == nil {
 		return nil
 	}
+	return o.combineDuplicateDirectObjectsRaw(ctx, rawDoc)
+}
+
+func (o *Optimizer) combineDuplicateDirectObjectsRaw(ctx context.Context, rawDoc *raw.Document) error {
+	if rawDoc == nil {
+		return nil
+	}
 
 	// 1. Count occurrences
 	counts := make(map[string]int)
