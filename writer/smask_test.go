@@ -33,7 +33,7 @@ func TestSerializeSMask(t *testing.T) {
 	}
 
 	// Build
-	b := newObjectBuilder(doc, Config{}, 1, nil, nil, nil, nil)
+	b := newObjectBuilder(doc, Config{}, 1, [2][]byte{}, nil, nil, nil, nil)
 	objects, _, _, _, err := b.Build()
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)

@@ -86,7 +86,7 @@ func (w *impl) Write(ctx context.Context, doc *semantic.Document, out WriterAt, 
 	incr := incrementalContext(doc, out, cfg)
 	idPair := fileID(doc, cfg)
 
-	builder := newObjectBuilder(doc, cfg, incr.startObjNum, w.annotSerializer, w.actionSerializer, w.csSerializer, w.funcSerializer)
+	builder := newObjectBuilder(doc, cfg, incr.startObjNum, idPair, w.annotSerializer, w.actionSerializer, w.csSerializer, w.funcSerializer)
 	objects, catalogRef, infoRef, encryptRef, err := builder.Build()
 	if err != nil {
 		return err

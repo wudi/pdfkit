@@ -15,6 +15,7 @@ type objectBuilder struct {
 	cfg     Config
 	objects map[raw.ObjectRef]raw.Object
 	objNum  int
+	fileID  [2][]byte
 
 	fontRefs    map[string]raw.ObjectRef
 	xobjectRefs map[string]raw.ObjectRef
@@ -29,12 +30,13 @@ type objectBuilder struct {
 	funcSerializer   FunctionSerializer
 }
 
-func newObjectBuilder(doc *semantic.Document, cfg Config, startObjNum int, as AnnotationSerializer, actS ActionSerializer, csS ColorSpaceSerializer, fs FunctionSerializer) *objectBuilder {
+func newObjectBuilder(doc *semantic.Document, cfg Config, startObjNum int, fileID [2][]byte, as AnnotationSerializer, actS ActionSerializer, csS ColorSpaceSerializer, fs FunctionSerializer) *objectBuilder {
 	b := &objectBuilder{
 		doc:         doc,
 		cfg:         cfg,
 		objects:     make(map[raw.ObjectRef]raw.Object),
 		objNum:      startObjNum,
+		fileID:      fileID,
 		fontRefs:    make(map[string]raw.ObjectRef),
 		xobjectRefs: make(map[string]raw.ObjectRef),
 		patternRefs: make(map[string]raw.ObjectRef),
@@ -137,12 +139,11 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 	if b.doc.Encrypted {
 		ref := b.nextRef()
 		encryptRef = &ref
-		idPair := fileID(b.doc, b.cfg) // Helper from writer_impl.go, need to move or export
-		enc, _, err := security.BuildStandardEncryption(b.doc.UserPassword, b.doc.OwnerPassword, b.doc.Permissions, idPair[0], b.doc.MetadataEncrypted)
+		enc, _, err := security.BuildStandardEncryption(b.doc.UserPassword, b.doc.OwnerPassword, b.doc.Permissions, b.fileID[0], b.doc.MetadataEncrypted)
 		if err != nil {
 			return nil, raw.ObjectRef{}, nil, nil, err
 		}
-		handler, err := (&security.HandlerBuilder{}).WithEncryptDict(enc).WithFileID(idPair[0]).Build()
+		handler, err := (&security.HandlerBuilder{}).WithEncryptDict(enc).WithFileID(b.fileID[0]).Build()
 		if err != nil {
 			return nil, raw.ObjectRef{}, nil, nil, err
 		}

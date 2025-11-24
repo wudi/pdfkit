@@ -59,7 +59,7 @@ func TestAdvancedGraphicsSerialization(t *testing.T) {
 	}
 
 	// Build
-	builder := newObjectBuilder(doc, Config{}, 1, nil, nil, nil, nil)
+	builder := newObjectBuilder(doc, Config{}, 1, [2][]byte{}, nil, nil, nil, nil)
 	objects, _, _, _, err := builder.Build()
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
