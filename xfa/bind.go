@@ -53,38 +53,30 @@ func (b *Binder) bindSubform(subform *Subform, dataNode *Node) {
 		return
 	}
 
-	// Bind Fields
-	for i := range subform.Fields {
-		field := &subform.Fields[i]
-		b.bindField(field, dataNode)
-	}
+	for _, item := range subform.Items {
+		switch v := item.(type) {
+		case *Field:
+			b.bindField(v, dataNode)
+		case *Subform:
+			// Determine binding for the child subform
+			var childDataNode *Node
 
-	// Recurse Subforms
-	for i := range subform.Subforms {
-		childSubform := &subform.Subforms[i]
+			bindingName := v.Name
+			if v.Bind != nil && v.Bind.Match == "dataRef" && v.Bind.Ref != "" {
+				bindingName = b.resolveRef(v.Bind.Ref)
+			}
 
-		// Determine binding for the child subform
-		var childDataNode *Node
+			if v.Bind != nil && v.Bind.Match == "none" {
+				childDataNode = nil // No binding
+			} else {
+				childDataNode = b.findDataNode(dataNode, bindingName)
+			}
 
-		bindingName := childSubform.Name
-		if childSubform.Bind != nil && childSubform.Bind.Match == "dataRef" && childSubform.Bind.Ref != "" {
-			bindingName = b.resolveRef(childSubform.Bind.Ref)
-		}
-
-		if childSubform.Bind != nil && childSubform.Bind.Match == "none" {
-			childDataNode = nil // No binding
-		} else {
-			childDataNode = b.findDataNode(dataNode, bindingName)
-		}
-
-		// If found, bind. If not, we still recurse but with nil (or maybe current node if transparent?)
-		// Standard XFA: if binding fails, the subform doesn't get data, but its children might if they have absolute refs (not supported here yet).
-		if childDataNode != nil {
-			b.bindSubform(childSubform, childDataNode)
-		} else {
-			// If implicit binding fails, we don't pass the parent node.
-			// Unless it's a "transparent" subform (no name), but here we assume named subforms.
-			b.bindSubform(childSubform, nil)
+			if childDataNode != nil {
+				b.bindSubform(v, childDataNode)
+			} else {
+				b.bindSubform(v, nil)
+			}
 		}
 	}
 }

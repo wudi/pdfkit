@@ -67,7 +67,7 @@ This document tracks the detailed implementation progress of features defined in
     - [x] Advanced (3D, Redact, Projection, Sound, Movie).
 - [x] **Actions**:
     - [x] Basic (GoTo, URI).
-    - [x] JavaScript (Need Engine).
+    - [x] JavaScript (Engine Implemented).
     - [x] RichMedia/3D.
 
 ## 7. Forms
@@ -84,7 +84,7 @@ This document tracks the detailed implementation progress of features defined in
 ## 8. Compliance
 - [x] **PDF/A**:
     - [x] PDF/A-1b Basic enforcement.
-    - [x] **Validation**: Deep check of Action dictionaries (JS, Launch).
+    - [x] **Validation**: Fix overly strict JS check for PDF/A-2+.
     - [x] **OutputIntent**: Embed valid ICC profile (sRGB embedded).
     - [x] **Attachments**: Verify compliance of embedded files (Basic check for PDF/A-2).
 - [x] **PDF/X**: OutputIntent, TrimBox/BleedBox enforcement.
@@ -94,6 +94,7 @@ This document tracks the detailed implementation progress of features defined in
 ## 9. Security
 - [x] **Encryption**:
     - [x] RC4 (40/128).
+    - [x] Owner Password Authentication (V < 5).
     - [x] AES (128).
     - [x] AES-256 (PDF 2.0).
 - [x] **Signatures**:

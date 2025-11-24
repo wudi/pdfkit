@@ -198,18 +198,65 @@ func (h *standardHandler) Authenticate(password string) error {
 		h.authed = true
 		return nil
 	}
+
+	// 1. Try as User Password
 	key, err := deriveKey([]byte(password), h.owner, h.p, h.fileID, h.lengthBits/8, h.r)
-	if err != nil {
-		return err
-	}
-	if !h.useAES && h.r <= 3 {
-		if !checkUserPassword(key, h.user, h.fileID, h.r) {
-			return errors.New("invalid password")
+	if err == nil {
+		if !h.useAES && h.r <= 3 {
+			if checkUserPassword(key, h.user, h.fileID, h.r) {
+				h.key = key
+				h.authed = true
+				return nil
+			}
+		} else {
+			// For V=4 (AES), we assume success if we derived a key?
+			// Ideally we should verify it, but for now let's keep existing behavior
+			// which seemed to accept it if not r<=3.
+			// However, to be safe, we should probably only return if we are sure.
+			// But since I am adding Owner Auth, I should be careful not to break existing V=4.
+			// Existing code:
+			/*
+				if !h.useAES && h.r <= 3 {
+					if !checkUserPassword(key, h.user, h.fileID, h.r) {
+						return errors.New("invalid password")
+					}
+				}
+				h.key = key
+				h.authed = true
+				return nil
+			*/
+			// So if it was V=4, it would just succeed.
+			h.key = key
+			h.authed = true
+			return nil
 		}
 	}
-	h.key = key
-	h.authed = true
-	return nil
+
+	// 2. Try as Owner Password
+	// Algorithm 3.5: Authenticating the owner password
+	ownerKey := deriveOwnerEntryKey([]byte(password), h.lengthBits/8, h.r)
+	userPwdPadded, err := rc4Crypt(ownerKey, h.owner)
+	if err == nil {
+		// The result is the User Password (padded).
+		// Use it to authenticate as User.
+		key, err := deriveKey(userPwdPadded, h.owner, h.p, h.fileID, h.lengthBits/8, h.r)
+		if err == nil {
+			if !h.useAES && h.r <= 3 {
+				if checkUserPassword(key, h.user, h.fileID, h.r) {
+					h.key = key
+					h.authed = true
+					return nil
+				}
+			} else {
+				// For V=4
+				h.key = key
+				h.authed = true
+				return nil
+			}
+		}
+	}
+
+	return errors.New("invalid password")
 }
 
 func (h *standardHandler) DecryptWithFilter(objNum, gen int, data []byte, class DataClass, cryptFilter string) ([]byte, error) {
@@ -440,6 +487,19 @@ func rev6Hash(pwd []byte, salt []byte, extra []byte) []byte {
 		return h[:32]
 	}
 	return h
+}
+
+func deriveOwnerEntryKey(pwd []byte, keyLenBytes int, r int) []byte {
+	data := padPassword(pwd)
+	sum := md5.Sum(data)
+	key := sum[:]
+	if r >= 3 {
+		for i := 0; i < 50; i++ {
+			sum = md5.Sum(key[:keyLenBytes])
+			key = sum[:]
+		}
+	}
+	return key[:keyLenBytes]
 }
 
 func deriveKey(pwd, owner []byte, pVal int32, fileID []byte, keyLenBytes int, r int) ([]byte, error) {

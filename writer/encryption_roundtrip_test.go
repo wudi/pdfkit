@@ -59,24 +59,19 @@ func TestEncryptionRoundTrip(t *testing.T) {
 		verifyContent(t, parsedDoc, "Secret Content")
 	})
 
-	// 4. Parse with Owner Password - Skipped
-	// The current implementation of standard security handler (V<5) does not support
-	// authentication with Owner Password directly (it requires decrypting O entry to get User Password).
-	// This test is skipped until that feature is implemented.
-	/*
-		t.Run("AuthenticateWithOwnerPassword", func(t *testing.T) {
-			cfg := parser.Config{
-				Password: ownerPwd,
-			}
-			p := parser.NewDocumentParser(cfg)
-			parsedDoc, err := p.Parse(context.Background(), bytes.NewReader(pdfData))
-			if err != nil {
-				t.Fatalf("Parse with owner password failed: %v", err)
-			}
+	// 4. Parse with Owner Password
+	t.Run("AuthenticateWithOwnerPassword", func(t *testing.T) {
+		cfg := parser.Config{
+			Password: ownerPwd,
+		}
+		p := parser.NewDocumentParser(cfg)
+		parsedDoc, err := p.Parse(context.Background(), bytes.NewReader(pdfData))
+		if err != nil {
+			t.Fatalf("Parse with owner password failed: %v", err)
+		}
 
-			verifyContent(t, parsedDoc, "Secret Content")
-		})
-	*/
+		verifyContent(t, parsedDoc, "Secret Content")
+	})
 
 	// 5. Parse with Wrong Password
 	t.Run("FailWithWrongPassword", func(t *testing.T) {

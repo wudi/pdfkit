@@ -386,8 +386,22 @@ func checkAction(a semantic.Action, level Level) bool {
 		return false
 	}
 	switch a.ActionType() {
-	case "Launch", "Sound", "Movie", "ResetForm", "ImportData", "JavaScript":
-		return true
+	case "Launch":
+		return true // Forbidden in all PDF/A versions
+	case "Sound", "Movie":
+		return true // Forbidden (use Screen annotation instead)
+	case "ImportData":
+		return true // Forbidden in all PDF/A versions
+	case "ResetForm", "SubmitForm":
+		if level.IsLevelA1() {
+			return true // Forbidden in PDF/A-1
+		}
+		return false // Allowed in PDF/A-2+
+	case "JavaScript":
+		if level.IsLevelA1() {
+			return true // Forbidden in PDF/A-1
+		}
+		return false // Allowed in PDF/A-2+
 	}
 	return false
 }

@@ -75,18 +75,94 @@ type Template struct {
 }
 
 type Subform struct {
-	Name     string    `xml:"name,attr"`
-	Layout   string    `xml:"layout,attr"` // e.g., "tb" (top-to-bottom)
-	W        string    `xml:"w,attr"`
-	H        string    `xml:"h,attr"`
-	X        string    `xml:"x,attr"`
-	Y        string    `xml:"y,attr"`
-	Fields   []Field   `xml:"field"`
-	Subforms []Subform `xml:"subform"`
-	Draws    []Draw    `xml:"draw"`
-	Content  []Area    `xml:"area"`
-	Bind     *Bind     `xml:"bind"`
-	Occur    *Occur    `xml:"occur"`
+	Name   string        `xml:"name,attr"`
+	Layout string        `xml:"layout,attr"` // e.g., "tb" (top-to-bottom)
+	W      string        `xml:"w,attr"`
+	H      string        `xml:"h,attr"`
+	X      string        `xml:"x,attr"`
+	Y      string        `xml:"y,attr"`
+	Items  []interface{} // Contains Field, Draw, Subform, Area
+	Bind   *Bind         `xml:"bind"`
+	Occur  *Occur        `xml:"occur"`
+}
+
+func (s *Subform) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	for _, attr := range start.Attr {
+		switch attr.Name.Local {
+		case "name":
+			s.Name = attr.Value
+		case "layout":
+			s.Layout = attr.Value
+		case "w":
+			s.W = attr.Value
+		case "h":
+			s.H = attr.Value
+		case "x":
+			s.X = attr.Value
+		case "y":
+			s.Y = attr.Value
+		}
+	}
+
+	for {
+		t, err := d.Token()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+		switch token := t.(type) {
+		case xml.StartElement:
+			switch token.Name.Local {
+			case "field":
+				var f Field
+				if err := d.DecodeElement(&f, &token); err != nil {
+					return err
+				}
+				s.Items = append(s.Items, &f)
+			case "draw":
+				var dr Draw
+				if err := d.DecodeElement(&dr, &token); err != nil {
+					return err
+				}
+				s.Items = append(s.Items, &dr)
+			case "subform":
+				var sub Subform
+				if err := d.DecodeElement(&sub, &token); err != nil {
+					return err
+				}
+				s.Items = append(s.Items, &sub)
+			case "area":
+				var a Area
+				if err := d.DecodeElement(&a, &token); err != nil {
+					return err
+				}
+				s.Items = append(s.Items, &a)
+			case "bind":
+				var b Bind
+				if err := d.DecodeElement(&b, &token); err != nil {
+					return err
+				}
+				s.Bind = &b
+			case "occur":
+				var o Occur
+				if err := d.DecodeElement(&o, &token); err != nil {
+					return err
+				}
+				s.Occur = &o
+			default:
+				// Skip unknown elements
+				if err := d.Skip(); err != nil {
+					return err
+				}
+			}
+		case xml.EndElement:
+			if token.Name == start.Name {
+				return nil
+			}
+		}
+	}
 }
 
 type Field struct {

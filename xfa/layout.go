@@ -102,37 +102,31 @@ func (e *LayoutEngineImpl) renderSubform(ctx *LayoutContext, subform *Subform) {
 		ctx.Y -= y
 	}
 
-	// Render Draws
-	for _, draw := range subform.Draws {
-		drawH := e.measureDraw(&draw, w)
-		if subform.Layout == "tb" {
-			e.checkPageBreak(ctx, drawH)
+	// Iterate over Items
+	for _, item := range subform.Items {
+		switch v := item.(type) {
+		case *Draw:
+			drawH := e.measureDraw(v, w)
+			if subform.Layout == "tb" {
+				e.checkPageBreak(ctx, drawH)
+			}
+			e.renderDraw(ctx, v)
+			if subform.Layout == "tb" {
+				ctx.Y -= drawH
+			}
+		case *Field:
+			fieldH := e.measureField(v, w)
+			if subform.Layout == "tb" {
+				e.checkPageBreak(ctx, fieldH)
+			}
+			e.renderField(ctx, v)
+			if subform.Layout == "tb" {
+				ctx.Y -= fieldH
+			}
+		case *Subform:
+			// Recursive call
+			e.renderSubform(ctx, v)
 		}
-		e.renderDraw(ctx, &draw)
-		if subform.Layout == "tb" {
-			ctx.Y -= drawH
-		}
-	}
-
-	// Render Fields
-	for _, field := range subform.Fields {
-		fieldH := e.measureField(&field, w)
-		if subform.Layout == "tb" {
-			e.checkPageBreak(ctx, fieldH)
-		}
-		e.renderField(ctx, &field)
-		if subform.Layout == "tb" {
-			ctx.Y -= fieldH
-		}
-	}
-
-	// Render Child Subforms
-	for _, child := range subform.Subforms {
-		// Recursive call
-		// If child is flow, it will consume space.
-		// We need to know how much space it consumed?
-		// The child modifies ctx.Y directly if it flows.
-		e.renderSubform(ctx, &child)
 	}
 
 	// Restore context if not flow
