@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/wudi/pdfkit/fonts"
 	"github.com/wudi/pdfkit/ir/raw"
@@ -46,7 +45,7 @@ func (w *impl) SerializeObject(ref raw.ObjectRef, obj raw.Object) ([]byte, error
 	return buf.Bytes(), nil
 }
 
-func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Config) (err error) {
+func (w *impl) Write(ctx context.Context, doc *semantic.Document, out WriterAt, cfg Config) (err error) {
 	checkCancelled := func() error {
 		select {
 		case <-ctx.Done():
@@ -61,7 +60,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 
 	// Run optimization
 	if cfg.Optimizer != nil {
-		if err := cfg.Optimizer.Optimize(&ctxWrapper{ctx}, doc); err != nil {
+		if err := cfg.Optimizer.Optimize(ctx, doc); err != nil {
 			return err
 		}
 	}
@@ -96,7 +95,7 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	// Run raw optimization
 	rawDoc := &raw.Document{Objects: objects}
 	if cfg.Optimizer != nil {
-		if err := cfg.Optimizer.OptimizeRaw(&ctxWrapper{ctx}, rawDoc); err != nil {
+		if err := cfg.Optimizer.OptimizeRaw(ctx, rawDoc); err != nil {
 			return err
 		}
 	}
@@ -310,19 +309,3 @@ func (w *impl) Write(ctx Context, doc *semantic.Document, out WriterAt, cfg Conf
 	_, err = out.Write(buf.Bytes())
 	return err
 }
-
-type ctxWrapper struct {
-	ctx Context
-}
-
-func (c *ctxWrapper) Deadline() (deadline time.Time, ok bool) { return }
-func (c *ctxWrapper) Done() <-chan struct{}                   { return c.ctx.Done() }
-func (c *ctxWrapper) Err() error {
-	select {
-	case <-c.ctx.Done():
-		return context.Canceled
-	default:
-		return nil
-	}
-}
-func (c *ctxWrapper) Value(key any) any { return nil }

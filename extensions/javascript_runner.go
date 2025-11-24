@@ -1,6 +1,8 @@
 package extensions
 
 import (
+	"context"
+
 	"github.com/wudi/pdfkit/ir/semantic"
 	"github.com/wudi/pdfkit/scripting"
 )
@@ -27,11 +29,11 @@ func (r *JavaScriptRunner) Priority() int {
 	return 100 // Run after basic structure is ready
 }
 
-func (r *JavaScriptRunner) Execute(ctx Context, doc *semantic.Document) error {
+func (r *JavaScriptRunner) Execute(ctx context.Context, doc *semantic.Document) error {
 	return r.Transform(ctx, doc)
 }
 
-func (r *JavaScriptRunner) Transform(ctx Context, doc *semantic.Document) error {
+func (r *JavaScriptRunner) Transform(ctx context.Context, doc *semantic.Document) error {
 	if r.engine == nil {
 		return nil
 	}
@@ -59,7 +61,7 @@ func (r *JavaScriptRunner) Transform(ctx Context, doc *semantic.Document) error 
 	return nil
 }
 
-func (r *JavaScriptRunner) executeFormScripts(ctx Context, form *semantic.AcroForm) error {
+func (r *JavaScriptRunner) executeFormScripts(ctx context.Context, form *semantic.AcroForm) error {
 	// Iterate over fields and execute calculation scripts
 	for _, field := range form.Fields {
 		// Check for AA (Additional Actions) -> C (Calculate) or V (Validate)

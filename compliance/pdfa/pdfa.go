@@ -1,6 +1,8 @@
 package pdfa
 
 import (
+	"context"
+
 	"github.com/wudi/pdfkit/cmm"
 	"github.com/wudi/pdfkit/compliance"
 	"github.com/wudi/pdfkit/ir/raw"
@@ -89,15 +91,15 @@ func (l Level) AllowsArbitraryAttachment() bool {
 type PDFALevel = Level
 
 type Enforcer interface {
-	Enforce(ctx compliance.Context, doc *semantic.Document, level Level) error
-	Validate(ctx compliance.Context, doc *semantic.Document, level Level) (*compliance.Report, error)
+	Enforce(ctx context.Context, doc *semantic.Document, level Level) error
+	Validate(ctx context.Context, doc *semantic.Document, level Level) (*compliance.Report, error)
 }
 
 type enforcerImpl struct{}
 
 func NewEnforcer() Enforcer { return &enforcerImpl{} }
 
-func (e *enforcerImpl) Enforce(ctx compliance.Context, doc *semantic.Document, level Level) error {
+func (e *enforcerImpl) Enforce(ctx context.Context, doc *semantic.Document, level Level) error {
 	// 1. Remove encryption
 	if doc.Encrypted {
 		doc.Encrypted = false
@@ -138,7 +140,7 @@ func (e *enforcerImpl) Enforce(ctx compliance.Context, doc *semantic.Document, l
 	return nil
 }
 
-func (e *enforcerImpl) Validate(ctx compliance.Context, doc *semantic.Document, level Level) (*compliance.Report, error) {
+func (e *enforcerImpl) Validate(ctx context.Context, doc *semantic.Document, level Level) (*compliance.Report, error) {
 	report := &compliance.Report{
 		Standard:   level.String(),
 		Violations: []compliance.Violation{},
@@ -390,7 +392,7 @@ func checkAction(a semantic.Action, level Level) bool {
 	return false
 }
 
-func checkCancelled(ctx compliance.Context) error {
+func checkCancelled(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return &ValidationCancelledError{}

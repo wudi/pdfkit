@@ -1,6 +1,7 @@
 package contentstream
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -11,7 +12,7 @@ import (
 )
 
 type Processor interface {
-	Process(ctx Context, stream []byte, state *GraphicsState) error
+	Process(ctx context.Context, stream []byte, state *GraphicsState) error
 	RegisterHandler(op string, h OperatorHandler)
 }
 
@@ -53,7 +54,7 @@ type simpleProcessor struct{ handlers map[string]OperatorHandler }
 
 func NewProcessor() Processor                                           { return &simpleProcessor{handlers: make(map[string]OperatorHandler)} }
 func (p *simpleProcessor) RegisterHandler(op string, h OperatorHandler) { p.handlers[op] = h }
-func (p *simpleProcessor) Process(ctx Context, stream []byte, state *GraphicsState) error {
+func (p *simpleProcessor) Process(ctx context.Context, stream []byte, state *GraphicsState) error {
 	tokens := tokenize(string(stream))
 	ec := &ExecutionContext{GraphicsState: state, TextState: &TextState{}}
 	opStack := []semantic.Operand{}

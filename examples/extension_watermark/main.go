@@ -33,7 +33,7 @@ func (e *WatermarkExtension) Priority() int {
 	return 100 // Run after other transforms
 }
 
-func (e *WatermarkExtension) Execute(ctx extensions.Context, doc *semantic.Document) error {
+func (e *WatermarkExtension) Execute(ctx context.Context, doc *semantic.Document) error {
 	if doc == nil {
 		return nil
 	}

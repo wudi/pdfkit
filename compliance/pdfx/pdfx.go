@@ -1,6 +1,8 @@
 package pdfx
 
 import (
+	"context"
+
 	"github.com/wudi/pdfkit/compliance"
 	"github.com/wudi/pdfkit/ir/raw"
 	"github.com/wudi/pdfkit/ir/semantic"
@@ -29,14 +31,14 @@ func (l Level) String() string {
 
 type Enforcer interface {
 	compliance.Validator
-	Enforce(ctx compliance.Context, doc *semantic.Document, level Level) error
+	Enforce(ctx context.Context, doc *semantic.Document, level Level) error
 }
 
 type enforcerImpl struct{}
 
 func NewEnforcer() Enforcer { return &enforcerImpl{} }
 
-func (e *enforcerImpl) Enforce(ctx compliance.Context, doc *semantic.Document, level Level) error {
+func (e *enforcerImpl) Enforce(ctx context.Context, doc *semantic.Document, level Level) error {
 	// 1. Remove Encryption
 	if doc.Encrypted {
 		doc.Encrypted = false
@@ -85,11 +87,11 @@ func (e *enforcerImpl) Enforce(ctx compliance.Context, doc *semantic.Document, l
 	return nil
 }
 
-func (e *enforcerImpl) Validate(ctx compliance.Context, doc *semantic.Document) (*compliance.Report, error) {
+func (e *enforcerImpl) Validate(ctx context.Context, doc *semantic.Document) (*compliance.Report, error) {
 	return e.ValidateLevel(ctx, doc, PDFX1a)
 }
 
-func (e *enforcerImpl) ValidateLevel(ctx compliance.Context, doc *semantic.Document, level Level) (*compliance.Report, error) {
+func (e *enforcerImpl) ValidateLevel(ctx context.Context, doc *semantic.Document, level Level) (*compliance.Report, error) {
 	report := &compliance.Report{
 		Standard:   level.String(),
 		Violations: []compliance.Violation{},

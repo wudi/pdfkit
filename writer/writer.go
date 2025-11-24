@@ -1,6 +1,8 @@
 package writer
 
 import (
+	"context"
+
 	"github.com/wudi/pdfkit/compliance/pdfa"
 	"github.com/wudi/pdfkit/ir/raw"
 	"github.com/wudi/pdfkit/ir/semantic"
@@ -49,7 +51,7 @@ type Config struct {
 }
 
 type Writer interface {
-	Write(ctx Context, doc *semantic.Document, w WriterAt, cfg Config) error
+	Write(ctx context.Context, doc *semantic.Document, w WriterAt, cfg Config) error
 	SerializeObject(ref raw.ObjectRef, obj raw.Object) ([]byte, error)
 }
 
@@ -59,8 +61,8 @@ func NewWriter() Writer {
 }
 
 type Interceptor interface {
-	BeforeWrite(ctx Context, obj raw.Object) error
-	AfterWrite(ctx Context, obj raw.Object, bytesWritten int64) error
+	BeforeWrite(ctx context.Context, obj raw.Object) error
+	AfterWrite(ctx context.Context, obj raw.Object, bytesWritten int64) error
 }
 
 type WriterBuilder struct {

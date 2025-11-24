@@ -30,10 +30,6 @@ import (
 	"golang.org/x/image/font/gofont/goregular"
 )
 
-type staticCtx struct{}
-
-func (staticCtx) Done() <-chan struct{} { return nil }
-
 func TestWriterRoundTripPipeline(t *testing.T) {
 	// Build a simple document with one page and text.
 	b := builder.NewBuilder()
@@ -45,7 +41,7 @@ func TestWriterRoundTripPipeline(t *testing.T) {
 
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 
@@ -84,7 +80,7 @@ func TestWriter_InfoMetadataIDDeterministic(t *testing.T) {
 	w := NewWriter()
 
 	var first bytes.Buffer
-	if err := w.Write(staticCtx{}, doc, &first, cfg); err != nil {
+	if err := w.Write(context.TODO(), doc, &first, cfg); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	data := first.Bytes()
@@ -120,7 +116,7 @@ func TestWriter_InfoMetadataIDDeterministic(t *testing.T) {
 	}
 
 	var second bytes.Buffer
-	if err := w.Write(staticCtx{}, doc, &second, cfg); err != nil {
+	if err := w.Write(context.TODO(), doc, &second, cfg); err != nil {
 		t.Fatalf("write pdf second: %v", err)
 	}
 	if !bytes.Equal(first.Bytes(), second.Bytes()) {
@@ -158,7 +154,7 @@ func TestWriter_PageGeometryAndResources(t *testing.T) {
 	doc := &semantic.Document{Pages: []*semantic.Page{page1, page2}}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	data := buf.Bytes()
@@ -195,7 +191,7 @@ func TestWriter_XRefStream(t *testing.T) {
 	var buf bytes.Buffer
 	w := NewWriter()
 	cfg := Config{XRefStreams: true, Deterministic: true}
-	if err := w.Write(staticCtx{}, doc, &buf, cfg); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, cfg); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	data := buf.Bytes()
@@ -237,7 +233,7 @@ func TestWriter_XRefTableOffsets(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true, XRefStreams: false}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true, XRefStreams: false}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	data := buf.Bytes()
@@ -286,7 +282,7 @@ func TestWriter_IncrementalAppend(t *testing.T) {
 	orig := builder.NewBuilder()
 	orig.NewPage(50, 50).DrawText("v1", 1, 1, builder.TextOptions{}).Finish()
 	doc1, _ := orig.Build()
-	if err := w.Write(staticCtx{}, doc1, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc1, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write first: %v", err)
 	}
 	baseData := buf.Bytes()
@@ -300,7 +296,7 @@ func TestWriter_IncrementalAppend(t *testing.T) {
 	rev.NewPage(60, 60).DrawText("v2", 2, 2, builder.TextOptions{}).Finish()
 	doc2, _ := rev.Build()
 	cfg := Config{Incremental: true, Deterministic: true, XRefStreams: true}
-	if err := w.Write(staticCtx{}, doc2, &buf, cfg); err != nil {
+	if err := w.Write(context.TODO(), doc2, &buf, cfg); err != nil {
 		t.Fatalf("write incremental: %v", err)
 	}
 	data := buf.Bytes()
@@ -337,7 +333,7 @@ func TestWriter_IncrementalPreservesOffsets(t *testing.T) {
 	base := builder.NewBuilder()
 	base.NewPage(40, 40).DrawText("base", 1, 1, builder.TextOptions{}).Finish()
 	doc1, _ := base.Build()
-	if err := w.Write(staticCtx{}, doc1, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc1, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write base: %v", err)
 	}
 	baseData := buf.Bytes()
@@ -356,7 +352,7 @@ func TestWriter_IncrementalPreservesOffsets(t *testing.T) {
 	rev.NewPage(50, 50).DrawText("rev", 2, 2, builder.TextOptions{}).Finish()
 	doc2, _ := rev.Build()
 	cfg := Config{Incremental: true, Deterministic: true}
-	if err := w.Write(staticCtx{}, doc2, &buf, cfg); err != nil {
+	if err := w.Write(context.TODO(), doc2, &buf, cfg); err != nil {
 		t.Fatalf("write incremental: %v", err)
 	}
 	data := buf.Bytes()
@@ -383,7 +379,7 @@ func TestWriter_StringEscaping(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	out := buf.String()
@@ -411,7 +407,7 @@ func TestWriter_ContentStreamCompression(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true, Compression: flate.BestSpeed}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true, Compression: flate.BestSpeed}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -468,7 +464,7 @@ func TestWriter_ContentStream_ASCIIHexAndASCII85(t *testing.T) {
 		}
 		var buf bytes.Buffer
 		w := NewWriter()
-		if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true, ContentFilter: filter}); err != nil {
+		if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true, ContentFilter: filter}); err != nil {
 			t.Fatalf("write pdf (%s): %v", expectedFilter, err)
 		}
 		rawParser := parser.NewDocumentParser(parser.Config{Security: security.NoopHandler()})
@@ -547,14 +543,14 @@ func TestWriter_ContentStreamJPXJBIG2(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{ContentFilter: FilterJPX, Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{ContentFilter: FilterJPX, Deterministic: true}); err != nil {
 		t.Fatalf("write jpx: %v", err)
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("/Filter /JPXDecode")) {
 		t.Fatalf("JPX filter not set")
 	}
 	buf.Reset()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{ContentFilter: FilterJBIG2, Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{ContentFilter: FilterJBIG2, Deterministic: true}); err != nil {
 		t.Fatalf("write jbig2: %v", err)
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("/Filter /JBIG2Decode")) {
@@ -578,7 +574,7 @@ func TestWriter_FontWidths(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{Security: security.NoopHandler()})
@@ -657,7 +653,7 @@ func TestWriter_FontTrueTypeAndCID(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	data := buf.Bytes()
@@ -738,7 +734,7 @@ func TestWriter_EmbedTrueTypeFont(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	data := buf.Bytes()
@@ -783,7 +779,7 @@ func TestWriter_EncryptDictionary(t *testing.T) {
 	w := NewWriter()
 	for _, cfg := range []Config{{Deterministic: true}, {Deterministic: true, XRefStreams: true}} {
 		var buf bytes.Buffer
-		if err := w.Write(staticCtx{}, doc, &buf, cfg); err != nil {
+		if err := w.Write(context.TODO(), doc, &buf, cfg); err != nil {
 			t.Fatalf("write encrypted (streams=%v): %v", cfg.XRefStreams, err)
 		}
 		data := buf.Bytes()
@@ -813,7 +809,7 @@ func TestWriter_EmbeddedFilesAndAF(t *testing.T) {
 	}
 	w := NewWriter()
 	var buf bytes.Buffer
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	os.WriteFile("/tmp/writer_test_output.pdf", buf.Bytes(), 0644)
@@ -886,7 +882,7 @@ func TestWriter_ProcSetIncluded(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{Security: security.NoopHandler()})
@@ -947,7 +943,7 @@ func TestWriter_ProcSetWithImages(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{Security: security.NoopHandler()})
@@ -1018,7 +1014,7 @@ func TestWriter_ExtGStateResources(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	out := buf.String()
@@ -1091,7 +1087,7 @@ func TestWriter_ColorSpaceResources(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -1160,7 +1156,7 @@ func TestWriter_XObjectResources(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -1210,7 +1206,7 @@ func TestWriter_FormXObjectResources(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -1278,7 +1274,7 @@ func TestWriter_PatternResources(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -1333,7 +1329,7 @@ func TestWriter_ShadingResources(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -1380,7 +1376,7 @@ func TestWriter_OutputIntents(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -1467,7 +1463,7 @@ func TestWriter_SerializeOperations(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -1511,7 +1507,7 @@ func TestWriter_TrimBox(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -1569,7 +1565,7 @@ func TestWriter_InfoFields(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -1595,7 +1591,7 @@ func TestWriter_IDChangesWithInfo(t *testing.T) {
 		}
 		var buf bytes.Buffer
 		w := NewWriter()
-		if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+		if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 			t.Fatalf("write: %v", err)
 		}
 		return buf.Bytes()
@@ -1635,7 +1631,7 @@ func TestWriter_ViewerPreferences(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -1706,7 +1702,7 @@ func TestWriter_OutlinesDest(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -1785,7 +1781,7 @@ func TestWriter_OutlinesXYZDest(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -1865,7 +1861,7 @@ func TestWriter_TableTaggingAndParentTree(t *testing.T) {
 		t.Fatalf("expected pagination from table, got %d pages", len(doc.Pages))
 	}
 	var buf bytes.Buffer
-	if err := NewWriter().Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := NewWriter().Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write doc: %v", err)
 	}
 	rawDoc, err := parser.NewDocumentParser(parser.Config{}).Parse(context.Background(), bytes.NewReader(buf.Bytes()))
@@ -1932,7 +1928,7 @@ func TestWriter_ComplianceFlags(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -1990,7 +1986,7 @@ func TestWriter_ArticleThreads(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("/Threads")) {
@@ -2067,7 +2063,7 @@ func TestWriter_LinkAnnotation(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -2127,7 +2123,7 @@ func TestWriter_TextAnnotationContents(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -2185,7 +2181,7 @@ func TestWriter_AnnotationAppearance(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -2232,7 +2228,7 @@ func TestWriter_AcroFormNeedAppearances(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -2276,7 +2272,7 @@ func TestWriter_AcroFormFields(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -2355,7 +2351,7 @@ func TestWriter_AcroFormWidgetAppearance(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{})
@@ -2458,7 +2454,7 @@ func TestWriter_EncryptsContentStream(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	rawParser := parser.NewDocumentParser(parser.Config{Security: security.NoopHandler()})
@@ -2543,7 +2539,7 @@ func TestWriter_XRefStreamStartOffset(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true, XRefStreams: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true, XRefStreams: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	data := buf.Bytes()
@@ -2844,7 +2840,7 @@ func TestWriter_AdvancedColorAndShading(t *testing.T) {
 
 	var buf bytes.Buffer
 	w := NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 

@@ -80,6 +80,6 @@ type testRecovery struct {
 	action recovery.Action
 }
 
-func (r *testRecovery) OnError(ctx recovery.Context, err error, loc recovery.Location) recovery.Action {
+func (r *testRecovery) OnError(ctx context.Context, err error, loc recovery.Location) recovery.Action {
 	return r.action
 }

@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/wudi/pdfkit/ir/raw"
@@ -28,14 +29,14 @@ func (ps *PageScope) LocalResources() *semantic.Resources { return ps.Page.Resou
 func (ps *PageScope) ParentScope() Scope                  { return ps.Parent }
 
 type Resolver interface {
-	ResolveWithInheritance(ctx Context, category ResourceCategory, name string, page *semantic.Page) (raw.Object, error)
+	ResolveWithInheritance(ctx context.Context, category ResourceCategory, name string, page *semantic.Page) (raw.Object, error)
 }
 
 type resolverImpl struct{}
 
 func NewResolver() Resolver { return &resolverImpl{} }
 
-func (r *resolverImpl) ResolveWithInheritance(ctx Context, category ResourceCategory, name string, page *semantic.Page) (raw.Object, error) {
+func (r *resolverImpl) ResolveWithInheritance(ctx context.Context, category ResourceCategory, name string, page *semantic.Page) (raw.Object, error) {
 	var scope Scope = &PageScope{Page: page}
 	for scope != nil {
 		res := scope.LocalResources()

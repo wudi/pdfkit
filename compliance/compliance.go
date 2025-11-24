@@ -6,9 +6,6 @@ import (
 	"github.com/wudi/pdfkit/ir/semantic"
 )
 
-// Context is an alias for context.Context to allow for future expansion.
-type Context = context.Context
-
 // Violation represents a compliance violation.
 type Violation struct {
 	Code        string
@@ -25,5 +22,5 @@ type Report struct {
 
 // Validator checks document compliance against a standard.
 type Validator interface {
-	Validate(ctx Context, doc *semantic.Document) (*Report, error)
+	Validate(ctx context.Context, doc *semantic.Document) (*Report, error)
 }

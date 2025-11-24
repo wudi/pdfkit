@@ -105,7 +105,7 @@ type StreamConfig struct {
 }
 
 type Parser interface {
-	Stream(ctx Context, r ReaderAt, cfg StreamConfig) (DocumentStream, error)
+	Stream(ctx context.Context, r ReaderAt, cfg StreamConfig) (DocumentStream, error)
 }
 
 type Context interface{ Done() <-chan struct{} }
@@ -127,7 +127,7 @@ type parserImpl struct {
 
 // Stream parses the document once and emits DocumentStart and DocumentEnd
 // events on the returned stream. Call Close to cancel early.
-func (p *parserImpl) Stream(ctx Context, r ReaderAt, cfg StreamConfig) (DocumentStream, error) {
+func (p *parserImpl) Stream(ctx context.Context, r ReaderAt, cfg StreamConfig) (DocumentStream, error) {
 	events := make(chan Event, cfg.BufferSize)
 	errs := make(chan error, 1)
 	cctx, cancel := context.WithCancel(context.Background())
@@ -187,7 +187,7 @@ func (ds *documentStream) Close() error {
 	return nil
 }
 
-func emitPages(ctx Context, doc *raw.Document, events chan<- Event) {
+func emitPages(ctx context.Context, doc *raw.Document, events chan<- Event) {
 	rootObj, ok := doc.Trailer.Get(raw.NameLiteral("Root"))
 	if !ok {
 		return
@@ -804,7 +804,7 @@ func resourcesFromDict(doc *raw.Document, obj raw.Object) *semantic.Resources {
 	return res
 }
 
-func emitResourceRefs(ctx Context, pageIndex int, res *semantic.Resources, events chan<- Event) {
+func emitResourceRefs(ctx context.Context, pageIndex int, res *semantic.Resources, events chan<- Event) {
 	if res == nil {
 		return
 	}
@@ -846,7 +846,7 @@ func emitResourceRefs(ctx Context, pageIndex int, res *semantic.Resources, event
 	}
 }
 
-func emitResourceUsage(ctx Context, pageIndex int, usage usage, events chan<- Event) {
+func emitResourceUsage(ctx context.Context, pageIndex int, usage usage, events chan<- Event) {
 	emitList := func(kind string, names []string) bool {
 		seen := make(map[string]struct{})
 		for _, n := range names {
@@ -875,7 +875,7 @@ func emitResourceUsage(ctx Context, pageIndex int, usage usage, events chan<- Ev
 	emitList("Shading", usage.shadings)
 }
 
-func emitAnnotations(ctx Context, doc *raw.Document, annots raw.Object, pageIndex int, events chan<- Event) {
+func emitAnnotations(ctx context.Context, doc *raw.Document, annots raw.Object, pageIndex int, events chan<- Event) {
 	var list []raw.Object
 	switch v := annots.(type) {
 	case *raw.ArrayObj:
@@ -902,7 +902,7 @@ func emitAnnotations(ctx Context, doc *raw.Document, annots raw.Object, pageInde
 	}
 }
 
-func emitMetadata(ctx Context, doc *raw.Document, events chan<- Event) {
+func emitMetadata(ctx context.Context, doc *raw.Document, events chan<- Event) {
 	if doc == nil {
 		return
 	}
@@ -913,7 +913,7 @@ func emitMetadata(ctx Context, doc *raw.Document, events chan<- Event) {
 	sendEvent(ctx, events, MetadataEvent{Info: md})
 }
 
-func sendEvent(ctx Context, events chan<- Event, ev Event) bool {
+func sendEvent(ctx context.Context, events chan<- Event, ev Event) bool {
 	if ctx.Done() == nil {
 		events <- ev
 		return false

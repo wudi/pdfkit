@@ -56,7 +56,7 @@ func TestWriter_Optimization(t *testing.T) {
 		Optimizer:     opt,
 	}
 
-	if err := w.Write(staticCtx{}, doc, &buf, cfg); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, cfg); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 

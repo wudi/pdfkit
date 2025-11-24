@@ -8,8 +8,6 @@ import (
 	"github.com/wudi/pdfkit/ir/semantic"
 )
 
-type Context = context.Context
-
 type Phase int
 
 const (
@@ -25,31 +23,31 @@ type Extension interface {
 	Name() string
 	Phase() Phase
 	Priority() int
-	Execute(ctx Context, doc *semantic.Document) error
+	Execute(ctx context.Context, doc *semantic.Document) error
 }
 
 // Inspector is an extension that inspects the document and produces a report.
 type Inspector interface {
 	Extension
-	Inspect(ctx Context, doc *semantic.Document) (*InspectionReport, error)
+	Inspect(ctx context.Context, doc *semantic.Document) (*InspectionReport, error)
 }
 
 // Sanitizer is an extension that cleans up the document.
 type Sanitizer interface {
 	Extension
-	Sanitize(ctx Context, doc *semantic.Document) (*SanitizationReport, error)
+	Sanitize(ctx context.Context, doc *semantic.Document) (*SanitizationReport, error)
 }
 
 // Transformer is an extension that modifies the document structure.
 type Transformer interface {
 	Extension
-	Transform(ctx Context, doc *semantic.Document) error
+	Transform(ctx context.Context, doc *semantic.Document) error
 }
 
 // Validator is an extension that validates the document against a standard.
 type Validator interface {
 	Extension
-	Validate(ctx Context, doc *semantic.Document) (*ValidationReport, error)
+	Validate(ctx context.Context, doc *semantic.Document) (*ValidationReport, error)
 }
 
 type InspectionReport struct {
@@ -97,7 +95,7 @@ type ValidationWarning struct {
 
 type Hub interface {
 	Register(ext Extension) error
-	Execute(ctx Context, doc *semantic.Document) error
+	Execute(ctx context.Context, doc *semantic.Document) error
 	Extensions(phase Phase) []Extension
 }
 
@@ -114,7 +112,7 @@ func (h *HubImpl) Register(ext Extension) error {
 	return nil
 }
 
-func (h *HubImpl) Execute(ctx Context, doc *semantic.Document) error {
+func (h *HubImpl) Execute(ctx context.Context, doc *semantic.Document) error {
 	phases := []Phase{PhaseInspect, PhaseSanitize, PhaseTransform, PhaseValidate}
 	for _, ph := range phases {
 		for _, e := range h.exts[ph] {

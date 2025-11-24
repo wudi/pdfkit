@@ -1,6 +1,9 @@
 package recovery
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // StrictStrategy implements a fail-fast recovery strategy.
 type StrictStrategy struct{}
@@ -9,7 +12,7 @@ func NewStrictStrategy() *StrictStrategy {
 	return &StrictStrategy{}
 }
 
-func (s *StrictStrategy) OnError(ctx Context, err error, location Location) Action {
+func (s *StrictStrategy) OnError(ctx context.Context, err error, location Location) Action {
 	return ActionFail
 }
 
@@ -25,7 +28,7 @@ func NewLenientStrategy() *LenientStrategy {
 	return &LenientStrategy{}
 }
 
-func (s *LenientStrategy) OnError(ctx Context, err error, location Location) Action {
+func (s *LenientStrategy) OnError(ctx context.Context, err error, location Location) Action {
 	s.Errors = append(s.Errors, fmt.Errorf("[%s] offset %d: %w", location.Component, location.ByteOffset, err))
 	// Default to warning/skipping for now.
 	// In a more advanced implementation, we could inspect the error type to decide between Fix, Skip, or Warn.

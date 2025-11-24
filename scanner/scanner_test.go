@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -266,7 +267,7 @@ func TestScanner_DepthLimits(t *testing.T) {
 
 type fixRecovery struct{}
 
-func (f *fixRecovery) OnError(ctx recovery.Context, err error, loc recovery.Location) recovery.Action {
+func (f *fixRecovery) OnError(ctx context.Context, err error, loc recovery.Location) recovery.Action {
 	return recovery.ActionFix
 }
 
@@ -352,7 +353,7 @@ type recordRecovery struct {
 	err error
 }
 
-func (r *recordRecovery) OnError(ctx recovery.Context, err error, loc recovery.Location) recovery.Action {
+func (r *recordRecovery) OnError(ctx context.Context, err error, loc recovery.Location) recovery.Action {
 	r.loc = loc
 	r.err = err
 	return recovery.ActionWarn

@@ -2,6 +2,7 @@ package streaming
 
 import (
 	"bytes"
+	"context"
 	"testing"
 	"time"
 
@@ -19,7 +20,7 @@ func TestStreamingDocumentStartEnd(t *testing.T) {
 
 	// Stream the document.
 	p := NewParser()
-	ds, err := p.Stream(staticCtx{}, bytes.NewReader(pdfBytes), StreamConfig{BufferSize: 2})
+	ds, err := p.Stream(context.TODO(), bytes.NewReader(pdfBytes), StreamConfig{BufferSize: 2})
 	if err != nil {
 		t.Fatalf("stream: %v", err)
 	}
@@ -78,7 +79,7 @@ func TestStreamingDocumentStartEnd(t *testing.T) {
 func TestStreamingBackpressure(t *testing.T) {
 	pdfBytes := buildSamplePDF(t)
 	p := NewParser()
-	ds, err := p.Stream(staticCtx{}, bytes.NewReader(pdfBytes), StreamConfig{BufferSize: 1})
+	ds, err := p.Stream(context.TODO(), bytes.NewReader(pdfBytes), StreamConfig{BufferSize: 1})
 	if err != nil {
 		t.Fatalf("stream: %v", err)
 	}
@@ -122,7 +123,7 @@ func buildSamplePDF(t *testing.T) []byte {
 	}
 	var buf bytes.Buffer
 	w := writer.NewWriter()
-	if err := w.Write(staticCtx{}, doc, &buf, writer.Config{Deterministic: true}); err != nil {
+	if err := w.Write(context.TODO(), doc, &buf, writer.Config{Deterministic: true}); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}
 	return buf.Bytes()

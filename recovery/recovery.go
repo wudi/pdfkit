@@ -1,7 +1,9 @@
 package recovery
 
+import "context"
+
 type Strategy interface {
-	OnError(ctx Context, err error, location Location) Action
+	OnError(ctx context.Context, err error, location Location) Action
 }
 
 type Location struct {
@@ -19,5 +21,3 @@ const (
 	ActionFix
 	ActionWarn
 )
-
-type Context interface{ Done() <-chan struct{} }

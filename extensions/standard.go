@@ -1,6 +1,7 @@
 package extensions
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -14,12 +15,12 @@ type BasicInspector struct{}
 func (i *BasicInspector) Name() string  { return "BasicInspector" }
 func (i *BasicInspector) Phase() Phase  { return PhaseInspect }
 func (i *BasicInspector) Priority() int { return 100 }
-func (i *BasicInspector) Execute(ctx Context, doc *semantic.Document) error {
+func (i *BasicInspector) Execute(ctx context.Context, doc *semantic.Document) error {
 	_, err := i.Inspect(ctx, doc)
 	return err
 }
 
-func (i *BasicInspector) Inspect(ctx Context, doc *semantic.Document) (*InspectionReport, error) {
+func (i *BasicInspector) Inspect(ctx context.Context, doc *semantic.Document) (*InspectionReport, error) {
 	report := &InspectionReport{
 		PageCount: len(doc.Pages),
 		Metadata:  make(map[string]interface{}),
@@ -64,12 +65,12 @@ type JSSanitizer struct{}
 func (s *JSSanitizer) Name() string  { return "JSSanitizer" }
 func (s *JSSanitizer) Phase() Phase  { return PhaseSanitize }
 func (s *JSSanitizer) Priority() int { return 100 }
-func (s *JSSanitizer) Execute(ctx Context, doc *semantic.Document) error {
+func (s *JSSanitizer) Execute(ctx context.Context, doc *semantic.Document) error {
 	_, err := s.Sanitize(ctx, doc)
 	return err
 }
 
-func (s *JSSanitizer) Sanitize(ctx Context, doc *semantic.Document) (*SanitizationReport, error) {
+func (s *JSSanitizer) Sanitize(ctx context.Context, doc *semantic.Document) (*SanitizationReport, error) {
 	report := &SanitizationReport{}
 
 	for i, p := range doc.Pages {
@@ -106,12 +107,12 @@ type PDFAValidator struct {
 func (v *PDFAValidator) Name() string  { return "PDFAValidator" }
 func (v *PDFAValidator) Phase() Phase  { return PhaseValidate }
 func (v *PDFAValidator) Priority() int { return 100 }
-func (v *PDFAValidator) Execute(ctx Context, doc *semantic.Document) error {
+func (v *PDFAValidator) Execute(ctx context.Context, doc *semantic.Document) error {
 	_, err := v.Validate(ctx, doc)
 	return err
 }
 
-func (v *PDFAValidator) Validate(ctx Context, doc *semantic.Document) (*ValidationReport, error) {
+func (v *PDFAValidator) Validate(ctx context.Context, doc *semantic.Document) (*ValidationReport, error) {
 	enforcer := pdfa.NewEnforcer()
 	report, err := enforcer.Validate(ctx, doc, v.Level)
 	if err != nil {
