@@ -1,5 +1,10 @@
 # Implementation Plan
 
+## Writer Encryption Review
+- [x] Assert /Encrypt dictionary captures algorithm/version, permissions, and EncryptMetadata behavior.
+- [x] Verify decrypted content recovery works when streams are compressed, not just plaintext search.
+- [x] Harden wrong-password and missing/empty password authentication cases to fail only for auth reasons.
+
 This document tracks the detailed implementation progress of features defined in `goal-features.md`.
 
 ## 1. Core Syntax & File Structure
