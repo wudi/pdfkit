@@ -3,6 +3,7 @@ package writer
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/wudi/pdfkit/filters"
 	"github.com/wudi/pdfkit/ir/decoded"
 	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 	"github.com/wudi/pdfkit/parser"
 	"github.com/wudi/pdfkit/security"
 )
@@ -280,4 +282,322 @@ func requireMetadataDecrypted(t *testing.T, doc *decoded.DecodedDocument, expect
 		}
 	}
 	t.Fatalf("metadata %q not found in decoded streams", expected)
+}
+
+func TestEncryptionRoundTrip_ComplexStructures(t *testing.T) {
+	perms := raw.Permissions{
+		Print:     true,
+		Modify:    true,
+		FillForms: true,
+		Copy:      true,
+	}
+	imageData := []byte{0xAA, 0xBB, 0xCC, 0xDD}
+	annotationAppearance := []byte("BT (Encrypted annotation) Tj ET")
+	formAppearance := []byte("BT (Encrypted form appearance) Tj ET")
+	formValue := "Encrypted Field Value"
+	meta := "<x:xmpmeta>Encrypted Metadata</x:xmpmeta>"
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 50, URY: 50},
+				Resources: &semantic.Resources{
+					XObjects: map[string]semantic.XObject{
+						"Im1": {
+							Subtype:          "Image",
+							Width:            1,
+							Height:           1,
+							BitsPerComponent: 8,
+							ColorSpace:       &semantic.DeviceColorSpace{Name: "DeviceRGB"},
+							Data:             imageData,
+						},
+					},
+				},
+				Contents: []semantic.ContentStream{{
+					Operations: []semantic.Operation{
+						{Operator: "BT"},
+						{Operator: "Tj", Operands: []semantic.Operand{semantic.StringOperand{Value: []byte("Encrypted Page One")}}},
+						{Operator: "ET"},
+						{Operator: "q"},
+						{Operator: "cm", Operands: []semantic.Operand{
+							semantic.NumberOperand{Value: 1}, semantic.NumberOperand{Value: 0},
+							semantic.NumberOperand{Value: 0}, semantic.NumberOperand{Value: 1},
+							semantic.NumberOperand{Value: 0}, semantic.NumberOperand{Value: 0},
+						}},
+						{Operator: "Do", Operands: []semantic.Operand{semantic.NameOperand{Value: "Im1"}}},
+						{Operator: "Q"},
+					},
+				}},
+			},
+			{
+				MediaBox: semantic.Rectangle{URX: 50, URY: 50},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT (Encrypted Page Two) Tj ET")}},
+				Annotations: []semantic.Annotation{
+					&semantic.GenericAnnotation{
+						BaseAnnotation: semantic.BaseAnnotation{
+							Subtype:         "Text",
+							RectVal:         semantic.Rectangle{LLX: 5, LLY: 5, URX: 15, URY: 15},
+							Contents:        "Encrypted Annotation",
+							Appearance:      annotationAppearance,
+							AppearanceState: "N",
+						},
+					},
+				},
+			},
+		},
+		AcroForm: &semantic.AcroForm{
+			Fields: []semantic.FormField{
+				&semantic.TextFormField{
+					BaseFormField: semantic.BaseFormField{
+						Name:              "Field1",
+						PageIndex:         1,
+						Rect:              semantic.Rectangle{LLX: 10, LLY: 10, URX: 30, URY: 20},
+						Appearance:        formAppearance,
+						AppearanceState:   "N",
+						DefaultAppearance: "/F1 10 Tf 0 g",
+					},
+					Value: formValue,
+				},
+			},
+			DefaultResources: &semantic.Resources{
+				Fonts: map[string]*semantic.Font{
+					"F1": {BaseFont: "Helvetica"},
+				},
+			},
+			NeedAppearances: true,
+		},
+		Metadata:          &semantic.XMPMetadata{Raw: []byte(meta)},
+		Encrypted:         true,
+		UserPassword:      "user",
+		OwnerPassword:     "owner",
+		Permissions:       perms,
+		MetadataEncrypted: true,
+	}
+	w := NewWriter()
+	for _, cfg := range []Config{{Deterministic: true}, {Deterministic: true, XRefStreams: true}} {
+		cfg := cfg
+		t.Run(fmt.Sprintf("XRefStreams_%v", cfg.XRefStreams), func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := w.Write(context.Background(), doc, &buf, cfg); err != nil {
+				t.Fatalf("write encrypted complex doc (streams=%v): %v", cfg.XRefStreams, err)
+			}
+			parserCfg := parser.Config{Password: doc.UserPassword}
+			p := parser.NewDocumentParser(parserCfg)
+			parsedDoc, err := p.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+			if err != nil {
+				t.Fatalf("parse encrypted complex output: %v", err)
+			}
+			if parsedDoc.Permissions != perms {
+				t.Fatalf("permissions mismatch: got %+v want %+v", parsedDoc.Permissions, perms)
+			}
+			if parsedDoc.MetadataEncrypted != doc.MetadataEncrypted {
+				t.Fatalf("metadata encryption flag mismatch: got %v want %v", parsedDoc.MetadataEncrypted, doc.MetadataEncrypted)
+			}
+			requirePageCount(t, parsedDoc, 2)
+			assertEncryptDictionary(t, parsedDoc, perms, doc.MetadataEncrypted)
+
+			decodedDoc := decodeStreams(t, parsedDoc)
+			requireStreamContains(t, decodedDoc, []byte("Encrypted Page One"))
+			requireStreamContains(t, decodedDoc, []byte("Encrypted Page Two"))
+			requireStreamContains(t, decodedDoc, annotationAppearance)
+			requireStreamContains(t, decodedDoc, formAppearance)
+			requireStreamContains(t, decodedDoc, imageData)
+			requireMetadataDecrypted(t, decodedDoc, "Encrypted Metadata")
+			assertFieldValue(t, parsedDoc, "Field1", formValue)
+		})
+	}
+}
+
+func TestEncryptionRoundTrip_EmbeddedFilesAndOutlines(t *testing.T) {
+	perms := raw.Permissions{
+		Print:  true,
+		Modify: true,
+	}
+	embeddedData := []byte("Encrypted attachment payload")
+	doc := &semantic.Document{
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 40, URY: 40},
+				Contents: []semantic.ContentStream{{RawBytes: []byte("BT (Encrypted attachments) Tj ET")}},
+			},
+		},
+		EmbeddedFiles: []semantic.EmbeddedFile{
+			{
+				Name:        "secret.txt",
+				Subtype:     "text/plain",
+				Description: "Encrypted payload",
+				Data:        embeddedData,
+			},
+		},
+		Outlines: []semantic.OutlineItem{
+			{Title: "Encrypted Outline 1", PageIndex: 0},
+			{Title: "Encrypted Outline 2", PageIndex: 0},
+		},
+		Encrypted:         true,
+		UserPassword:      "user",
+		OwnerPassword:     "owner",
+		Permissions:       perms,
+		MetadataEncrypted: false,
+	}
+	w := NewWriter()
+	for _, cfg := range []Config{{Deterministic: true}, {Deterministic: true, XRefStreams: true}} {
+		cfg := cfg
+		t.Run(fmt.Sprintf("XRefStreams_%v", cfg.XRefStreams), func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := w.Write(context.Background(), doc, &buf, cfg); err != nil {
+				t.Fatalf("write encrypted attachments (streams=%v): %v", cfg.XRefStreams, err)
+			}
+			p := parser.NewDocumentParser(parser.Config{Password: doc.UserPassword})
+			parsedDoc, err := p.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+			if err != nil {
+				t.Fatalf("parse encrypted attachments: %v", err)
+			}
+			assertEncryptDictionary(t, parsedDoc, perms, doc.MetadataEncrypted)
+			requirePageCount(t, parsedDoc, 1)
+			requireEmbeddedFilesNameTree(t, parsedDoc)
+			pageRef := firstPageRef(t, parsedDoc)
+			assertOutlineDestinations(t, parsedDoc, pageRef, []string{"Encrypted Outline 1", "Encrypted Outline 2"})
+			decodedDoc := decodeStreams(t, parsedDoc)
+			requireStreamContains(t, decodedDoc, embeddedData)
+		})
+	}
+}
+
+func requireStreamContains(t *testing.T, doc *decoded.DecodedDocument, needle []byte) {
+	t.Helper()
+	for _, stream := range doc.Streams {
+		if bytes.Contains(stream.Data(), needle) {
+			return
+		}
+	}
+	t.Fatalf("decoded streams missing %q", needle)
+}
+
+func requirePageCount(t *testing.T, doc *raw.Document, expected int) {
+	t.Helper()
+	count := 0
+	for _, obj := range doc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		if typ, ok := dict.Get(raw.NameLiteral("Type")); ok {
+			if name, ok := typ.(raw.NameObj); ok && name.Value() == "Page" {
+				count++
+			}
+		}
+	}
+	if count != expected {
+		t.Fatalf("unexpected page count: got %d want %d", count, expected)
+	}
+}
+
+func assertFieldValue(t *testing.T, doc *raw.Document, fieldName, expected string) {
+	t.Helper()
+	for _, obj := range doc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		nameObj, ok := dict.Get(raw.NameLiteral("T"))
+		if !ok {
+			continue
+		}
+		nameStr, ok := nameObj.(raw.StringObj)
+		if !ok || string(nameStr.Value()) != fieldName {
+			continue
+		}
+		valObj, ok := dict.Get(raw.NameLiteral("V"))
+		if !ok {
+			t.Fatalf("field %s missing value", fieldName)
+		}
+		valStr, ok := valObj.(raw.StringObj)
+		if !ok {
+			t.Fatalf("field %s value not string: %T", fieldName, valObj)
+		}
+		if string(valStr.Value()) != expected {
+			t.Fatalf("field %s value mismatch: got %q want %q", fieldName, valStr.Value(), expected)
+		}
+		return
+	}
+	t.Fatalf("field %s not found", fieldName)
+}
+
+func requireEmbeddedFilesNameTree(t *testing.T, doc *raw.Document) {
+	t.Helper()
+	for _, obj := range doc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		if names, ok := dict.Get(raw.NameLiteral("Names")); ok {
+			if namesDict, ok := names.(*raw.DictObj); ok {
+				if _, ok := namesDict.Get(raw.NameLiteral("EmbeddedFiles")); ok {
+					return
+				}
+			}
+		}
+	}
+	t.Fatalf("embedded files names tree missing")
+}
+
+func firstPageRef(t *testing.T, doc *raw.Document) raw.ObjectRef {
+	t.Helper()
+	for ref, obj := range doc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		if typ, ok := dict.Get(raw.NameLiteral("Type")); ok {
+			if name, ok := typ.(raw.NameObj); ok && name.Value() == "Page" {
+				return ref
+			}
+		}
+	}
+	t.Fatalf("page reference not found")
+	return raw.ObjectRef{}
+}
+
+func assertOutlineDestinations(t *testing.T, doc *raw.Document, pageRef raw.ObjectRef, titles []string) {
+	t.Helper()
+	expected := make(map[string]bool, len(titles))
+	for _, title := range titles {
+		expected[title] = false
+	}
+	for _, obj := range doc.Objects {
+		dict, ok := obj.(*raw.DictObj)
+		if !ok {
+			continue
+		}
+		titleObj, ok := dict.Get(raw.NameLiteral("Title"))
+		if !ok {
+			continue
+		}
+		titleStr, ok := titleObj.(raw.StringObj)
+		if !ok {
+			continue
+		}
+		title := string(titleStr.Value())
+		want, ok := expected[title]
+		if !ok || want {
+			continue
+		}
+		dest, ok := dict.Get(raw.NameLiteral("Dest"))
+		if !ok {
+			t.Fatalf("outline %q missing Dest", title)
+		}
+		arr, ok := dest.(*raw.ArrayObj)
+		if !ok || arr.Len() == 0 {
+			t.Fatalf("outline %q dest malformed: %#v", title, dest)
+		}
+		refObj, ok := arr.Items[0].(raw.RefObj)
+		if !ok || refObj.Ref() != pageRef {
+			t.Fatalf("outline %q dest does not point to page ref %v: %#v", title, pageRef, arr.Items[0])
+		}
+		expected[title] = true
+	}
+	for title, found := range expected {
+		if !found {
+			t.Fatalf("outline %q not found with correct destination", title)
+		}
+	}
 }
