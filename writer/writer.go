@@ -7,6 +7,7 @@ import (
 	"github.com/wudi/pdfkit/ir/raw"
 	"github.com/wudi/pdfkit/ir/semantic"
 	"github.com/wudi/pdfkit/optimize"
+	"github.com/wudi/pdfkit/security"
 )
 
 type PDFVersion string
@@ -48,6 +49,7 @@ type Config struct {
 	SubsetFonts   bool
 	PDFALevel     pdfa.Level
 	Optimizer     *optimize.Optimizer
+	Encryption    security.EncryptionOptions
 }
 
 type Writer interface {

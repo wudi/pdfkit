@@ -6,6 +6,7 @@ import (
 	"github.com/wudi/pdfkit/geo"
 	"github.com/wudi/pdfkit/ir/decoded"
 	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/security"
 )
 
 // Document is the semantic representation of a PDF.
@@ -33,6 +34,7 @@ type Document struct {
 	OriginalRef       raw.ObjectRef
 	Dirty             bool
 	Payload           *Document // PDF 2.0 Unencrypted Wrapper Payload
+	EncryptionOptions security.EncryptionOptions
 }
 
 // Decoded returns the underlying decoded document (if set).

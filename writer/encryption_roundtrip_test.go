@@ -3,6 +3,7 @@ package writer
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
 	"fmt"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/wudi/pdfkit/ir/semantic"
 	"github.com/wudi/pdfkit/parser"
 	"github.com/wudi/pdfkit/security"
+	"github.com/wudi/pdfkit/xref"
 )
 
 func TestEncryptionRoundTrip(t *testing.T) {
@@ -143,6 +145,154 @@ func TestEncryptionRoundTrip(t *testing.T) {
 	}
 }
 
+func TestEncryptionRoundTrip_Strengths(t *testing.T) {
+	cases := []struct {
+		name string
+		opts security.EncryptionOptions
+	}{
+		{name: "RC4_40", opts: security.EncryptionOptions{Algorithm: security.EncryptionAlgorithmRC4, KeyLength: 40}},
+		{name: "RC4_128", opts: security.EncryptionOptions{Algorithm: security.EncryptionAlgorithmRC4, KeyLength: 128}},
+		{name: "AES_128", opts: security.EncryptionOptions{Algorithm: security.EncryptionAlgorithmAES, KeyLength: 128}},
+		{name: "AES_256", opts: security.EncryptionOptions{Algorithm: security.EncryptionAlgorithmAES, KeyLength: 256}},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			b := builder.NewBuilder()
+			b.NewPage(300, 300).
+				DrawText("Encrypted Payload", 50, 50, builder.TextOptions{}).
+				Finish()
+			perms := raw.Permissions{Print: true, Copy: true}
+			userPwd := "user-" + tc.name
+			ownerPwd := "owner-" + tc.name
+			b.SetEncryptionWithOptions(ownerPwd, userPwd, perms, true, tc.opts)
+
+			doc, err := b.Build()
+			if err != nil {
+				t.Fatalf("Build failed: %v", err)
+			}
+			if doc.UserPassword == "" {
+				t.Fatalf("user password not set")
+			}
+			normalizedOpts := security.NormalizeEncryptionOptions(doc.EncryptionOptions)
+			if normalizedOpts.Algorithm != security.NormalizeEncryptionOptions(tc.opts).Algorithm {
+				t.Fatalf("encryption algorithm mismatch on document: %v", normalizedOpts.Algorithm)
+			}
+
+			var buf bytes.Buffer
+			w := NewWriter()
+			if err := w.Write(context.Background(), doc, &buf, Config{Deterministic: true}); err != nil {
+				t.Fatalf("Write failed: %v", err)
+			}
+
+			idPair := fileID(doc, Config{Deterministic: true})
+			resolver := xref.NewResolver(parser.Config{}.XRef)
+			_, err = resolver.Resolve(context.Background(), bytes.NewReader(buf.Bytes()))
+			if err != nil {
+				t.Fatalf("resolve xref: %v", err)
+			}
+			if trailerDict := resolver.Trailer(); trailerDict != nil {
+				if idObj, ok := trailerDict.Get(raw.NameLiteral("ID")); ok {
+					if arr, ok := idObj.(*raw.ArrayObj); ok && arr.Len() >= 1 {
+						if s, ok := arr.Items[0].(raw.StringObj); ok {
+							if !bytes.Equal(s.Value(), idPair[0]) {
+								t.Fatalf("fileID mismatch: trailer=%x expected=%x", s.Value(), idPair[0])
+							}
+						}
+					}
+				}
+			}
+
+			noopParser := parser.NewDocumentParser(parser.Config{Security: security.NoopHandler()})
+			noopDoc, err := noopParser.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+			if err != nil {
+				t.Fatalf("noop parse failed: %v", err)
+			}
+			if dec := decodeStreams(t, noopDoc); dec != nil {
+				for _, s := range dec.Streams {
+					if bytes.Contains(s.Data(), []byte("Encrypted Payload")) {
+						t.Fatalf("content stream not encrypted")
+					}
+				}
+			}
+			trailer := noopDoc.Trailer.(*raw.DictObj)
+			encObj, ok := trailer.Get(raw.NameLiteral("Encrypt"))
+			if !ok {
+				t.Fatalf("encrypt dictionary missing")
+			}
+			var encDict *raw.DictObj
+			switch v := encObj.(type) {
+			case *raw.DictObj:
+				encDict = v
+			case raw.RefObj:
+				if obj, ok := noopDoc.Objects[v.R]; ok {
+					if d, ok := obj.(*raw.DictObj); ok {
+						encDict = d
+					}
+				}
+			}
+			if encDict == nil {
+				t.Fatalf("encrypt dictionary not resolved")
+			}
+			if tc.opts.Algorithm == security.EncryptionAlgorithmAES {
+				if v, ok := encDict.Get(raw.NameLiteral("V")); ok {
+					if num, ok := v.(raw.NumberObj); !ok || num.Int() < 4 {
+						t.Fatalf("expected AES V>=4, got %v", v)
+					}
+				} else {
+					t.Fatalf("encrypt dict missing V")
+				}
+			}
+			if testing.Verbose() {
+				v, _ := encDict.Get(raw.NameLiteral("V"))
+				rVal, _ := encDict.Get(raw.NameLiteral("R"))
+				stmF, _ := encDict.Get(raw.NameLiteral("StmF"))
+				strF, _ := encDict.Get(raw.NameLiteral("StrF"))
+				cf, _ := encDict.Get(raw.NameLiteral("CF"))
+				t.Logf("enc dict V=%v R=%v StmF=%T %v StrF=%T %v CF=%T", v, rVal, stmF, stmF, strF, strF, cf)
+			}
+			if obj, ok := noopDoc.Objects[raw.ObjectRef{Num: 3, Gen: 0}]; ok && testing.Verbose() {
+				if d, ok := obj.(*raw.DictObj); ok {
+					t.Logf("object 3 keys: %v", d.Keys())
+				} else {
+					t.Logf("object 3 type: %T", obj)
+				}
+			}
+			handler, err := (&security.HandlerBuilder{}).WithEncryptDict(encDict).WithTrailer(trailer).Build()
+			if err != nil {
+				t.Fatalf("build handler: %v", err)
+			}
+			if err := handler.Authenticate(userPwd); err != nil {
+				t.Fatalf("manual authenticate failed: %v", err)
+			}
+			for ref, obj := range noopDoc.Objects {
+				if s, ok := obj.(*raw.StreamObj); ok {
+					if tc.opts.Algorithm == security.EncryptionAlgorithmAES {
+						if len(s.Data) < aes.BlockSize || (len(s.Data)-aes.BlockSize)%aes.BlockSize != 0 {
+							t.Fatalf("stream length not AES sized: %d", len(s.Data))
+						}
+					}
+					if _, err := handler.Decrypt(ref.Num, ref.Gen, s.Data, security.DataClassStream); err != nil {
+						t.Fatalf("manual decrypt failed for %v: %v", ref, err)
+					}
+				}
+			}
+
+			parserCfg := parser.Config{Password: userPwd}
+			p := parser.NewDocumentParser(parserCfg)
+			parsed, err := p.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+			if err != nil {
+				t.Fatalf("parse failed: %v", err)
+			}
+
+			assertEncryptDictionaryWithOptions(t, parsed, perms, true, tc.opts)
+			decodedDoc := decodeStreams(t, parsed)
+			requireContentDecrypted(t, decodedDoc, "Encrypted Payload")
+		})
+	}
+}
+
 func requireNoPlaintext(t *testing.T, pdfData []byte, secrets ...string) {
 	t.Helper()
 	for _, secret := range secrets {
@@ -153,6 +303,10 @@ func requireNoPlaintext(t *testing.T, pdfData []byte, secrets ...string) {
 }
 
 func assertEncryptDictionary(t *testing.T, doc *raw.Document, expectedPerms raw.Permissions, encryptMetadata bool) {
+	assertEncryptDictionaryWithOptions(t, doc, expectedPerms, encryptMetadata, security.EncryptionOptions{})
+}
+
+func assertEncryptDictionaryWithOptions(t *testing.T, doc *raw.Document, expectedPerms raw.Permissions, encryptMetadata bool, opts security.EncryptionOptions) {
 	t.Helper()
 	trailer, ok := doc.Trailer.(*raw.DictObj)
 	if !ok {
@@ -188,9 +342,25 @@ func assertEncryptDictionary(t *testing.T, doc *raw.Document, expectedPerms raw.
 		t.Fatalf("unexpected /Filter: %T %v", filter, filter)
 	}
 
-	expectNumberField(t, encDict, "V", 1)
-	expectNumberField(t, encDict, "R", 2)
-	expectNumberField(t, encDict, "Length", 40)
+	encOpts := security.NormalizeEncryptionOptions(opts)
+	switch encOpts.Algorithm {
+	case security.EncryptionAlgorithmAES:
+		if encOpts.KeyLength >= 256 {
+			expectNumberField(t, encDict, "V", 5)
+			expectNumberField(t, encDict, "R", 6)
+			expectNumberField(t, encDict, "Length", 256)
+			assertCryptFilter(t, encDict, "AESV3", 256)
+		} else {
+			expectNumberField(t, encDict, "V", 4)
+			expectNumberField(t, encDict, "R", 4)
+			expectNumberField(t, encDict, "Length", int64(encOpts.KeyLength))
+			assertCryptFilter(t, encDict, "AESV2", encOpts.KeyLength)
+		}
+	default:
+		expectNumberField(t, encDict, "V", 1)
+		expectNumberField(t, encDict, "R", 2)
+		expectNumberField(t, encDict, "Length", int64(encOpts.KeyLength))
+	}
 
 	expectedPermValue := int64(security.PermissionsValue(expectedPerms))
 	expectNumberField(t, encDict, "P", expectedPermValue)
@@ -201,6 +371,44 @@ func assertEncryptDictionary(t *testing.T, doc *raw.Document, expectedPerms raw.
 			if !ok || !b.Value() {
 				t.Fatalf("EncryptMetadata present but not true: %T %v", meta, meta)
 			}
+		}
+	}
+}
+
+func assertCryptFilter(t *testing.T, enc *raw.DictObj, expectedCFM string, lengthBits int) {
+	t.Helper()
+	cfVal, ok := enc.Get(raw.NameLiteral("CF"))
+	if !ok {
+		t.Fatal("CF missing for AES encryption")
+	}
+	cf, ok := cfVal.(*raw.DictObj)
+	if !ok {
+		t.Fatalf("CF has unexpected type %T", cfVal)
+	}
+	stdVal, ok := cf.Get(raw.NameLiteral("StdCF"))
+	if !ok {
+		t.Fatal("StdCF missing from CF")
+	}
+	std, ok := stdVal.(*raw.DictObj)
+	if !ok {
+		t.Fatalf("StdCF has unexpected type %T", stdVal)
+	}
+	cfm, ok := std.Get(raw.NameLiteral("CFM"))
+	if !ok {
+		t.Fatal("CFM missing from StdCF")
+	}
+	if name, ok := cfm.(raw.NameObj); !ok || name.Value() != expectedCFM {
+		t.Fatalf("unexpected CFM: %T %v", cfm, cfm)
+	}
+	expectNumberField(t, std, "Length", int64(lengthBits))
+	if stm, ok := enc.Get(raw.NameLiteral("StmF")); ok {
+		if name, ok := stm.(raw.NameObj); !ok || name.Value() != "StdCF" {
+			t.Fatalf("unexpected StmF: %T %v", stm, stm)
+		}
+	}
+	if str, ok := enc.Get(raw.NameLiteral("StrF")); ok {
+		if name, ok := str.(raw.NameObj); !ok || name.Value() != "StdCF" {
+			t.Fatalf("unexpected StrF: %T %v", str, str)
 		}
 	}
 }

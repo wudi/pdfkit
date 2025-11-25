@@ -8,6 +8,7 @@ import (
 	"github.com/wudi/pdfkit/fonts"
 	"github.com/wudi/pdfkit/ir/raw"
 	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/security"
 )
 
 // PDFBuilder provides a fluent API for PDF construction.
@@ -21,6 +22,7 @@ type PDFBuilder interface {
 	AddPageLabel(pageIndex int, prefix string) PDFBuilder
 	AddOutline(out Outline) PDFBuilder
 	SetEncryption(ownerPassword, userPassword string, perms raw.Permissions, encryptMetadata bool) PDFBuilder
+	SetEncryptionWithOptions(ownerPassword, userPassword string, perms raw.Permissions, encryptMetadata bool, opts security.EncryptionOptions) PDFBuilder
 	RegisterFont(name string, font *semantic.Font) PDFBuilder
 	RegisterTrueTypeFont(name string, data []byte) PDFBuilder
 	AddEmbeddedFile(file semantic.EmbeddedFile) PDFBuilder
@@ -196,6 +198,7 @@ type builderImpl struct {
 	permissions   raw.Permissions
 	encrypted     bool
 	encryptMeta   bool
+	encryptionOpt security.EncryptionOptions
 	fonts         map[string]fontResource
 	defaultFont   string
 	xobjectCount  int
@@ -271,11 +274,16 @@ func (b *builderImpl) AddOutline(out Outline) PDFBuilder {
 }
 
 func (b *builderImpl) SetEncryption(ownerPassword, userPassword string, perms raw.Permissions, encryptMetadata bool) PDFBuilder {
+	return b.SetEncryptionWithOptions(ownerPassword, userPassword, perms, encryptMetadata, security.EncryptionOptions{})
+}
+
+func (b *builderImpl) SetEncryptionWithOptions(ownerPassword, userPassword string, perms raw.Permissions, encryptMetadata bool, opts security.EncryptionOptions) PDFBuilder {
 	b.ownerPassword = ownerPassword
 	b.userPassword = userPassword
 	b.permissions = perms
 	b.encrypted = true
 	b.encryptMeta = encryptMetadata
+	b.encryptionOpt = opts
 	return b
 }
 
@@ -383,6 +391,7 @@ func (b *builderImpl) Build() (*semantic.Document, error) {
 		doc.Permissions = b.permissions
 		doc.Encrypted = true
 		doc.MetadataEncrypted = b.encryptMeta
+		doc.EncryptionOptions = security.NormalizeEncryptionOptions(b.encryptionOpt)
 	}
 	if len(b.embeddedFiles) > 0 {
 		doc.EmbeddedFiles = make([]semantic.EmbeddedFile, len(b.embeddedFiles))

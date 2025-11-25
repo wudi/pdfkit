@@ -1,6 +1,7 @@
 package writer
 
 import (
+	"crypto/aes"
 	"fmt"
 	"sort"
 	"strings"
@@ -137,9 +138,13 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 	var encryptRef *raw.ObjectRef
 	var encryptionHandler security.Handler
 	if b.doc.Encrypted {
+		encOpts := security.NormalizeEncryptionOptions(b.cfg.Encryption)
+		if b.doc.EncryptionOptions.Algorithm != "" || b.doc.EncryptionOptions.KeyLength != 0 {
+			encOpts = security.NormalizeEncryptionOptions(b.doc.EncryptionOptions)
+		}
 		ref := b.nextRef()
 		encryptRef = &ref
-		enc, _, err := security.BuildStandardEncryption(b.doc.UserPassword, b.doc.OwnerPassword, b.doc.Permissions, b.fileID[0], b.doc.MetadataEncrypted)
+		enc, _, err := security.BuildEncryption(b.doc.UserPassword, b.doc.OwnerPassword, b.doc.Permissions, b.fileID[0], encOpts, b.doc.MetadataEncrypted)
 		if err != nil {
 			return nil, raw.ObjectRef{}, nil, nil, err
 		}
@@ -149,6 +154,15 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 		}
 		if err := handler.Authenticate(b.doc.UserPassword); err != nil {
 			return nil, raw.ObjectRef{}, nil, nil, err
+		}
+		if encOpts.Algorithm == security.EncryptionAlgorithmAES {
+			sample, err := handler.Encrypt(0, 0, []byte("check"), security.DataClassStream)
+			if err != nil {
+				return nil, raw.ObjectRef{}, nil, nil, err
+			}
+			if len(sample) < len("check")+aes.BlockSize {
+				return nil, raw.ObjectRef{}, nil, nil, fmt.Errorf("AES encryption sample too short: %d bytes", len(sample))
+			}
 		}
 		encryptionHandler = handler
 		b.objects[ref] = enc
@@ -899,7 +913,11 @@ func (b *objectBuilder) Build() (map[raw.ObjectRef]raw.Object, raw.ObjectRef, *r
 			if metadataRef != nil && ref == *metadataRef && !b.doc.MetadataEncrypted {
 				continue
 			}
-			b.objects[ref] = encryptObject(obj, ref, encryptionHandler, metadataRef, b.doc.MetadataEncrypted)
+			encObj, err := encryptObject(obj, ref, encryptionHandler, metadataRef, b.doc.MetadataEncrypted)
+			if err != nil {
+				return nil, raw.ObjectRef{}, nil, nil, err
+			}
+			b.objects[ref] = encObj
 		}
 	}
 

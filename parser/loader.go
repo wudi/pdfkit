@@ -404,6 +404,9 @@ func (o *objectLoader) decryptObject(ref raw.ObjectRef, obj raw.Object) (raw.Obj
 		}
 		return v, nil
 	case *raw.DictObj:
+		if isEncryptDictionary(v) {
+			return v, nil
+		}
 		for key, item := range v.KV {
 			dec, err := o.decryptObject(ref, item)
 			if err != nil {
@@ -464,6 +467,24 @@ func (o *objectLoader) decryptStreamWithFilter(objNum, gen int, data []byte, cla
 		return h.DecryptWithFilter(objNum, gen, data, class, cryptFilter)
 	}
 	return o.security.Decrypt(objNum, gen, data, class)
+}
+
+func isEncryptDictionary(d *raw.DictObj) bool {
+	if d == nil {
+		return false
+	}
+	filter, ok := d.Get(raw.NameLiteral("Filter"))
+	if !ok {
+		return false
+	}
+	if name, ok := filter.(raw.NameObj); ok && name.Value() == "Standard" {
+		if _, hasO := d.Get(raw.NameLiteral("O")); hasO {
+			if _, hasU := d.Get(raw.NameLiteral("U")); hasU {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isMetadataStream(d *raw.DictObj) bool {

@@ -154,6 +154,42 @@ func (b *HandlerBuilder) Build() (Handler, error) {
 	return h, nil
 }
 
+// EncryptionAlgorithm describes the symmetric algorithm used for Standard security.
+type EncryptionAlgorithm string
+
+const (
+	EncryptionAlgorithmRC4 EncryptionAlgorithm = "RC4"
+	EncryptionAlgorithmAES EncryptionAlgorithm = "AES"
+)
+
+// EncryptionOptions configures Standard security encryption choices.
+type EncryptionOptions struct {
+	Algorithm EncryptionAlgorithm
+	KeyLength int // bits
+}
+
+// NormalizeEncryptionOptions fills defaults and clamps values.
+func NormalizeEncryptionOptions(opts EncryptionOptions) EncryptionOptions {
+	out := opts
+	if out.Algorithm == "" {
+		out.Algorithm = EncryptionAlgorithmRC4
+	}
+	if out.KeyLength <= 0 {
+		if out.Algorithm == EncryptionAlgorithmAES {
+			out.KeyLength = 128
+		} else {
+			out.KeyLength = 40
+		}
+	}
+	if out.Algorithm == EncryptionAlgorithmRC4 && out.KeyLength < 40 {
+		out.KeyLength = 40
+	}
+	if out.Algorithm == EncryptionAlgorithmAES && out.KeyLength < 128 {
+		out.KeyLength = 128
+	}
+	return out
+}
+
 type cryptAlgo int
 
 const (
@@ -423,6 +459,20 @@ func (noEncryptionHandler) EncryptMetadata() bool { return false }
 // NoopHandler returns a reusable pass-through encryption handler.
 func NoopHandler() Handler { return noEncryptionHandler{} }
 
+// BuildEncryption selects the appropriate Encrypt dictionary builder based on options.
+func BuildEncryption(userPwd, ownerPwd string, permissions raw.Permissions, fileID []byte, opts EncryptionOptions, encryptMetadata bool) (*raw.DictObj, []byte, error) {
+	opts = NormalizeEncryptionOptions(opts)
+	switch opts.Algorithm {
+	case EncryptionAlgorithmAES:
+		if opts.KeyLength >= 256 {
+			return BuildAES256Encryption(userPwd, ownerPwd, permissions, fileID, encryptMetadata)
+		}
+		return BuildAES128Encryption(userPwd, ownerPwd, permissions, fileID, opts.KeyLength, encryptMetadata)
+	default:
+		return BuildRC4Encryption(userPwd, ownerPwd, permissions, fileID, opts.KeyLength, encryptMetadata)
+	}
+}
+
 // Helpers
 var passwordPadding = []byte{
 	0x28, 0xBF, 0x4E, 0x5E, 0x4E, 0x75, 0x8A, 0x41,
@@ -587,7 +637,9 @@ func BuildRC4Encryption(userPwd, ownerPwd string, permissions raw.Permissions, f
 	}
 	oVal := rc4Simple(ownerKey, userPad)
 	pVal := PermissionsValue(permissions)
-	fileKey, err := deriveKey([]byte(userPwd), oVal, pVal, fileID, keyLenBytes, 2)
+	revision := 2
+	version := 1
+	fileKey, err := deriveKey([]byte(userPwd), oVal, pVal, fileID, keyLenBytes, revision)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -595,8 +647,8 @@ func BuildRC4Encryption(userPwd, ownerPwd string, permissions raw.Permissions, f
 
 	enc := raw.Dict()
 	enc.Set(raw.NameObj{Val: "Filter"}, raw.NameObj{Val: "Standard"})
-	enc.Set(raw.NameObj{Val: "V"}, raw.NumberObj{I: 1, IsInt: true})
-	enc.Set(raw.NameObj{Val: "R"}, raw.NumberObj{I: 2, IsInt: true})
+	enc.Set(raw.NameObj{Val: "V"}, raw.NumberObj{I: int64(version), IsInt: true})
+	enc.Set(raw.NameObj{Val: "R"}, raw.NumberObj{I: int64(revision), IsInt: true})
 	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberObj{I: int64(keyBits), IsInt: true})
 	enc.Set(raw.NameObj{Val: "O"}, raw.Str(oVal))
 	enc.Set(raw.NameObj{Val: "U"}, raw.Str(uVal))
@@ -610,6 +662,59 @@ func BuildRC4Encryption(userPwd, ownerPwd string, permissions raw.Permissions, f
 // BuildStandardEncryption constructs an Encrypt dictionary and primary key for the Standard security handler.
 func BuildStandardEncryption(userPwd, ownerPwd string, permissions raw.Permissions, fileID []byte, encryptMetadata bool) (*raw.DictObj, []byte, error) {
 	return BuildRC4Encryption(userPwd, ownerPwd, permissions, fileID, 40, encryptMetadata)
+}
+
+// BuildAES128Encryption constructs an Encrypt dictionary for AES-128 (V=4/R=4).
+func BuildAES128Encryption(userPwd, ownerPwd string, permissions raw.Permissions, fileID []byte, keyBits int, encryptMetadata bool) (*raw.DictObj, []byte, error) {
+	if keyBits <= 0 {
+		keyBits = 128
+	}
+	if keyBits < 128 {
+		keyBits = 128
+	}
+	if keyBits%8 != 0 {
+		return nil, nil, fmt.Errorf("aes key length must be multiple of 8")
+	}
+	keyLenBytes := keyBits / 8
+	if len(ownerPwd) == 0 {
+		if len(userPwd) > 0 {
+			ownerPwd = userPwd
+		} else {
+			ownerPwd = "owner"
+		}
+	}
+	oVal := padPassword([]byte(ownerPwd))
+	pVal := PermissionsValue(permissions)
+	fileKey, err := deriveKey([]byte(userPwd), oVal, pVal, fileID, keyLenBytes, 4)
+	if err != nil {
+		return nil, nil, err
+	}
+	uVal := passwordPadding
+
+	enc := raw.Dict()
+	enc.Set(raw.NameObj{Val: "Filter"}, raw.NameObj{Val: "Standard"})
+	enc.Set(raw.NameObj{Val: "V"}, raw.NumberInt(4))
+	enc.Set(raw.NameObj{Val: "R"}, raw.NumberInt(4))
+	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberInt(int64(keyBits)))
+	enc.Set(raw.NameObj{Val: "O"}, raw.Str(oVal))
+	enc.Set(raw.NameObj{Val: "U"}, raw.Str(uVal))
+	enc.Set(raw.NameObj{Val: "P"}, raw.NumberObj{I: int64(pVal), IsInt: true})
+	if !encryptMetadata {
+		enc.Set(raw.NameObj{Val: "EncryptMetadata"}, raw.Bool(false))
+	}
+
+	cf := raw.Dict()
+	std := raw.Dict()
+	std.Set(raw.NameObj{Val: "Type"}, raw.NameObj{Val: "CryptFilter"})
+	std.Set(raw.NameObj{Val: "CFM"}, raw.NameObj{Val: "AESV2"})
+	std.Set(raw.NameObj{Val: "AuthEvent"}, raw.NameObj{Val: "DocOpen"})
+	std.Set(raw.NameObj{Val: "Length"}, raw.NumberInt(int64(keyBits)))
+	cf.Set(raw.NameObj{Val: "StdCF"}, std)
+	enc.Set(raw.NameObj{Val: "CF"}, cf)
+	enc.Set(raw.NameObj{Val: "StmF"}, raw.NameObj{Val: "StdCF"})
+	enc.Set(raw.NameObj{Val: "StrF"}, raw.NameObj{Val: "StdCF"})
+
+	return enc, fileKey, nil
 }
 
 // BuildAES256Encryption constructs an Encrypt dictionary and keys for AES-256 (PDF 2.0) security.
@@ -714,6 +819,10 @@ func BuildAES256Encryption(userPwd, ownerPwd string, permissions raw.Permissions
 }
 
 func generateAES256Entry(pwd []byte, extra []byte, fileKey []byte, fileID []byte) ([]byte, []byte, error) {
+	saltExtra := extra
+	if len(saltExtra) == 0 && len(fileID) > 0 {
+		saltExtra = fileID
+	}
 	// 1. Salts
 	valSalt := make([]byte, 8)
 	keySalt := make([]byte, 8)
@@ -725,14 +834,14 @@ func generateAES256Entry(pwd []byte, extra []byte, fileKey []byte, fileID []byte
 	}
 
 	// 2. User/Owner Entry (48 bytes)
-	hash := rev6Hash(pwd, valSalt, extra)
+	hash := rev6Hash(pwd, valSalt, saltExtra)
 	entry := make([]byte, 0, 48)
 	entry = append(entry, hash...)
 	entry = append(entry, valSalt...)
 	entry = append(entry, keySalt...)
 
 	// 3. UE/OE Entry (32 bytes)
-	keyHash := rev6Hash(pwd, keySalt, extra)
+	keyHash := rev6Hash(pwd, keySalt, saltExtra)
 	encKey, err := aesCBCNoIV(keyHash, fileKey, true)
 	if err != nil {
 		return nil, nil, err

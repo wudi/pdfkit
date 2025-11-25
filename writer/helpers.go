@@ -750,38 +750,46 @@ func pageRefAt(pageRefs []raw.ObjectRef, idx int) *raw.ObjectRef {
 	return &pageRefs[idx]
 }
 
-func encryptObject(obj raw.Object, ref raw.ObjectRef, handler security.Handler, metadataRef *raw.ObjectRef, encryptMetadata bool) raw.Object {
+func encryptObject(obj raw.Object, ref raw.ObjectRef, handler security.Handler, metadataRef *raw.ObjectRef, encryptMetadata bool) (raw.Object, error) {
 	if handler == nil {
-		return obj
+		return obj, nil
 	}
 	if metadataRef != nil && !encryptMetadata && ref == *metadataRef {
-		return obj
+		return obj, nil
 	}
 	switch v := obj.(type) {
 	case raw.StringObj:
 		encrypted, err := handler.Encrypt(ref.Num, ref.Gen, v.Value(), security.DataClassString)
 		if err != nil {
-			return obj
+			return obj, err
 		}
-		return raw.Str(encrypted)
+		return raw.Str(encrypted), nil
 	case raw.HexStringObj:
 		encrypted, err := handler.Encrypt(ref.Num, ref.Gen, v.Value(), security.DataClassString)
 		if err != nil {
-			return obj
+			return obj, err
 		}
-		return raw.HexStr(encrypted)
+		return raw.HexStr(encrypted), nil
 	case *raw.ArrayObj:
 		arr := raw.NewArray()
 		for _, item := range v.Items {
-			arr.Append(encryptObject(item, ref, handler, metadataRef, encryptMetadata))
+			encItem, err := encryptObject(item, ref, handler, metadataRef, encryptMetadata)
+			if err != nil {
+				return obj, err
+			}
+			arr.Append(encItem)
 		}
-		return arr
+		return arr, nil
 	case *raw.DictObj:
 		d := raw.Dict()
 		for k, val := range v.KV {
-			d.Set(raw.NameLiteral(k), encryptObject(val, ref, handler, metadataRef, encryptMetadata))
+			encVal, err := encryptObject(val, ref, handler, metadataRef, encryptMetadata)
+			if err != nil {
+				return obj, err
+			}
+			d.Set(raw.NameLiteral(k), encVal)
 		}
-		return d
+		return d, nil
 	case *raw.StreamObj:
 		class := security.DataClassStream
 		if metadataRef != nil && ref == *metadataRef {
@@ -789,15 +797,19 @@ func encryptObject(obj raw.Object, ref raw.ObjectRef, handler security.Handler, 
 		}
 		data, err := handler.Encrypt(ref.Num, ref.Gen, v.Data, class)
 		if err != nil {
-			return obj
+			return obj, err
 		}
-		dictEncrypted := encryptObject(v.Dict, ref, handler, metadataRef, encryptMetadata)
+		dictEncrypted, err := encryptObject(v.Dict, ref, handler, metadataRef, encryptMetadata)
+		if err != nil {
+			return obj, err
+		}
 		if dd, ok := dictEncrypted.(*raw.DictObj); ok {
-			return raw.NewStream(dd, data)
+			dd.Set(raw.NameLiteral("Length"), raw.NumberInt(int64(len(data))))
+			return raw.NewStream(dd, data), nil
 		}
-		return raw.NewStream(v.Dict, data)
+		return raw.NewStream(v.Dict, data), nil
 	default:
-		return obj
+		return obj, nil
 	}
 }
 

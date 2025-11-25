@@ -182,6 +182,63 @@ func TestEncryptionVariantsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBuildEncryptionHelpers(t *testing.T) {
+	fileID := []byte("fileid-build-encryption")
+	payload := []byte("secret payload")
+	perms := raw.Permissions{Print: true, Copy: true}
+
+	cases := []struct {
+		name  string
+		opts  EncryptionOptions
+		user  string
+		owner string
+	}{
+		{name: "AES128", opts: EncryptionOptions{Algorithm: EncryptionAlgorithmAES, KeyLength: 128}, user: "user-aes", owner: "owner-aes"},
+		{name: "AES256", opts: EncryptionOptions{Algorithm: EncryptionAlgorithmAES, KeyLength: 256}, user: "user-aes256", owner: "owner-aes256"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			encDict, _, err := BuildEncryption(tc.user, tc.owner, perms, fileID, tc.opts, true)
+			if err != nil {
+				t.Fatalf("build encryption: %v", err)
+			}
+			if tc.opts.KeyLength >= 256 {
+				uVal, _ := encDict.Get(raw.NameObj{Val: "U"})
+				ueVal, _ := encDict.Get(raw.NameObj{Val: "UE"})
+				uEntry, _ := uVal.(raw.StringObj)
+				ueEntry, _ := ueVal.(raw.StringObj)
+				if key, ok, err := deriveAES256User([]byte(tc.user), uEntry.Value(), ueEntry.Value(), fileID); err != nil {
+					t.Fatalf("manual user derivation failed: %v", err)
+				} else if !ok {
+					t.Fatalf("manual user derivation returned invalid")
+				} else if len(key) == 0 {
+					t.Fatalf("manual user key empty")
+				}
+			}
+			handler, err := (&HandlerBuilder{}).WithEncryptDict(encDict).WithFileID(fileID).Build()
+			if err != nil {
+				t.Fatalf("build handler: %v", err)
+			}
+			if err := handler.Authenticate(tc.user); err != nil {
+				t.Fatalf("authenticate: %v", err)
+			}
+			enc, err := handler.Encrypt(1, 0, payload, DataClassStream)
+			if err != nil {
+				t.Fatalf("encrypt: %v", err)
+			}
+			dec, err := handler.Decrypt(1, 0, enc, DataClassStream)
+			if err != nil {
+				t.Fatalf("decrypt: %v", err)
+			}
+			if string(dec) != string(payload) {
+				t.Fatalf("roundtrip mismatch: got %q want %q", dec, payload)
+			}
+		})
+	}
+}
+
 func TestIdentityCryptFilterSkipsEncryption(t *testing.T) {
 	enc := raw.Dict()
 	enc.Set(raw.NameObj{Val: "Filter"}, raw.NameObj{Val: "Standard"})
