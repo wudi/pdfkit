@@ -13,6 +13,7 @@ import (
 	"github.com/wudi/pdfkit/ir"
 	"github.com/wudi/pdfkit/ir/semantic"
 	"github.com/wudi/pdfkit/ocr"
+	_ "github.com/wudi/pdfkit/ocr/tesseract"
 )
 
 type featureSelection struct {

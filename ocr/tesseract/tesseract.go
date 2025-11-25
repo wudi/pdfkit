@@ -1,4 +1,4 @@
-package ocr
+package tesseract
 
 import (
 	"bytes"
@@ -10,7 +10,12 @@ import (
 	"strings"
 
 	"github.com/otiai10/gosseract/v2"
+	"github.com/wudi/pdfkit/ocr"
 )
+
+func init() {
+	ocr.SetDefaultEngine(NewTesseractEngine())
+}
 
 // TesseractEngine implements Engine and BatchEngine using the gosseract client
 // as the default OCR provider.
@@ -26,7 +31,7 @@ func NewTesseractEngine() *TesseractEngine {
 func (e *TesseractEngine) Name() string { return "tesseract" }
 
 // Recognize performs OCR on a single image input.
-func (e *TesseractEngine) Recognize(ctx context.Context, in Input) (Result, error) {
+func (e *TesseractEngine) Recognize(ctx context.Context, in ocr.Input) (ocr.Result, error) {
 	c := e.clientFactory()
 	defer c.Close()
 	return e.recognizeWithClient(ctx, c, in)
@@ -34,8 +39,8 @@ func (e *TesseractEngine) Recognize(ctx context.Context, in Input) (Result, erro
 
 // RecognizeBatch processes multiple inputs using a single client instance to
 // amortize setup costs. Inputs are processed sequentially.
-func (e *TesseractEngine) RecognizeBatch(ctx context.Context, inputs []Input) ([]Result, error) {
-	results := make([]Result, 0, len(inputs))
+func (e *TesseractEngine) RecognizeBatch(ctx context.Context, inputs []ocr.Input) ([]ocr.Result, error) {
+	results := make([]ocr.Result, 0, len(inputs))
 	for _, in := range inputs {
 		select {
 		case <-ctx.Done():
@@ -53,65 +58,65 @@ func (e *TesseractEngine) RecognizeBatch(ctx context.Context, inputs []Input) ([
 	return results, nil
 }
 
-func (e *TesseractEngine) recognizeWithClient(ctx context.Context, c *gosseract.Client, in Input) (Result, error) {
+func (e *TesseractEngine) recognizeWithClient(ctx context.Context, c *gosseract.Client, in ocr.Input) (ocr.Result, error) {
 	imgData, err := cropImage(in.Image, in.Region)
 	if err != nil {
-		return Result{}, err
+		return ocr.Result{}, err
 	}
 	if err := c.SetImageFromBytes(imgData); err != nil {
-		return Result{}, fmt.Errorf("set image: %w", err)
+		return ocr.Result{}, fmt.Errorf("set image: %w", err)
 	}
 	if len(in.Languages) > 0 {
 		if err := c.SetLanguage(in.Languages...); err != nil {
-			return Result{}, fmt.Errorf("set languages: %w", err)
+			return ocr.Result{}, fmt.Errorf("set languages: %w", err)
 		}
 	}
 	if in.DPI > 0 {
 		if err := c.SetVariable(gosseract.SettableVariable("user_defined_dpi"), fmt.Sprint(in.DPI)); err != nil {
-			return Result{}, fmt.Errorf("set dpi: %w", err)
+			return ocr.Result{}, fmt.Errorf("set dpi: %w", err)
 		}
 	}
 	for k, v := range in.Metadata {
 		if err := c.SetVariable(gosseract.SettableVariable(k), v); err != nil {
-			return Result{}, fmt.Errorf("set variable %s: %w", k, err)
+			return ocr.Result{}, fmt.Errorf("set variable %s: %w", k, err)
 		}
 	}
 	text, err := c.Text()
 	if err != nil {
-		return Result{}, fmt.Errorf("recognize text: %w", err)
+		return ocr.Result{}, fmt.Errorf("recognize text: %w", err)
 	}
 	plain := strings.TrimSpace(text)
 
 	words, avgConf := extractWords(c)
 	bounds := mergeBounds(words)
-	block := TextBlock{
+	block := ocr.TextBlock{
 		Text:       plain,
 		Bounds:     bounds,
-		Lines:      []TextLine{{Text: plain, Bounds: bounds, Words: words, Confidence: avgConf}},
+		Lines:      []ocr.TextLine{{Text: plain, Bounds: bounds, Words: words, Confidence: avgConf}},
 		Confidence: avgConf,
 	}
 
-	return Result{
+	return ocr.Result{
 		InputID:   in.ID,
 		PlainText: plain,
-		Blocks:    []TextBlock{block},
+		Blocks:    []ocr.TextBlock{block},
 		Language:  firstLanguage(in.Languages),
 	}, nil
 }
 
-func extractWords(c *gosseract.Client) ([]TextWord, float64) {
+func extractWords(c *gosseract.Client) ([]ocr.TextWord, float64) {
 	boxes, err := c.GetBoundingBoxes(gosseract.RIL_WORD)
 	if err != nil || len(boxes) == 0 {
 		return nil, 0
 	}
-	words := make([]TextWord, 0, len(boxes))
+	words := make([]ocr.TextWord, 0, len(boxes))
 	var sum float64
 	for _, b := range boxes {
 		conf := b.Confidence / 100.0
 		sum += conf
-		words = append(words, TextWord{
+		words = append(words, ocr.TextWord{
 			Text:       b.Word,
-			Bounds:     Region{X: float64(b.Box.Min.X), Y: float64(b.Box.Min.Y), Width: float64(b.Box.Dx()), Height: float64(b.Box.Dy())},
+			Bounds:     ocr.Region{X: float64(b.Box.Min.X), Y: float64(b.Box.Min.Y), Width: float64(b.Box.Dx()), Height: float64(b.Box.Dy())},
 			Confidence: conf,
 		})
 	}
@@ -121,9 +126,9 @@ func extractWords(c *gosseract.Client) ([]TextWord, float64) {
 	return words, sum / float64(len(words))
 }
 
-func mergeBounds(words []TextWord) Region {
+func mergeBounds(words []ocr.TextWord) ocr.Region {
 	if len(words) == 0 {
-		return Region{}
+		return ocr.Region{}
 	}
 	minX, minY := math.MaxFloat64, math.MaxFloat64
 	var maxX, maxY float64
@@ -133,7 +138,7 @@ func mergeBounds(words []TextWord) Region {
 		maxX = math.Max(maxX, w.Bounds.X+w.Bounds.Width)
 		maxY = math.Max(maxY, w.Bounds.Y+w.Bounds.Height)
 	}
-	return Region{X: minX, Y: minY, Width: maxX - minX, Height: maxY - minY}
+	return ocr.Region{X: minX, Y: minY, Width: maxX - minX, Height: maxY - minY}
 }
 
 func firstLanguage(langs []string) string {
@@ -143,7 +148,7 @@ func firstLanguage(langs []string) string {
 	return langs[0]
 }
 
-func cropImage(data []byte, region *Region) ([]byte, error) {
+func cropImage(data []byte, region *ocr.Region) ([]byte, error) {
 	if region == nil || region.IsEmpty() {
 		return data, nil
 	}

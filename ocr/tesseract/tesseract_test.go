@@ -1,4 +1,4 @@
-package ocr
+package tesseract
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/wudi/pdfkit/extractor"
+	"github.com/wudi/pdfkit/ocr"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
@@ -54,7 +55,7 @@ func TestTesseractEngineRecognize(t *testing.T) {
 		Data:         img.Pix,
 	}
 
-	results, err := DefaultRecognizeAssets(context.Background(), []extractor.ImageAsset{asset}, WithLanguages("eng"), WithDPI(300))
+	results, err := ocr.DefaultRecognizeAssets(context.Background(), []extractor.ImageAsset{asset}, ocr.WithLanguages("eng"), ocr.WithDPI(300))
 	if err != nil {
 		t.Fatalf("DefaultRecognizeAssets() error = %v", err)
 	}

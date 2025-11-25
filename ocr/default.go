@@ -7,9 +7,16 @@ import (
 	"github.com/wudi/pdfkit/extractor"
 )
 
+var defaultEngine Engine = &noopEngine{}
+
 // DefaultEngine returns the library's default OCR engine (Tesseract).
 func DefaultEngine() Engine {
-	return NewTesseractEngine()
+	return defaultEngine
+}
+
+// SetDefaultEngine sets the library's default OCR engine.
+func SetDefaultEngine(engine Engine) {
+	defaultEngine = engine
 }
 
 // RecognizeAssets converts image assets to OCR inputs and invokes the provided
@@ -51,4 +58,14 @@ func RecognizeAssets(ctx context.Context, engine Engine, assets []extractor.Imag
 // DefaultRecognizeAssets runs recognition with the default (Tesseract) engine.
 func DefaultRecognizeAssets(ctx context.Context, assets []extractor.ImageAsset, opts ...InputOption) ([]Result, error) {
 	return RecognizeAssets(ctx, DefaultEngine(), assets, opts...)
+}
+
+type noopEngine struct{}
+
+func (n noopEngine) Name() string {
+	return "noop"
+}
+
+func (n noopEngine) Recognize(ctx context.Context, input Input) (Result, error) {
+	return Result{InputID: input.ID}, nil
 }
