@@ -75,15 +75,17 @@ type Template struct {
 }
 
 type Subform struct {
-	Name   string        `xml:"name,attr"`
-	Layout string        `xml:"layout,attr"` // e.g., "tb" (top-to-bottom)
-	W      string        `xml:"w,attr"`
-	H      string        `xml:"h,attr"`
-	X      string        `xml:"x,attr"`
-	Y      string        `xml:"y,attr"`
-	Items  []interface{} // Contains Field, Draw, Subform, Area
-	Bind   *Bind         `xml:"bind"`
-	Occur  *Occur        `xml:"occur"`
+	Name     string        `xml:"name,attr"`
+	Layout   string        `xml:"layout,attr"` // e.g., "tb" (top-to-bottom)
+	W        string        `xml:"w,attr"`
+	H        string        `xml:"h,attr"`
+	X        string        `xml:"x,attr"`
+	Y        string        `xml:"y,attr"`
+	Items    []interface{} // Contains Field, Draw, Subform, Area
+	Fields   []*Field      `xml:"-"`
+	Subforms []*Subform    `xml:"-"`
+	Bind     *Bind         `xml:"bind"`
+	Occur    *Occur        `xml:"occur"`
 }
 
 func (s *Subform) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
@@ -121,6 +123,7 @@ func (s *Subform) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 					return err
 				}
 				s.Items = append(s.Items, &f)
+				s.Fields = append(s.Fields, &f)
 			case "draw":
 				var dr Draw
 				if err := d.DecodeElement(&dr, &token); err != nil {
@@ -133,6 +136,7 @@ func (s *Subform) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 					return err
 				}
 				s.Items = append(s.Items, &sub)
+				s.Subforms = append(s.Subforms, &sub)
 			case "area":
 				var a Area
 				if err := d.DecodeElement(&a, &token); err != nil {
