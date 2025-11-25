@@ -47,6 +47,10 @@ func (p *DocumentParser) SetPassword(pwd string) {
 }
 
 func (p *DocumentParser) Parse(ctx context.Context, r io.ReaderAt) (*raw.Document, error) {
+	// ...existing code...
+
+	// ...existing code for doc construction and object loading...
+
 	resolver := xref.NewResolver(p.cfg.XRef)
 	table, err := resolver.Resolve(ctx, r)
 	if err != nil {
@@ -103,6 +107,7 @@ func (p *DocumentParser) Parse(ctx context.Context, r io.ReaderAt) (*raw.Documen
 		}
 	}
 
+	var decryptionError error
 	for _, objNum := range table.Objects() {
 		if objNum == 0 {
 			continue // free head entry
@@ -119,9 +124,22 @@ func (p *DocumentParser) Parse(ctx context.Context, r io.ReaderAt) (*raw.Documen
 		ref := raw.ObjectRef{Num: objNum, Gen: gen}
 		obj, err := loader.Load(ctx, ref)
 		if err != nil {
+			// If the error is a decryption error, record it but continue
+			if strings.Contains(err.Error(), "decrypt") || strings.Contains(err.Error(), "padding") || strings.Contains(err.Error(), "invalid") {
+				if decryptionError == nil {
+					decryptionError = fmt.Errorf("decryption error loading object %d: %w", objNum, err)
+				}
+				continue
+			}
 			return nil, fmt.Errorf("load object %d: %w", objNum, err)
 		}
 		doc.Objects[ref] = obj
+	}
+	// Only fail if a decryption error occurred
+	if decryptionError != nil {
+		// If decryption failed, forcibly set all permissions to false and return only the decryption error
+		doc.Permissions = raw.Permissions{}
+		return nil, decryptionError
 	}
 
 	if doc.Trailer != nil {

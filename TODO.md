@@ -97,6 +97,21 @@ This document tracks the detailed implementation progress of features defined in
     - [x] Owner Password Authentication (V < 5).
     - [x] AES (128).
     - [x] AES-256 (PDF 2.0).
+
+## Encryption Roundtrip Test Improvements
+
+- [ ] 1. Test different encryption strengths (40-bit, 128-bit, 256-bit) and algorithms (RC4, AES)
+- [ ] 2. Test permissions enforcement (e.g., printing, copying) after parsing
+- [ ] 3. Test more complex documents (multiple pages, images, forms, annotations) under encryption
+- [ ] 4. Test error handling for:
+    - No password provided
+    - Corrupted/tampered encrypted files
+    - Owner password with restricted permissions
+- [ ] 5. Test encrypted streams with compression enabled (e.g., FlateDecode)
+- [ ] 6. Add end-to-end tests using the ir package for encryption
+- [ ] 7. Test alternate security handlers (e.g., public-key, custom handlers) if supported
+- [ ] 8. Test password edge cases (empty, long, non-ASCII, Unicode)
+- [ ] 9. Test encrypted documents in PDF/A or compliance modes
 - [x] **Signatures**:
     - [x] Basic PKCS#7.
     - [x] PAdES (ETSI).
