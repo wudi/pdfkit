@@ -86,12 +86,6 @@ func (w *impl) Write(ctx context.Context, doc *semantic.Document, out WriterAt, 
 	incr := incrementalContext(doc, out, cfg)
 	idPair := fileID(doc, cfg)
 
-	// Patch: If doc.Encrypted and algorithm/keybits are set, propagate to builder config
-	if doc.Encrypted && (doc.EncryptionAlgorithm != "" || doc.EncryptionKeyBits != 0) {
-		// This assumes newObjectBuilder or builder.Build will use these fields when constructing the encryption dictionary.
-		// If not, you may need to patch the builder or objects directly here.
-		// For now, just pass through as-is; the builder should handle it.
-	}
 	builder := newObjectBuilder(doc, cfg, incr.startObjNum, idPair, w.annotSerializer, w.actionSerializer, w.csSerializer, w.funcSerializer)
 	objects, catalogRef, infoRef, encryptRef, err := builder.Build()
 	if err != nil {

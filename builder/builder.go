@@ -21,7 +21,6 @@ type PDFBuilder interface {
 	AddPageLabel(pageIndex int, prefix string) PDFBuilder
 	AddOutline(out Outline) PDFBuilder
 	SetEncryption(ownerPassword, userPassword string, perms raw.Permissions, encryptMetadata bool) PDFBuilder
-	SetEncryptionWithOptions(ownerPassword, userPassword string, perms raw.Permissions, encryptMetadata bool, algorithm string, keyBits int) PDFBuilder
 	RegisterFont(name string, font *semantic.Font) PDFBuilder
 	RegisterTrueTypeFont(name string, data []byte) PDFBuilder
 	AddEmbeddedFile(file semantic.EmbeddedFile) PDFBuilder
@@ -197,8 +196,6 @@ type builderImpl struct {
 	permissions   raw.Permissions
 	encrypted     bool
 	encryptMeta   bool
-	encryptAlg    string // "RC4" or "AES"
-	encryptBits   int    // 40, 128, 256
 	fonts         map[string]fontResource
 	defaultFont   string
 	xobjectCount  int
@@ -274,18 +271,11 @@ func (b *builderImpl) AddOutline(out Outline) PDFBuilder {
 }
 
 func (b *builderImpl) SetEncryption(ownerPassword, userPassword string, perms raw.Permissions, encryptMetadata bool) PDFBuilder {
-	return b.SetEncryptionWithOptions(ownerPassword, userPassword, perms, encryptMetadata, "", 0)
-}
-
-// SetEncryptionWithOptions allows specifying algorithm ("RC4" or "AES") and keyBits (40, 128, 256)
-func (b *builderImpl) SetEncryptionWithOptions(ownerPassword, userPassword string, perms raw.Permissions, encryptMetadata bool, algorithm string, keyBits int) PDFBuilder {
 	b.ownerPassword = ownerPassword
 	b.userPassword = userPassword
 	b.permissions = perms
 	b.encrypted = true
 	b.encryptMeta = encryptMetadata
-	b.encryptAlg = algorithm
-	b.encryptBits = keyBits
 	return b
 }
 
@@ -393,8 +383,6 @@ func (b *builderImpl) Build() (*semantic.Document, error) {
 		doc.Permissions = b.permissions
 		doc.Encrypted = true
 		doc.MetadataEncrypted = b.encryptMeta
-		doc.EncryptionAlgorithm = b.encryptAlg
-		doc.EncryptionKeyBits = b.encryptBits
 	}
 	if len(b.embeddedFiles) > 0 {
 		doc.EmbeddedFiles = make([]semantic.EmbeddedFile, len(b.embeddedFiles))

@@ -10,31 +10,29 @@ import (
 
 // Document is the semantic representation of a PDF.
 type Document struct {
-	Pages               []*Page
-	Catalog             *Catalog
-	Info                *DocumentInfo
-	Metadata            *XMPMetadata
-	Lang                string
-	Marked              bool
-	PageLabels          map[int]string // page index -> prefix
-	Outlines            []OutlineItem
-	Articles            []ArticleThread
-	AcroForm            *AcroForm
-	StructTree          *StructureTree
-	DPartRoot           *DPartRoot // PDF/VT
-	OutputIntents       []OutputIntent
-	EmbeddedFiles       []EmbeddedFile
-	decoded             *decoded.DecodedDocument
-	OwnerPassword       string
-	UserPassword        string
-	Permissions         raw.Permissions
-	Encrypted           bool
-	MetadataEncrypted   bool
-	EncryptionAlgorithm string // "RC4" or "AES" (optional, for test/config)
-	EncryptionKeyBits   int    // 40, 128, 256 (optional, for test/config)
-	OriginalRef         raw.ObjectRef
-	Dirty               bool
-	Payload             *Document // PDF 2.0 Unencrypted Wrapper Payload
+	Pages             []*Page
+	Catalog           *Catalog
+	Info              *DocumentInfo
+	Metadata          *XMPMetadata
+	Lang              string
+	Marked            bool
+	PageLabels        map[int]string // page index -> prefix
+	Outlines          []OutlineItem
+	Articles          []ArticleThread
+	AcroForm          *AcroForm
+	StructTree        *StructureTree
+	DPartRoot         *DPartRoot // PDF/VT
+	OutputIntents     []OutputIntent
+	EmbeddedFiles     []EmbeddedFile
+	decoded           *decoded.DecodedDocument
+	OwnerPassword     string
+	UserPassword      string
+	Permissions       raw.Permissions
+	Encrypted         bool
+	MetadataEncrypted bool
+	OriginalRef       raw.ObjectRef
+	Dirty             bool
+	Payload           *Document // PDF 2.0 Unencrypted Wrapper Payload
 }
 
 // Decoded returns the underlying decoded document (if set).
