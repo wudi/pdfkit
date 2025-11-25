@@ -766,29 +766,52 @@ func toUnicodeHex(runes []rune) string {
 }
 
 func TestWriter_EncryptDictionary(t *testing.T) {
+	perms := raw.Permissions{
+		Print:  true,
+		Modify: true,
+	}
 	doc := &semantic.Document{
 		Pages: []*semantic.Page{
 			{MediaBox: semantic.Rectangle{URX: 5, URY: 5}, Contents: []semantic.ContentStream{{RawBytes: []byte("BT ET")}}},
 		},
-		Encrypted: true,
-		Permissions: raw.Permissions{
-			Print:  true,
-			Modify: true,
-		},
+		Encrypted:     true,
+		UserPassword:  "user",
+		OwnerPassword: "owner",
+		Permissions:   perms,
 	}
 	w := NewWriter()
 	for _, cfg := range []Config{{Deterministic: true}, {Deterministic: true, XRefStreams: true}} {
-		var buf bytes.Buffer
-		if err := w.Write(context.TODO(), doc, &buf, cfg); err != nil {
-			t.Fatalf("write encrypted (streams=%v): %v", cfg.XRefStreams, err)
-		}
-		data := buf.Bytes()
-		if !bytes.Contains(data, []byte("/Encrypt")) {
-			t.Fatalf("Encrypt missing from output (streams=%v)", cfg.XRefStreams)
-		}
-		if !bytes.Contains(data, []byte("/Filter /Standard")) || !bytes.Contains(data, []byte("/O ")) || !bytes.Contains(data, []byte("/U ")) {
-			t.Fatalf("Encrypt dictionary fields missing (streams=%v)", cfg.XRefStreams)
-		}
+		cfg := cfg
+		t.Run(fmt.Sprintf("XRefStreams_%v", cfg.XRefStreams), func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := w.Write(context.TODO(), doc, &buf, cfg); err != nil {
+				t.Fatalf("write encrypted (streams=%v): %v", cfg.XRefStreams, err)
+			}
+			data := buf.Bytes()
+			if !bytes.Contains(data, []byte("/Encrypt")) {
+				t.Fatalf("Encrypt missing from output (streams=%v)", cfg.XRefStreams)
+			}
+			if !bytes.Contains(data, []byte("/Filter /Standard")) || !bytes.Contains(data, []byte("/O ")) || !bytes.Contains(data, []byte("/U ")) {
+				t.Fatalf("Encrypt dictionary fields missing (streams=%v)", cfg.XRefStreams)
+			}
+
+			parserCfg := parser.Config{Password: doc.UserPassword}
+			p := parser.NewDocumentParser(parserCfg)
+			parsedDoc, err := p.Parse(context.Background(), bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("parse encrypted output: %v", err)
+			}
+			if parsedDoc.Permissions != perms {
+				t.Fatalf("permissions not preserved: got %+v want %+v", parsedDoc.Permissions, perms)
+			}
+			if !parsedDoc.Encrypted {
+				t.Fatalf("parsed document missing encrypted flag")
+			}
+			if parsedDoc.MetadataEncrypted != doc.MetadataEncrypted {
+				t.Fatalf("metadata encryption flag mismatch: got %v want %v", parsedDoc.MetadataEncrypted, doc.MetadataEncrypted)
+			}
+			assertEncryptDictionary(t, parsedDoc, perms, doc.MetadataEncrypted)
+		})
 	}
 }
 
