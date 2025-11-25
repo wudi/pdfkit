@@ -8,83 +8,177 @@ import (
 	"github.com/wudi/pdfkit/ir/raw"
 )
 
-func TestStandardRC4RoundTrip(t *testing.T) {
-	owner := raw.StringObj{Bytes: []byte("ownerpass")}
-	fileID := []byte("fileid0")
-	pVal := int32(-4)
+func TestEncryptionVariantsRoundTrip(t *testing.T) {
+	fileID := []byte("fileid-variants")
+	payload := []byte("secret aes/rc4 payload")
+	cases := []struct {
+		name            string
+		rawPerms        raw.Permissions
+		encryptMetadata bool
+		build           func([]byte) (*raw.DictObj, string, error)
+	}{
+		{
+			name: "RC4_40bit_DefaultPerms",
+			rawPerms: raw.Permissions{
+				Print:             true,
+				Copy:              false,
+				Modify:            true,
+				ExtractAccessible: true,
+			},
+			encryptMetadata: true,
+			build: func(fileID []byte) (*raw.DictObj, string, error) {
+				enc, _, err := BuildStandardEncryption("user40", "owner40", raw.Permissions{
+					Print:             true,
+					Copy:              false,
+					Modify:            true,
+					ExtractAccessible: true,
+				}, fileID, true)
+				return enc, "user40", err
+			},
+		},
+		{
+			name: "RC4_128bit_MetadataOff",
+			rawPerms: raw.Permissions{
+				Print:     false,
+				Copy:      false,
+				Modify:    false,
+				FillForms: true,
+				Assemble:  true,
+			},
+			encryptMetadata: false,
+			build: func(fileID []byte) (*raw.DictObj, string, error) {
+				enc, _, err := BuildRC4Encryption("user128", "owner128", raw.Permissions{
+					Print:     false,
+					Copy:      false,
+					Modify:    false,
+					FillForms: true,
+					Assemble:  true,
+				}, fileID, 128, false)
+				return enc, "user128", err
+			},
+		},
+		{
+			name: "AES_128bit",
+			rawPerms: raw.Permissions{
+				Print:             true,
+				Copy:              true,
+				Modify:            false,
+				ModifyAnnotations: false,
+				PrintHighQuality:  false,
+			},
+			encryptMetadata: true,
+			build: func(fileID []byte) (*raw.DictObj, string, error) {
+				return buildAES128Dict(raw.Permissions{
+					Print:             true,
+					Copy:              true,
+					Modify:            false,
+					ModifyAnnotations: false,
+					PrintHighQuality:  false,
+				}, true), "user-aes", nil
+			},
+		},
+		{
+			name: "AES_256bit_Permissions",
+			rawPerms: raw.Permissions{
+				Print:             true,
+				Copy:              false,
+				Modify:            true,
+				FillForms:         true,
+				ExtractAccessible: true,
+				PrintHighQuality:  true,
+			},
+			encryptMetadata: false,
+			build: func(fileID []byte) (*raw.DictObj, string, error) {
+				fileKey := []byte("0123456789abcdef0123456789abcdef")
+				userPwd := []byte("user256")
+				ownerPwd := []byte("owner256")
+				uEntry, ue := buildUserEntries(userPwd, fileID, fileKey)
+				oEntry, oe := buildOwnerEntries(ownerPwd, uEntry, fileKey)
 
-	key, err := deriveKey([]byte(""), owner.Value(), pVal, fileID, 5, 2)
-	if err != nil {
-		t.Fatalf("derive key: %v", err)
-	}
-	user := rc4Simple(key, passwordPadding)
+				enc := raw.Dict()
+				enc.Set(raw.NameObj{Val: "Filter"}, raw.NameObj{Val: "Standard"})
+				enc.Set(raw.NameObj{Val: "V"}, raw.NumberInt(5))
+				enc.Set(raw.NameObj{Val: "R"}, raw.NumberInt(6))
+				enc.Set(raw.NameObj{Val: "Length"}, raw.NumberInt(256))
+				enc.Set(raw.NameObj{Val: "U"}, raw.StringObj{Bytes: uEntry})
+				enc.Set(raw.NameObj{Val: "UE"}, raw.StringObj{Bytes: ue})
+				enc.Set(raw.NameObj{Val: "O"}, raw.StringObj{Bytes: oEntry})
+				enc.Set(raw.NameObj{Val: "OE"}, raw.StringObj{Bytes: oe})
+				pVal := PermissionsValue(raw.Permissions{
+					Print:             true,
+					Copy:              false,
+					Modify:            true,
+					FillForms:         true,
+					ExtractAccessible: true,
+					PrintHighQuality:  true,
+				})
+				enc.Set(raw.NameObj{Val: "P"}, raw.NumberObj{I: int64(pVal), IsInt: true})
+				perms := make([]byte, 16)
+				binary.LittleEndian.PutUint32(perms[:4], uint32(pVal))
+				perms[8] = 0x46 // EncryptMetadata = false
+				perms[9] = 0x61
+				perms[10] = 0x64
+				perms[11] = 0x62
+				for i := 4; i < 8; i++ {
+					perms[i] = 0xFF
+				}
+				for i := 12; i < 16; i++ {
+					perms[i] = 0xFF
+				}
+				block, _ := aes.NewCipher(fileKey)
+				var encPerms [16]byte
+				block.Encrypt(encPerms[:], perms)
+				enc.Set(raw.NameObj{Val: "Perms"}, raw.StringObj{Bytes: encPerms[:]})
+				enc.Set(raw.NameObj{Val: "EncryptMetadata"}, raw.Bool(false))
 
-	enc := raw.Dict()
-	enc.Set(raw.NameObj{Val: "Filter"}, raw.NameObj{Val: "Standard"})
-	enc.Set(raw.NameObj{Val: "V"}, raw.NumberInt(1))
-	enc.Set(raw.NameObj{Val: "R"}, raw.NumberInt(2))
-	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberInt(40))
-	enc.Set(raw.NameObj{Val: "O"}, owner)
-	enc.Set(raw.NameObj{Val: "U"}, raw.StringObj{Bytes: user})
-	enc.Set(raw.NameObj{Val: "P"}, raw.NumberObj{I: int64(pVal), IsInt: true})
-
-	h, err := (&HandlerBuilder{}).WithEncryptDict(enc).WithFileID(fileID).Build()
-	if err != nil {
-		t.Fatalf("build handler: %v", err)
-	}
-	if err := h.Authenticate(""); err != nil {
-		t.Fatalf("authenticate: %v", err)
-	}
-
-	plain := []byte("secret data")
-	encData, err := h.Encrypt(5, 0, plain, DataClassStream)
-	if err != nil {
-		t.Fatalf("encrypt: %v", err)
-	}
-	decData, err := h.Decrypt(5, 0, encData, DataClassStream)
-	if err != nil {
-		t.Fatalf("decrypt: %v", err)
-	}
-	if string(decData) != string(plain) {
-		t.Fatalf("roundtrip mismatch: got %q want %q", decData, plain)
-	}
-}
-
-func TestAESRoundTrip(t *testing.T) {
-	owner := raw.StringObj{Bytes: []byte("ownerpass")}
-	fileID := []byte("fileid1")
-	pVal := int32(-4)
-
-	enc := raw.Dict()
-	enc.Set(raw.NameObj{Val: "Filter"}, raw.NameObj{Val: "Standard"})
-	enc.Set(raw.NameObj{Val: "V"}, raw.NumberInt(4))
-	enc.Set(raw.NameObj{Val: "R"}, raw.NumberInt(4))
-	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberInt(128))
-	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberInt(128))
-	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberInt(128))
-	enc.Set(raw.NameObj{Val: "O"}, owner)
-	enc.Set(raw.NameObj{Val: "U"}, raw.StringObj{Bytes: passwordPadding})
-	enc.Set(raw.NameObj{Val: "P"}, raw.NumberObj{I: int64(pVal), IsInt: true})
-
-	h, err := (&HandlerBuilder{}).WithEncryptDict(enc).WithFileID(fileID).Build()
-	if err != nil {
-		t.Fatalf("build handler: %v", err)
-	}
-	if err := h.Authenticate(""); err != nil {
-		t.Fatalf("authenticate: %v", err)
+				return enc, "user256", nil
+			},
+		},
 	}
 
-	plain := []byte("secret aes data 1234")
-	encData, err := h.Encrypt(7, 0, plain, DataClassStream)
-	if err != nil {
-		t.Fatalf("encrypt: %v", err)
-	}
-	decData, err := h.Decrypt(7, 0, encData, DataClassStream)
-	if err != nil {
-		t.Fatalf("decrypt: %v", err)
-	}
-	if string(decData) != string(plain) {
-		t.Fatalf("roundtrip mismatch: got %q want %q", decData, plain)
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			encDict, pwd, err := tc.build(fileID)
+			if err != nil {
+				t.Fatalf("build encrypt dictionary: %v", err)
+			}
+			h, err := (&HandlerBuilder{}).WithEncryptDict(encDict).WithFileID(fileID).Build()
+			if err != nil {
+				t.Fatalf("build handler: %v", err)
+			}
+			if err := h.Authenticate(pwd); err != nil {
+				t.Fatalf("authenticate: %v", err)
+			}
+			if got := h.Permissions(); got != toSecurityPerms(tc.rawPerms) {
+				t.Fatalf("permissions mismatch: got %+v want %+v", got, toSecurityPerms(tc.rawPerms))
+			}
+			if h.EncryptMetadata() != tc.encryptMetadata {
+				t.Fatalf("encrypt metadata mismatch: got %v want %v", h.EncryptMetadata(), tc.encryptMetadata)
+			}
+			encData, err := h.Encrypt(5, 0, payload, DataClassStream)
+			if err != nil {
+				t.Fatalf("encrypt stream: %v", err)
+			}
+			decData, err := h.Decrypt(5, 0, encData, DataClassStream)
+			if err != nil {
+				t.Fatalf("decrypt stream: %v", err)
+			}
+			if string(decData) != string(payload) {
+				t.Fatalf("stream roundtrip mismatch: got %q want %q", decData, payload)
+			}
+			strEnc, err := h.Encrypt(7, 0, payload, DataClassString)
+			if err != nil {
+				t.Fatalf("encrypt string: %v", err)
+			}
+			strDec, err := h.Decrypt(7, 0, strEnc, DataClassString)
+			if err != nil {
+				t.Fatalf("decrypt string: %v", err)
+			}
+			if string(strDec) != string(payload) {
+				t.Fatalf("string roundtrip mismatch: got %q want %q", strDec, payload)
+			}
+		})
 	}
 }
 
@@ -216,6 +310,46 @@ func TestAES256Authentication(t *testing.T) {
 	}
 	if string(dec) != string(stream) {
 		t.Fatalf("aes256 roundtrip mismatch: got %q want %q", dec, stream)
+	}
+}
+
+func buildAES128Dict(perms raw.Permissions, encryptMetadata bool) *raw.DictObj {
+	pVal := PermissionsValue(perms)
+	enc := raw.Dict()
+	enc.Set(raw.NameObj{Val: "Filter"}, raw.NameObj{Val: "Standard"})
+	enc.Set(raw.NameObj{Val: "V"}, raw.NumberInt(4))
+	enc.Set(raw.NameObj{Val: "R"}, raw.NumberInt(4))
+	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberInt(128))
+	enc.Set(raw.NameObj{Val: "O"}, raw.Str(padPassword([]byte("owner-aes"))))
+	enc.Set(raw.NameObj{Val: "U"}, raw.Str(passwordPadding))
+	enc.Set(raw.NameObj{Val: "P"}, raw.NumberObj{I: int64(pVal), IsInt: true})
+
+	cf := raw.Dict()
+	std := raw.Dict()
+	std.Set(raw.NameObj{Val: "Type"}, raw.NameObj{Val: "CryptFilter"})
+	std.Set(raw.NameObj{Val: "CFM"}, raw.NameObj{Val: "AESV2"})
+	std.Set(raw.NameObj{Val: "AuthEvent"}, raw.NameObj{Val: "DocOpen"})
+	std.Set(raw.NameObj{Val: "Length"}, raw.NumberInt(128))
+	cf.Set(raw.NameObj{Val: "StdCF"}, std)
+	enc.Set(raw.NameObj{Val: "CF"}, cf)
+	enc.Set(raw.NameObj{Val: "StmF"}, raw.NameObj{Val: "StdCF"})
+	enc.Set(raw.NameObj{Val: "StrF"}, raw.NameObj{Val: "StdCF"})
+	if !encryptMetadata {
+		enc.Set(raw.NameObj{Val: "EncryptMetadata"}, raw.Bool(false))
+	}
+	return enc
+}
+
+func toSecurityPerms(p raw.Permissions) Permissions {
+	return Permissions{
+		Print:             p.Print,
+		Modify:            p.Modify,
+		Copy:              p.Copy,
+		ModifyAnnotations: p.ModifyAnnotations,
+		FillForms:         p.FillForms,
+		ExtractAccessible: p.ExtractAccessible,
+		Assemble:          p.Assemble,
+		PrintHighQuality:  p.PrintHighQuality,
 	}
 }
 

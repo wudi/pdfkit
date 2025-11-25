@@ -558,8 +558,19 @@ func PermissionsValue(p raw.Permissions) int32 {
 	return val
 }
 
-// BuildStandardEncryption constructs an Encrypt dictionary and primary key for the Standard security handler.
-func BuildStandardEncryption(userPwd, ownerPwd string, permissions raw.Permissions, fileID []byte, encryptMetadata bool) (*raw.DictObj, []byte, error) {
+// BuildRC4Encryption builds a Standard security handler dictionary using RC4 with the requested key length.
+func BuildRC4Encryption(userPwd, ownerPwd string, permissions raw.Permissions, fileID []byte, keyBits int, encryptMetadata bool) (*raw.DictObj, []byte, error) {
+	if keyBits <= 0 {
+		keyBits = 40
+	}
+	if keyBits%8 != 0 {
+		return nil, nil, fmt.Errorf("rc4 key length must be multiple of 8")
+	}
+	keyLenBytes := keyBits / 8
+	if keyLenBytes < 5 {
+		keyLenBytes = 5
+		keyBits = 40
+	}
 	if len(ownerPwd) == 0 {
 		if len(userPwd) > 0 {
 			ownerPwd = userPwd
@@ -570,9 +581,13 @@ func BuildStandardEncryption(userPwd, ownerPwd string, permissions raw.Permissio
 	userPad := padPassword([]byte(userPwd))
 	ownerPad := padPassword([]byte(ownerPwd))
 	ownerDigest := md5.Sum(ownerPad)
-	oVal := rc4Simple(ownerDigest[:5], userPad)
+	ownerKey := ownerDigest[:]
+	if len(ownerKey) > keyLenBytes {
+		ownerKey = ownerKey[:keyLenBytes]
+	}
+	oVal := rc4Simple(ownerKey, userPad)
 	pVal := PermissionsValue(permissions)
-	fileKey, err := deriveKey([]byte(userPwd), oVal, pVal, fileID, 5, 2)
+	fileKey, err := deriveKey([]byte(userPwd), oVal, pVal, fileID, keyLenBytes, 2)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -582,7 +597,7 @@ func BuildStandardEncryption(userPwd, ownerPwd string, permissions raw.Permissio
 	enc.Set(raw.NameObj{Val: "Filter"}, raw.NameObj{Val: "Standard"})
 	enc.Set(raw.NameObj{Val: "V"}, raw.NumberObj{I: 1, IsInt: true})
 	enc.Set(raw.NameObj{Val: "R"}, raw.NumberObj{I: 2, IsInt: true})
-	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberObj{I: 40, IsInt: true})
+	enc.Set(raw.NameObj{Val: "Length"}, raw.NumberObj{I: int64(keyBits), IsInt: true})
 	enc.Set(raw.NameObj{Val: "O"}, raw.Str(oVal))
 	enc.Set(raw.NameObj{Val: "U"}, raw.Str(uVal))
 	enc.Set(raw.NameObj{Val: "P"}, raw.NumberObj{I: int64(pVal), IsInt: true})
@@ -590,6 +605,11 @@ func BuildStandardEncryption(userPwd, ownerPwd string, permissions raw.Permissio
 		enc.Set(raw.NameObj{Val: "EncryptMetadata"}, raw.Bool(encryptMetadata))
 	}
 	return enc, fileKey, nil
+}
+
+// BuildStandardEncryption constructs an Encrypt dictionary and primary key for the Standard security handler.
+func BuildStandardEncryption(userPwd, ownerPwd string, permissions raw.Permissions, fileID []byte, encryptMetadata bool) (*raw.DictObj, []byte, error) {
+	return BuildRC4Encryption(userPwd, ownerPwd, permissions, fileID, 40, encryptMetadata)
 }
 
 // BuildAES256Encryption constructs an Encrypt dictionary and keys for AES-256 (PDF 2.0) security.

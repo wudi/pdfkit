@@ -15,110 +15,130 @@ import (
 )
 
 func TestEncryptionRoundTrip(t *testing.T) {
-	// 1. Create a document with encryption
-	b := builder.NewBuilder()
-	b.SetMetadata([]byte("<x:xmpmeta>Secret Metadata</x:xmpmeta>"))
-	b.NewPage(595, 842).
-		DrawText("Secret Content", 100, 700, builder.TextOptions{FontSize: 24}).
-		Finish()
-
-	userPwd := "user"
-	ownerPwd := "owner"
-	perms := raw.Permissions{Print: true}
-	b.SetEncryption(ownerPwd, userPwd, perms, true)
-
-	doc, err := b.Build()
-	if err != nil {
-		t.Fatalf("Build failed: %v", err)
+	cases := []struct {
+		name            string
+		perms           raw.Permissions
+		encryptMetadata bool
+	}{
+		{
+			name:            "DefaultPermissions",
+			perms:           raw.Permissions{Print: true},
+			encryptMetadata: true,
+		},
+		{
+			name: "RestrictedPermissions",
+			perms: raw.Permissions{
+				Print:             false,
+				Copy:              false,
+				Modify:            false,
+				FillForms:         true,
+				ExtractAccessible: false,
+			},
+			encryptMetadata: true,
+		},
 	}
 
-	// 2. Write to buffer
-	var buf bytes.Buffer
-	w := NewWriter()
-	// Use deterministic generation to ensure consistent IDs for debugging if needed,
-	// though for this test we just care that the ID matches what's used for encryption.
-	if err := w.Write(context.Background(), doc, &buf, Config{Deterministic: true}); err != nil {
-		t.Fatalf("Write failed: %v", err)
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			b := builder.NewBuilder()
+			b.SetMetadata([]byte("<x:xmpmeta>Secret Metadata</x:xmpmeta>"))
+			b.NewPage(595, 842).
+				DrawText("Secret Content", 100, 700, builder.TextOptions{FontSize: 24}).
+				Finish()
+
+			userPwd := "user"
+			ownerPwd := "owner"
+			b.SetEncryption(ownerPwd, userPwd, tc.perms, tc.encryptMetadata)
+
+			doc, err := b.Build()
+			if err != nil {
+				t.Fatalf("Build failed: %v", err)
+			}
+
+			var buf bytes.Buffer
+			w := NewWriter()
+			if err := w.Write(context.Background(), doc, &buf, Config{Deterministic: true}); err != nil {
+				t.Fatalf("Write failed: %v", err)
+			}
+
+			pdfData := buf.Bytes()
+			requireNoPlaintext(t, pdfData, "Secret Content", "Secret Metadata")
+
+			t.Run("AuthenticateWithUserPassword", func(t *testing.T) {
+				cfg := parser.Config{
+					Password: userPwd,
+				}
+				p := parser.NewDocumentParser(cfg)
+				parsedDoc, err := p.Parse(context.Background(), bytes.NewReader(pdfData))
+				if err != nil {
+					t.Fatalf("Parse with user password failed: %v", err)
+				}
+
+				if !parsedDoc.Encrypted {
+					t.Error("Parsed document should be marked as Encrypted")
+				}
+				if parsedDoc.MetadataEncrypted != tc.encryptMetadata {
+					t.Errorf("Metadata encryption mismatch: got %v want %v", parsedDoc.MetadataEncrypted, tc.encryptMetadata)
+				}
+				if parsedDoc.Permissions != tc.perms {
+					t.Fatalf("Permissions mismatch: got %+v want %+v", parsedDoc.Permissions, tc.perms)
+				}
+				assertEncryptDictionary(t, parsedDoc, tc.perms, tc.encryptMetadata)
+
+				decodedDoc := decodeStreams(t, parsedDoc)
+				requireContentDecrypted(t, decodedDoc, "Secret Content")
+				requireMetadataDecrypted(t, decodedDoc, "Secret Metadata")
+			})
+
+			t.Run("AuthenticateWithOwnerPassword", func(t *testing.T) {
+				cfg := parser.Config{
+					Password: ownerPwd,
+				}
+				p := parser.NewDocumentParser(cfg)
+				parsedDoc, err := p.Parse(context.Background(), bytes.NewReader(pdfData))
+				if err != nil {
+					t.Fatalf("Parse with owner password failed: %v", err)
+				}
+
+				if parsedDoc.Permissions != tc.perms {
+					t.Fatalf("Permissions mismatch with owner password: got %+v want %+v", parsedDoc.Permissions, tc.perms)
+				}
+
+				decodedDoc := decodeStreams(t, parsedDoc)
+				requireContentDecrypted(t, decodedDoc, "Secret Content")
+				requireMetadataDecrypted(t, decodedDoc, "Secret Metadata")
+			})
+
+			t.Run("FailWithWrongPassword", func(t *testing.T) {
+				cfg := parser.Config{
+					Password: "wrong",
+				}
+				p := parser.NewDocumentParser(cfg)
+				_, err := p.Parse(context.Background(), bytes.NewReader(pdfData))
+				if err == nil {
+					t.Fatal("Parse with wrong password should have failed")
+				}
+				if !strings.Contains(err.Error(), "invalid password") {
+					t.Fatalf("Expected authentication error, got: %v", err)
+				}
+			})
+
+			t.Run("FailWithEmptyPassword", func(t *testing.T) {
+				cfg := parser.Config{
+					Password: "",
+				}
+				p := parser.NewDocumentParser(cfg)
+				_, err := p.Parse(context.Background(), bytes.NewReader(pdfData))
+				if err == nil {
+					t.Fatal("Parse with empty password should have failed")
+				}
+				if !strings.Contains(err.Error(), "invalid password") {
+					t.Fatalf("Expected authentication error for empty password, got: %v", err)
+				}
+			})
+		})
 	}
-
-	pdfData := buf.Bytes()
-	requireNoPlaintext(t, pdfData, "Secret Content", "Secret Metadata")
-
-	// 3. Parse with User Password
-	t.Run("AuthenticateWithUserPassword", func(t *testing.T) {
-		cfg := parser.Config{
-			Password: userPwd,
-		}
-		p := parser.NewDocumentParser(cfg)
-		parsedDoc, err := p.Parse(context.Background(), bytes.NewReader(pdfData))
-		if err != nil {
-			t.Fatalf("Parse with user password failed: %v", err)
-		}
-
-		if !parsedDoc.Encrypted {
-			t.Error("Parsed document should be marked as Encrypted")
-		}
-		if parsedDoc.MetadataEncrypted != true {
-			t.Error("Metadata should be marked as encrypted")
-		}
-		if parsedDoc.Permissions != perms {
-			t.Fatalf("Permissions mismatch: got %+v want %+v", parsedDoc.Permissions, perms)
-		}
-		assertEncryptDictionary(t, parsedDoc, perms, true)
-
-		decodedDoc := decodeStreams(t, parsedDoc)
-		requireContentDecrypted(t, decodedDoc, "Secret Content")
-		requireMetadataDecrypted(t, decodedDoc, "Secret Metadata")
-	})
-
-	// 4. Parse with Owner Password
-	t.Run("AuthenticateWithOwnerPassword", func(t *testing.T) {
-		cfg := parser.Config{
-			Password: ownerPwd,
-		}
-		p := parser.NewDocumentParser(cfg)
-		parsedDoc, err := p.Parse(context.Background(), bytes.NewReader(pdfData))
-		if err != nil {
-			t.Fatalf("Parse with owner password failed: %v", err)
-		}
-
-		if parsedDoc.Permissions != perms {
-			t.Fatalf("Permissions mismatch with owner password: got %+v want %+v", parsedDoc.Permissions, perms)
-		}
-
-		decodedDoc := decodeStreams(t, parsedDoc)
-		requireContentDecrypted(t, decodedDoc, "Secret Content")
-		requireMetadataDecrypted(t, decodedDoc, "Secret Metadata")
-	})
-
-	// 5. Parse with Wrong Password
-	t.Run("FailWithWrongPassword", func(t *testing.T) {
-		cfg := parser.Config{
-			Password: "wrong",
-		}
-		p := parser.NewDocumentParser(cfg)
-		_, err := p.Parse(context.Background(), bytes.NewReader(pdfData))
-		if err == nil {
-			t.Fatal("Parse with wrong password should have failed")
-		}
-		if !strings.Contains(err.Error(), "invalid password") {
-			t.Fatalf("Expected authentication error, got: %v", err)
-		}
-	})
-
-	t.Run("FailWithEmptyPassword", func(t *testing.T) {
-		cfg := parser.Config{
-			Password: "",
-		}
-		p := parser.NewDocumentParser(cfg)
-		_, err := p.Parse(context.Background(), bytes.NewReader(pdfData))
-		if err == nil {
-			t.Fatal("Parse with empty password should have failed")
-		}
-		if !strings.Contains(err.Error(), "invalid password") {
-			t.Fatalf("Expected authentication error for empty password, got: %v", err)
-		}
-	})
 }
 
 func requireNoPlaintext(t *testing.T, pdfData []byte, secrets ...string) {
