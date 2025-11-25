@@ -75,20 +75,15 @@ type Template struct {
 }
 
 type Subform struct {
-	Name   string `xml:"name,attr"`
-	Layout string `xml:"layout,attr"` // e.g., "tb" (top-to-bottom)
-	W      string `xml:"w,attr"`
-	H      string `xml:"h,attr"`
-	X      string `xml:"x,attr"`
-	Y      string `xml:"y,attr"`
-	// Items preserves document order for layout; typed slices give convenient accessors.
-	Items    []interface{} `xml:"-"`
-	Fields   []*Field      `xml:"-"`
-	Subforms []*Subform    `xml:"-"`
-	Draws    []*Draw       `xml:"-"`
-	Areas    []*Area       `xml:"-"`
-	Bind     *Bind         `xml:"bind"`
-	Occur    *Occur        `xml:"occur"`
+	Name   string        `xml:"name,attr"`
+	Layout string        `xml:"layout,attr"` // e.g., "tb" (top-to-bottom)
+	W      string        `xml:"w,attr"`
+	H      string        `xml:"h,attr"`
+	X      string        `xml:"x,attr"`
+	Y      string        `xml:"y,attr"`
+	Items  []interface{} // Contains Field, Draw, Subform, Area
+	Bind   *Bind         `xml:"bind"`
+	Occur  *Occur        `xml:"occur"`
 }
 
 func (s *Subform) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
@@ -125,25 +120,25 @@ func (s *Subform) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 				if err := d.DecodeElement(&f, &token); err != nil {
 					return err
 				}
-				s.addItem(&f)
+				s.Items = append(s.Items, &f)
 			case "draw":
 				var dr Draw
 				if err := d.DecodeElement(&dr, &token); err != nil {
 					return err
 				}
-				s.addItem(&dr)
+				s.Items = append(s.Items, &dr)
 			case "subform":
 				var sub Subform
 				if err := d.DecodeElement(&sub, &token); err != nil {
 					return err
 				}
-				s.addItem(&sub)
+				s.Items = append(s.Items, &sub)
 			case "area":
 				var a Area
 				if err := d.DecodeElement(&a, &token); err != nil {
 					return err
 				}
-				s.addItem(&a)
+				s.Items = append(s.Items, &a)
 			case "bind":
 				var b Bind
 				if err := d.DecodeElement(&b, &token); err != nil {
@@ -167,20 +162,6 @@ func (s *Subform) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 				return nil
 			}
 		}
-	}
-}
-
-func (s *Subform) addItem(item interface{}) {
-	s.Items = append(s.Items, item)
-	switch v := item.(type) {
-	case *Field:
-		s.Fields = append(s.Fields, v)
-	case *Subform:
-		s.Subforms = append(s.Subforms, v)
-	case *Draw:
-		s.Draws = append(s.Draws, v)
-	case *Area:
-		s.Areas = append(s.Areas, v)
 	}
 }
 
