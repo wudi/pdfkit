@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/wudi/pdfkit/compliance"
 	"github.com/wudi/pdfkit/compliance/pdfx"
 	"github.com/wudi/pdfkit/ir/semantic"
 )
@@ -62,4 +63,46 @@ func TestPDFXEnforcement(t *testing.T) {
 	if !hasRGBViolation {
 		t.Error("Expected RGB violation to persist (Enforce doesn't convert colors)")
 	}
+}
+
+func TestPDFXEncryptedDocumentFailsValidation(t *testing.T) {
+	e := pdfx.NewEnforcer()
+	ctx := context.Background()
+
+	doc := &semantic.Document{
+		Encrypted: true,
+		OutputIntents: []semantic.OutputIntent{{
+			S: "GTS_PDFX",
+		}},
+		Info: &semantic.DocumentInfo{Trapped: "True"},
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 10, URY: 10},
+				TrimBox:  semantic.Rectangle{URX: 10, URY: 10},
+			},
+		},
+	}
+
+	rep, err := e.Validate(ctx, doc)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if rep.Compliant {
+		t.Fatal("expected encrypted document to be non-compliant")
+	}
+	if !hasViolation(rep, "ENC001") {
+		t.Fatalf("expected encryption violation, got %+v", rep.Violations)
+	}
+	if len(rep.Violations) != 1 {
+		t.Fatalf("expected only encryption violation, got %+v", rep.Violations)
+	}
+}
+
+func hasViolation(rep *compliance.Report, code string) bool {
+	for _, v := range rep.Violations {
+		if v.Code == code {
+			return true
+		}
+	}
+	return false
 }

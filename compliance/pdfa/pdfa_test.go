@@ -95,3 +95,45 @@ func TestEnforce(t *testing.T) {
 		t.Errorf("Expected Text annotation, got %s", doc.Pages[0].Annotations[0].Base().Subtype)
 	}
 }
+
+func TestPDFAEncryptedDocumentFailsValidation(t *testing.T) {
+	e := pdfa.NewEnforcer()
+	ctx := context.Background()
+
+	doc := &semantic.Document{
+		Encrypted: true,
+		OutputIntents: []semantic.OutputIntent{{
+			S: "GTS_PDFA1",
+		}},
+		Pages: []*semantic.Page{
+			{
+				MediaBox: semantic.Rectangle{URX: 10, URY: 10},
+				Resources: &semantic.Resources{
+					Fonts: map[string]*semantic.Font{
+						"F1": {
+							Subtype:  "TrueType",
+							BaseFont: "Arial",
+							Descriptor: &semantic.FontDescriptor{
+								FontFile: []byte("mock font data"),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	rep, err := e.Validate(ctx, doc, pdfa.PDFA1B)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if rep.Compliant {
+		t.Fatal("expected encrypted document to be non-compliant")
+	}
+	if !hasViolation(rep, "ENC001") {
+		t.Fatalf("expected encryption violation, got %+v", rep.Violations)
+	}
+	if len(rep.Violations) != 1 {
+		t.Fatalf("expected only encryption violation, got %+v", rep.Violations)
+	}
+}

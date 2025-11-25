@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/wudi/pdfkit/compliance"
 	"github.com/wudi/pdfkit/compliance/pdfvt"
 	"github.com/wudi/pdfkit/ir/semantic"
 )
@@ -46,4 +47,40 @@ func TestPDFVTEnforcement(t *testing.T) {
 		}
 		t.Fatal("Expected compliant document")
 	}
+}
+
+func TestPDFVTEncryptedDocumentFailsValidation(t *testing.T) {
+	e := pdfvt.NewEnforcer()
+	ctx := context.Background()
+
+	doc := &semantic.Document{
+		Encrypted: true,
+		OutputIntents: []semantic.OutputIntent{{
+			S: "GTS_PDFVT",
+		}},
+		DPartRoot: &semantic.DPartRoot{},
+	}
+
+	rep, err := e.Validate(ctx, doc)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if rep.Compliant {
+		t.Fatal("expected encrypted document to be non-compliant")
+	}
+	if !hasViolation(rep, "ENC001") {
+		t.Fatalf("expected encryption violation, got %+v", rep.Violations)
+	}
+	if len(rep.Violations) != 1 {
+		t.Fatalf("expected only encryption violation, got %+v", rep.Violations)
+	}
+}
+
+func hasViolation(rep *compliance.Report, code string) bool {
+	for _, v := range rep.Violations {
+		if v.Code == code {
+			return true
+		}
+	}
+	return false
 }
