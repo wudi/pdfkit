@@ -35,6 +35,7 @@ type Document struct {
 	Dirty             bool
 	Payload           *Document // PDF 2.0 Unencrypted Wrapper Payload
 	EncryptionOptions security.EncryptionOptions
+	OCRResults        []OCRResult
 }
 
 // Decoded returns the underlying decoded document (if set).

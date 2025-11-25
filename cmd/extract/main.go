@@ -11,6 +11,8 @@ import (
 
 	"github.com/wudi/pdfkit/extractor"
 	"github.com/wudi/pdfkit/ir"
+	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/ocr"
 )
 
 type featureSelection struct {
@@ -29,6 +31,14 @@ type options struct {
 	outDir   string
 	password string
 	features featureSelection
+	ocr      ocrOptions
+}
+
+type ocrOptions struct {
+	Enabled   bool
+	Languages []string
+	PSM       int
+	Whitelist string
 }
 
 func main() {
@@ -57,6 +67,10 @@ func parseFlags() (options, error) {
 	toc := flag.Bool("toc", false, "Emit a flattened table of contents")
 	fonts := flag.Bool("fonts", false, "Report font usage across pages")
 	attachments := flag.Bool("attachments", false, "Extract embedded files to disk")
+	ocrFlag := flag.Bool("ocr", false, "Run OCR on extracted images (Tesseract default)")
+	ocrLang := flag.String("ocr-lang", "eng", "Comma-separated languages for OCR (e.g., eng,deu)")
+	ocrPSM := flag.Int("ocr-psm", -1, "Page segmentation mode for Tesseract (-1 to leave default)")
+	ocrWhitelist := flag.String("ocr-whitelist", "", "Character whitelist for OCR (Tesseract only)")
 	outDir := flag.String("out", "extract_output", "Directory for binary artifacts (images/attachments)")
 	password := flag.String("password", "", "Password to open encrypted PDFs")
 	flag.Parse()
@@ -80,6 +94,15 @@ func parseFlags() (options, error) {
 	}
 	if !opts.features.Text && !opts.features.Images && !opts.features.Annotations && !opts.features.Metadata && !opts.features.Bookmarks && !opts.features.TOC && !opts.features.Fonts && !opts.features.Attachments {
 		opts.features = featureSelection{Text: true, Images: true, Annotations: true, Metadata: true, Bookmarks: true, TOC: true, Fonts: true, Attachments: true}
+	}
+	opts.ocr = ocrOptions{
+		Enabled:   *ocrFlag,
+		Languages: strings.FieldsFunc(*ocrLang, func(r rune) bool { return r == ',' }),
+		PSM:       *ocrPSM,
+		Whitelist: *ocrWhitelist,
+	}
+	if len(opts.ocr.Languages) == 0 {
+		opts.ocr.Languages = []string{"eng"}
 	}
 	return opts, nil
 }
@@ -109,6 +132,19 @@ func run(opts options) error {
 		return fmt.Errorf("new extractor: %w", err)
 	}
 
+	var cachedImages []extractor.ImageAsset
+	loadImages := func() ([]extractor.ImageAsset, error) {
+		if cachedImages != nil {
+			return cachedImages, nil
+		}
+		imgs, err := ext.ExtractImages()
+		if err != nil {
+			return nil, fmt.Errorf("extract images: %w", err)
+		}
+		cachedImages = imgs
+		return cachedImages, nil
+	}
+
 	if opts.features.Text {
 		pages, err := ext.ExtractText()
 		if err != nil {
@@ -120,9 +156,9 @@ func run(opts options) error {
 	}
 
 	if opts.features.Images {
-		assets, err := ext.ExtractImages()
+		assets, err := loadImages()
 		if err != nil {
-			return fmt.Errorf("extract images: %w", err)
+			return err
 		}
 		summaries, err := writeImages(filepath.Join(opts.outDir, "images"), assets)
 		if err != nil {
@@ -178,6 +214,34 @@ func run(opts options) error {
 			return err
 		}
 		if err := emitSection("attachments", summaries); err != nil {
+			return err
+		}
+	}
+
+	if opts.ocr.Enabled {
+		assets, err := loadImages()
+		if err != nil {
+			return err
+		}
+		var ocrOpts []ocr.InputOption
+		if len(opts.ocr.Languages) > 0 {
+			ocrOpts = append(ocrOpts, ocr.WithLanguages(opts.ocr.Languages...))
+		}
+		if opts.ocr.PSM >= 0 {
+			ocrOpts = append(ocrOpts, ocr.WithTesseractPSM(opts.ocr.PSM))
+		}
+		if opts.ocr.Whitelist != "" {
+			ocrOpts = append(ocrOpts, ocr.WithTesseractWhitelist(opts.ocr.Whitelist))
+		}
+		results, err := ocr.DefaultRecognizeAssets(context.Background(), assets, ocrOpts...)
+		if err != nil {
+			return fmt.Errorf("ocr images: %w", err)
+		}
+		doc.OCRResults = make([]semantic.OCRResult, len(results))
+		for i, r := range results {
+			doc.OCRResults[i] = semantic.OCRResult{InputID: r.InputID, PlainText: r.PlainText}
+		}
+		if err := emitSection("ocr", results); err != nil {
 			return err
 		}
 	}

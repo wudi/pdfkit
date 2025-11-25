@@ -15,9 +15,12 @@ const (
 	PhaseSanitize
 	PhaseTransform
 	PhaseValidate
+	PhaseOCR
 )
 
-func (p Phase) String() string { return []string{"Inspect", "Sanitize", "Transform", "Validate"}[p] }
+func (p Phase) String() string {
+	return []string{"Inspect", "Sanitize", "Transform", "Validate", "OCR"}[p]
+}
 
 type Extension interface {
 	Name() string
@@ -113,7 +116,7 @@ func (h *HubImpl) Register(ext Extension) error {
 }
 
 func (h *HubImpl) Execute(ctx context.Context, doc *semantic.Document) error {
-	phases := []Phase{PhaseInspect, PhaseSanitize, PhaseTransform, PhaseValidate}
+	phases := []Phase{PhaseInspect, PhaseSanitize, PhaseTransform, PhaseValidate, PhaseOCR}
 	for _, ph := range phases {
 		for _, e := range h.exts[ph] {
 			if err := e.Execute(ctx, doc); err != nil {
