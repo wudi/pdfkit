@@ -25,6 +25,8 @@ type Document struct {
 	DPartRoot         *DPartRoot // PDF/VT
 	OutputIntents     []OutputIntent
 	EmbeddedFiles     []EmbeddedFile
+	Names             *Names // Document-level named objects
+	OpenAction        Action // Action to perform when opening the document
 	decoded           *decoded.DecodedDocument
 	OwnerPassword     string
 	UserPassword      string
@@ -432,6 +434,12 @@ type FontDescriptor struct {
 }
 
 type Catalog struct{}
+
+// Names represents the document's name dictionary.
+type Names struct {
+	JavaScript map[string]JavaScriptAction
+	// Add other name trees as needed (e.g. Dests, EmbeddedFiles)
+}
 
 // EmbeddedFile models an associated file (e.g., PDF/A-3 attachments).
 type EmbeddedFile struct {

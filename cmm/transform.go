@@ -18,7 +18,21 @@ func (t *basicTransform) Convert(in []float64) ([]float64, error) {
 		return nil, fmt.Errorf("input channels mismatch: expected %d, got %d", srcCh, len(in))
 	}
 
-	// 2. Simple conversions (fallback)
+	// 2. Try ICC-based conversion if available
+	if srcICC, ok := t.src.(*ICCProfile); ok {
+		if dstICC, ok := t.dst.(*ICCProfile); ok {
+			// Try RGB -> XYZ -> RGB
+			if t.src.ColorSpace() == "RGB " && t.dst.ColorSpace() == "RGB " {
+				out, err := convertICC_RGB_RGB(srcICC, dstICC, in)
+				if err == nil {
+					return out, nil
+				}
+				// Fallback if ICC fails (e.g. complex LUTs)
+			}
+		}
+	}
+
+	// 3. Simple conversions (fallback)
 	// If we had a real CMM, we would use the LUTs here.
 	// For now, we implement basic conversions between standard spaces if possible.
 
@@ -168,4 +182,84 @@ func max(a, b float64) float64 {
 		return a
 	}
 	return b
+}
+
+func convertICC_RGB_RGB(src, dst *ICCProfile, in []float64) ([]float64, error) {
+	// 1. Src -> XYZ (Matrix/TRC)
+	srcXform, err := tryCreateMatrixTRC(src)
+	if err != nil {
+		return nil, err
+	}
+	xyz, err := srcXform.Convert(in)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. XYZ -> Dst (Inverse Matrix/TRC)
+	dstXform, err := tryCreateMatrixTRC(dst)
+	if err != nil {
+		return nil, err
+	}
+	invDstXform, err := dstXform.Inverse()
+	if err != nil {
+		return nil, err
+	}
+
+	return invDstXform.Convert(xyz)
+}
+
+func (t *matrixTRCTransform) Inverse() (Transform, error) {
+	invMat, err := invertMatrix(t.matrix)
+	if err != nil {
+		return nil, err
+	}
+	return &inverseMatrixTRCTransform{
+		destGamma: t.srcGamma,
+		matrix:    invMat,
+	}, nil
+}
+
+type inverseMatrixTRCTransform struct {
+	destGamma [3]float64
+	matrix    [9]float64 // XYZ -> Linear RGB matrix
+}
+
+func (t *inverseMatrixTRCTransform) Convert(in []float64) ([]float64, error) {
+	if len(in) < 3 {
+		return nil, errors.New("input too short")
+	}
+	x, y, z := in[0], in[1], in[2]
+
+	// 1. Matrix Multiply (XYZ -> Linear RGB)
+	rLin := t.matrix[0]*x + t.matrix[1]*y + t.matrix[2]*z
+	gLin := t.matrix[3]*x + t.matrix[4]*y + t.matrix[5]*z
+	bLin := t.matrix[6]*x + t.matrix[7]*y + t.matrix[8]*z
+
+	// 2. Apply Gamma (Linear RGB -> RGB)
+	// val = pow(lin, 1/gamma)
+	r := math.Pow(math.Max(0, rLin), 1.0/t.destGamma[0])
+	g := math.Pow(math.Max(0, gLin), 1.0/t.destGamma[1])
+	b := math.Pow(math.Max(0, bLin), 1.0/t.destGamma[2])
+
+	return []float64{r, g, b}, nil
+}
+
+func invertMatrix(m [9]float64) ([9]float64, error) {
+	// m = [a, b, c, d, e, f, g, h, i]
+	//      0  1  2  3  4  5  6  7  8
+	a, b, c := m[0], m[1], m[2]
+	d, e, f := m[3], m[4], m[5]
+	g, h, i := m[6], m[7], m[8]
+
+	det := a*(e*i-f*h) - b*(d*i-f*g) + c*(d*h-e*g)
+	if math.Abs(det) < 1e-10 {
+		return [9]float64{}, errors.New("matrix is singular")
+	}
+	invDet := 1.0 / det
+
+	return [9]float64{
+		(e*i - f*h) * invDet, (c*h - b*i) * invDet, (b*f - c*e) * invDet,
+		(f*g - d*i) * invDet, (a*i - c*g) * invDet, (c*d - a*f) * invDet,
+		(d*h - e*g) * invDet, (g*b - a*h) * invDet, (a*e - b*d) * invDet,
+	}, nil
 }

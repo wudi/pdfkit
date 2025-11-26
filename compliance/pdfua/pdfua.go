@@ -142,6 +142,35 @@ func checkStructure(elements []*semantic.StructureElement, report *compliance.Re
 			})
 		}
 
+		// Check Table structure (Basic)
+		if elem.S == "Table" {
+			for _, item := range elem.K {
+				if item.Element != nil {
+					s := item.Element.S
+					if s != "TR" && s != "THead" && s != "TBody" && s != "TFoot" && s != "Caption" {
+						report.Violations = append(report.Violations, compliance.Violation{
+							Code:        "UA007",
+							Description: "Table must contain TR, THead, TBody, TFoot, or Caption",
+							Location:    "StructElem Table",
+						})
+					}
+				}
+			}
+		}
+
+		// Check List structure (Basic)
+		if elem.S == "L" {
+			for _, item := range elem.K {
+				if item.Element != nil && item.Element.S != "LI" {
+					report.Violations = append(report.Violations, compliance.Violation{
+						Code:        "UA008",
+						Description: "List (L) must contain List Item (LI)",
+						Location:    "StructElem L",
+					})
+				}
+			}
+		}
+
 		// Recurse
 		var children []*semantic.StructureElement
 		for _, item := range elem.K {

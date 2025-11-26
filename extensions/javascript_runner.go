@@ -43,12 +43,23 @@ func (r *JavaScriptRunner) Transform(ctx context.Context, doc *semantic.Document
 	// r.engine.RegisterDOM(NewPDFDOM(doc))
 
 	// 2. Execute Document-level scripts (Names -> JavaScript)
-	// TODO: Iterate over Names.JavaScript and execute them
+	if doc.Names != nil && len(doc.Names.JavaScript) > 0 {
+		for name, action := range doc.Names.JavaScript {
+			if _, err := r.engine.Execute(ctx, action.JS); err != nil {
+				// Log error but continue? Or fail?
+				// For now, we continue to execute other scripts.
+				_ = name // ignore unused
+			}
+		}
+	}
 
 	// 3. Execute OpenAction if it is JavaScript
-	if doc.Catalog != nil {
-		// Check OpenAction (not currently in semantic.Catalog, need to add or access via raw)
-		// Assuming we might have it in the future or via some other way.
+	if doc.OpenAction != nil {
+		if jsAction, ok := doc.OpenAction.(semantic.JavaScriptAction); ok {
+			if _, err := r.engine.Execute(ctx, jsAction.JS); err != nil {
+				return err
+			}
+		}
 	}
 
 	// 4. Execute Form Calculation scripts

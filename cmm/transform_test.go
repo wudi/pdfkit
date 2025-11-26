@@ -183,3 +183,78 @@ func floatToS15Fixed16(f float64) uint32 {
 func strToUint32(s string) uint32 {
 	return binary.BigEndian.Uint32([]byte(s))
 }
+
+func TestICC_RGB_to_RGB(t *testing.T) {
+	// Src: Gamma 1.0, Identity Matrix
+	srcData := makeRGBProfile(1.0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+
+	// Dst: Gamma 2.0, Identity Matrix
+	dstData := makeRGBProfile(2.0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+
+	f := NewFactory()
+	src, err := f.NewProfile(srcData)
+	if err != nil {
+		t.Fatalf("NewProfile src failed: %v", err)
+	}
+	dst, err := f.NewProfile(dstData)
+	if err != nil {
+		t.Fatalf("NewProfile dst failed: %v", err)
+	}
+
+	tr, err := f.NewTransform(src, dst, IntentPerceptual)
+	if err != nil {
+		t.Fatalf("NewTransform failed: %v", err)
+	}
+
+	// Input 0.25
+	// Src (Gamma 1.0) -> Linear 0.25
+	// Dst (Gamma 2.0) -> Encoded = Linear^(1/2.0) = sqrt(0.25) = 0.5
+	in := []float64{0.25, 0.25, 0.25}
+	out, err := tr.Convert(in)
+	if err != nil {
+		t.Fatalf("Convert failed: %v", err)
+	}
+
+	expected := 0.5
+	for i, v := range out {
+		if math.Abs(v-expected) > 0.01 {
+			t.Errorf("channel %d: expected %f, got %f", i, expected, v)
+		}
+	}
+}
+
+func makeRGBProfile(gamma float64, rX, rY, rZ, gX, gY, gZ, bX, bY, bZ float64) []byte {
+	data := make([]byte, 2048)
+	binary.BigEndian.PutUint32(data[0:4], 2048)
+	copy(data[36:40], "acsp")
+	copy(data[16:20], "RGB ")
+	copy(data[20:24], "XYZ ")
+
+	tags := []struct {
+		sig  string
+		data []byte
+	}{
+		{"rXYZ", makeXYZ(rX, rY, rZ)},
+		{"gXYZ", makeXYZ(gX, gY, gZ)},
+		{"bXYZ", makeXYZ(bX, bY, bZ)},
+		{"rTRC", makeGamma(gamma)},
+		{"gTRC", makeGamma(gamma)},
+		{"bTRC", makeGamma(gamma)},
+	}
+
+	tagCount := uint32(len(tags))
+	binary.BigEndian.PutUint32(data[128:132], tagCount)
+
+	offset := uint32(132 + 12*len(tags))
+	tagTableOffset := 132
+
+	for _, tag := range tags {
+		binary.BigEndian.PutUint32(data[tagTableOffset:tagTableOffset+4], strToUint32(tag.sig))
+		binary.BigEndian.PutUint32(data[tagTableOffset+4:tagTableOffset+8], offset)
+		binary.BigEndian.PutUint32(data[tagTableOffset+8:tagTableOffset+12], uint32(len(tag.data)))
+		tagTableOffset += 12
+		copy(data[offset:], tag.data)
+		offset += uint32(len(tag.data))
+	}
+	return data
+}

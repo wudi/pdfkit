@@ -191,13 +191,25 @@ func (e *enforcerImpl) ValidateLevel(ctx context.Context, doc *semantic.Document
 }
 
 func isValidPDFX1aColorSpace(cs semantic.ColorSpace) bool {
-	switch cs.ColorSpaceName() {
-	case "DeviceCMYK", "DeviceGray", "Separation", "DeviceN":
-		return true
-	case "Pattern":
-		return true // Patterns need recursive check, assuming OK for now
+	switch v := cs.(type) {
+	case *semantic.DeviceColorSpace:
+		name := v.Name
+		return name == "DeviceCMYK" || name == "DeviceGray"
+	case *semantic.SeparationColorSpace:
+		return isValidPDFX1aColorSpace(v.Alternate)
+	case *semantic.DeviceNColorSpace:
+		return isValidPDFX1aColorSpace(v.Alternate)
+	case *semantic.PatternColorSpace:
+		if v.Underlying != nil {
+			return isValidPDFX1aColorSpace(v.Underlying)
+		}
+		return true // Colored pattern (self-contained) - strictly should check pattern resources
+	case *semantic.IndexedColorSpace:
+		return isValidPDFX1aColorSpace(v.Base)
 	default:
-		return false // RGB, Lab, ICCBased (unless CMYK output intent matches)
+		// Check by name for other implementations
+		name := cs.ColorSpaceName()
+		return name == "DeviceCMYK" || name == "DeviceGray"
 	}
 }
 

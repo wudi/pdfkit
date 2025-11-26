@@ -150,8 +150,8 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **Writer Helpers**:
     - [x] Implement proper `RunLengthEncode` in `writer/helpers.go`.
 - [ ] **JavaScript Runner(low priority)**:
-    - [ ] Implement document-level script execution in `extensions/javascript_runner.go`.
-    - [ ] Implement OpenAction execution.
+    - [x] Implement document-level script execution in `extensions/javascript_runner.go`.
+    - [x] Implement OpenAction execution.
     - [ ] Implement Form Calculation scripts (access AA dict).
     - [ ] Implement PDF DOM placeholder.
 
@@ -169,3 +169,16 @@ This document tracks the detailed implementation progress of features defined in
     - [x] Expand `Schema` struct in `ir/semantic/structure.go`.
 - [x] **Semantic Builder**:
     - [x] Improve error handling in `Build` (don't swallow errors).
+
+## 15. Sequential Implementation Plan
+- [x] **Color Management Module (CMM)**:
+    - [x] Implement Matrix/TRC color conversion logic in `cmm/transform.go`.
+    - [x] Implement basic LUT-based transform structure.
+- [x] **JavaScript Runner**:
+    - [x] Implement document-level script execution in `extensions/javascript_runner.go`.
+    - [x] Implement OpenAction execution.
+- [x] **Compliance Validation Refinement**:
+    - [x] Harden PDF/X color space checks (recursive Pattern check).
+    - [x] Improve PDF/UA structure validation (headings, tables).
+- [x] **PDF 2.0 Spectral Data (CxF)**:
+    - [x] Implement CxF parsing logic in `cmm/cxf.go`.
