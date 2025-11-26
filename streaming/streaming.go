@@ -554,10 +554,30 @@ func parseColorSpace(doc *raw.Document, obj raw.Object) semantic.ColorSpace {
 				return pcs
 			case "ICCBased":
 				if arr.Len() > 1 {
-					// ICCBased is usually a stream containing the profile.
-					// For now, we just return a placeholder or partial implementation.
-					// Ideally we should parse the stream to get the alternate CS.
-					return &semantic.ICCBasedColorSpace{}
+					icc := &semantic.ICCBasedColorSpace{}
+					if ref, ok := arr.Items[1].(raw.RefObj); ok {
+						if stream, ok := doc.Objects[ref.Ref()].(*raw.StreamObj); ok {
+							if n, ok := stream.Dict.Get(raw.NameLiteral("N")); ok {
+								if num, ok := n.(raw.NumberObj); ok {
+									icc.N = int(num.Int())
+								}
+							}
+							if alt, ok := stream.Dict.Get(raw.NameLiteral("Alternate")); ok {
+								icc.Alternate = parseColorSpace(doc, alt)
+							}
+							if rng, ok := stream.Dict.Get(raw.NameLiteral("Range")); ok {
+								if rArr, ok := rng.(*raw.ArrayObj); ok {
+									for _, it := range rArr.Items {
+										if num, ok := it.(raw.NumberObj); ok {
+											icc.Range = append(icc.Range, num.Float())
+										}
+									}
+								}
+							}
+							icc.Profile = decodeStream(stream)
+						}
+					}
+					return icc
 				}
 			case "Separation":
 				if arr.Len() > 3 {
@@ -593,7 +613,18 @@ func parseColorSpace(doc *raw.Document, obj raw.Object) semantic.ColorSpace {
 					if n, ok := arr.Items[2].(raw.NumberObj); ok {
 						ics.Hival = int(n.Int())
 					}
-					// Lookup can be stream or string, skipping for now
+
+					lookupObj := arr.Items[3]
+					if ref, ok := lookupObj.(raw.RefObj); ok {
+						lookupObj = doc.Objects[ref.Ref()]
+					}
+
+					switch v := lookupObj.(type) {
+					case raw.StringObj:
+						ics.Lookup = v.Value()
+					case *raw.StreamObj:
+						ics.Lookup = decodeStream(v)
+					}
 					return ics
 				}
 			}
@@ -1690,7 +1721,124 @@ func parseOCUsage(doc *raw.Document, obj raw.Object) *semantic.OCUsage {
 		return nil
 	}
 	u := &semantic.OCUsage{}
-	// Parsing usage dictionaries is complex, skipping detailed parsing for now
-	// to focus on structure.
+
+	if creator, ok := dict.Get(raw.NameLiteral("CreatorInfo")); ok {
+		if d, ok := creator.(*raw.DictObj); ok {
+			ci := &semantic.OCCreatorInfo{}
+			if c, ok := d.Get(raw.NameLiteral("Creator")); ok {
+				if s, ok := c.(raw.StringObj); ok {
+					ci.Creator = string(s.Value())
+				}
+			}
+			if st, ok := d.Get(raw.NameLiteral("Subtype")); ok {
+				if n, ok := st.(raw.NameObj); ok {
+					ci.Subtype = n.Value()
+				}
+			}
+			u.CreatorInfo = ci
+		}
+	}
+
+	if lang, ok := dict.Get(raw.NameLiteral("Language")); ok {
+		if d, ok := lang.(*raw.DictObj); ok {
+			l := &semantic.OCLanguage{}
+			if lg, ok := d.Get(raw.NameLiteral("Lang")); ok {
+				if s, ok := lg.(raw.StringObj); ok {
+					l.Lang = string(s.Value())
+				}
+			}
+			if p, ok := d.Get(raw.NameLiteral("Preferred")); ok {
+				if b, ok := p.(raw.BoolObj); ok {
+					l.Preferred = b.Value()
+				}
+			}
+			u.Language = l
+		}
+	}
+
+	if export, ok := dict.Get(raw.NameLiteral("Export")); ok {
+		if d, ok := export.(*raw.DictObj); ok {
+			e := &semantic.OCExport{}
+			if s, ok := d.Get(raw.NameLiteral("ExportState")); ok {
+				if n, ok := s.(raw.NameObj); ok {
+					e.ExportState = (n.Value() == "ON")
+				}
+			}
+			u.Export = e
+		}
+	}
+
+	if zoom, ok := dict.Get(raw.NameLiteral("Zoom")); ok {
+		if d, ok := zoom.(*raw.DictObj); ok {
+			z := &semantic.OCZoom{}
+			if min, ok := d.Get(raw.NameLiteral("min")); ok {
+				if n, ok := min.(raw.NumberObj); ok {
+					z.Min = n.Float()
+				}
+			}
+			if max, ok := d.Get(raw.NameLiteral("max")); ok {
+				if n, ok := max.(raw.NumberObj); ok {
+					z.Max = n.Float()
+				}
+			}
+			u.Zoom = z
+		}
+	}
+
+	if print, ok := dict.Get(raw.NameLiteral("Print")); ok {
+		if d, ok := print.(*raw.DictObj); ok {
+			p := &semantic.OCPrint{}
+			if st, ok := d.Get(raw.NameLiteral("Subtype")); ok {
+				if n, ok := st.(raw.NameObj); ok {
+					p.Subtype = n.Value()
+				}
+			}
+			if s, ok := d.Get(raw.NameLiteral("PrintState")); ok {
+				if n, ok := s.(raw.NameObj); ok {
+					p.PrintState = (n.Value() == "ON")
+				}
+			}
+			u.Print = p
+		}
+	}
+
+	if view, ok := dict.Get(raw.NameLiteral("View")); ok {
+		if d, ok := view.(*raw.DictObj); ok {
+			v := &semantic.OCView{}
+			if s, ok := d.Get(raw.NameLiteral("ViewState")); ok {
+				if n, ok := s.(raw.NameObj); ok {
+					v.ViewState = (n.Value() == "ON")
+				}
+			}
+			u.View = v
+		}
+	}
+
+	if user, ok := dict.Get(raw.NameLiteral("User")); ok {
+		if d, ok := user.(*raw.DictObj); ok {
+			usr := &semantic.OCUser{}
+			if t, ok := d.Get(raw.NameLiteral("Type")); ok {
+				if n, ok := t.(raw.NameObj); ok {
+					usr.Type = n.Value()
+				}
+			}
+			if nm, ok := d.Get(raw.NameLiteral("Name")); ok {
+				if s, ok := nm.(raw.StringObj); ok {
+					usr.Name = string(s.Value())
+				}
+			}
+			if uArr, ok := d.Get(raw.NameLiteral("User")); ok {
+				if arr, ok := uArr.(*raw.ArrayObj); ok {
+					for _, it := range arr.Items {
+						if n, ok := it.(raw.NameObj); ok {
+							usr.User = append(usr.User, n.Value())
+						}
+					}
+				}
+			}
+			u.User = usr
+		}
+	}
+
 	return u
 }

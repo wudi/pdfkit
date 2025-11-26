@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"strconv"
 )
 
 // CFF represents a parsed Compact Font Format structure.
@@ -171,24 +172,54 @@ func parseDict(data []byte) (map[int][]Operand, error) {
 			operands = append(operands, Operand{Int: val, IsInt: true})
 		} else if b == 30 {
 			// Real operand
-			// Simplified: skip for now or implement if needed
-			// Real numbers in CFF are nibble-encoded
-			// For now, let's just consume until nibble 0xf
-			for {
-				b, err := r.ReadByte()
-				if err != nil {
-					return nil, err
-				}
-				if (b&0xf) == 0xf || (b>>4) == 0xf {
-					break
-				}
+			val, err := readReal(r)
+			if err != nil {
+				return nil, err
 			}
-			operands = append(operands, Operand{Float: 0.0, IsInt: false}) // Placeholder
+			operands = append(operands, Operand{Float: val, IsInt: false})
 		} else {
 			// Reserved
 		}
 	}
 	return dict, nil
+}
+
+func readReal(r *bytes.Reader) (float64, error) {
+	var s string
+	done := false
+	for !done {
+		b, err := r.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		nibbles := []byte{b >> 4, b & 0x0f}
+		for _, n := range nibbles {
+			switch n {
+			case 0xa:
+				s += "."
+			case 0xb:
+				s += "E"
+			case 0xc:
+				s += "E-"
+			case 0xd:
+				// reserved
+			case 0xe:
+				s += "-"
+			case 0xf:
+				done = true
+			default:
+				s += fmt.Sprintf("%d", n)
+			}
+			if done {
+				break
+			}
+		}
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, err
+	}
+	return f, nil
 }
 
 func readInteger(r *bytes.Reader) (int, error) {

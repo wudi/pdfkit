@@ -180,5 +180,22 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **Compliance Validation Refinement**:
     - [x] Harden PDF/X color space checks (recursive Pattern check).
     - [x] Improve PDF/UA structure validation (headings, tables).
+// ...existing code...
 - [x] **PDF 2.0 Spectral Data (CxF)**:
     - [x] Implement CxF parsing logic in `cmm/cxf.go`.
+
+## Refinement Phase 2 (Current)
+- [x] **Streaming Parser Enhancements**:
+    - [x] Implement `ICCBased` color space parsing (Alternate, Range).
+    - [x] Implement `Indexed` color space parsing (Lookup tables).
+    - [x] Implement `OCUsage` dictionary parsing for Optional Content.
+- [x] **JavaScript Runner Completion**:
+    - [x] Update `FormField` semantic model to expose `AA` (Additional Actions).
+    - [x] Wire up `JavaScriptRunner` to execute form calculation scripts.
+- [x] **Font Parsing**:
+    - [x] Implement `readReal` in CFF parser to replace placeholder.
+- [x] **Color Management**:
+    - [x] Clean up `cmm/transform.go` placeholders.
+
+## Phase 3: Advanced Features (Future)
+

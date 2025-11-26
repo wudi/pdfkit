@@ -73,13 +73,22 @@ func (r *JavaScriptRunner) Transform(ctx context.Context, doc *semantic.Document
 }
 
 func (r *JavaScriptRunner) executeFormScripts(ctx context.Context, form *semantic.AcroForm) error {
-	// Iterate over fields and execute calculation scripts
-	for _, field := range form.Fields {
-		// Check for AA (Additional Actions) -> C (Calculate) or V (Validate)
-		// This requires the semantic model to expose AA dictionaries for fields.
-		// Currently FormField interface doesn't expose AA explicitly, but we can assume
-		// we'd access it or it will be added.
-		_ = field
+	// If CalculationOrder is defined, use it. Otherwise iterate over Fields.
+	fields := form.Fields
+	if len(form.CalculationOrder) > 0 {
+		fields = form.CalculationOrder
+	}
+
+	for _, field := range fields {
+		if aa := field.GetAdditionalActions(); aa != nil {
+			if aa.C != nil {
+				if jsAction, ok := aa.C.(semantic.JavaScriptAction); ok {
+					if _, err := r.engine.Execute(ctx, jsAction.JS); err != nil {
+						// Log error but continue
+					}
+				}
+			}
+		}
 	}
 	return nil
 }

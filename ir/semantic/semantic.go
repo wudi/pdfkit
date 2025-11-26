@@ -223,6 +223,7 @@ func (cs DeviceColorSpace) ColorSpaceName() string { return cs.Name }
 
 // ICCBasedColorSpace represents an ICC-based color space.
 type ICCBasedColorSpace struct {
+	N           int
 	Profile     []byte
 	Alternate   ColorSpace
 	Range       []float64

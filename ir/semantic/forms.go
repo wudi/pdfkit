@@ -35,6 +35,16 @@ type FormField interface {
 	SetReference(raw.ObjectRef)
 	IsDirty() bool
 	SetDirty(bool)
+
+	GetAdditionalActions() *AdditionalActions
+}
+
+// AdditionalActions defines actions to be performed in response to specific trigger events.
+type AdditionalActions struct {
+	K Action // Keystroke
+	F Action // Format
+	V Action // Validate
+	C Action // Calculate
 }
 
 // BaseFormField provides common fields for form fields.
@@ -47,30 +57,32 @@ type BaseFormField struct {
 	AppearanceState   string
 	Border            []float64
 	Color             []float64
-	DefaultAppearance string // DA entry
-	Quadding          int    // Q entry: 0=Left, 1=Center, 2=Right
+	DefaultAppearance string             // DA entry
+	Quadding          int                // Q entry: 0=Left, 1=Center, 2=Right
+	AdditionalActions *AdditionalActions // AA entry
 	Ref               raw.ObjectRef
 	OriginalRef       raw.ObjectRef
 	Dirty             bool
 }
 
-func (f *BaseFormField) FieldName() string            { return f.Name }
-func (f *BaseFormField) FieldPageIndex() int          { return f.PageIndex }
-func (f *BaseFormField) FieldRect() Rectangle         { return f.Rect }
-func (f *BaseFormField) FieldFlags() int              { return f.Flags }
-func (f *BaseFormField) SetFieldRect(r Rectangle)     { f.Rect = r }
-func (f *BaseFormField) SetFieldPageIndex(i int)      { f.PageIndex = i }
-func (f *BaseFormField) SetFieldFlags(flags int)      { f.Flags = flags }
-func (f *BaseFormField) GetAppearance() []byte        { return f.Appearance }
-func (f *BaseFormField) GetAppearanceState() string   { return f.AppearanceState }
-func (f *BaseFormField) GetBorder() []float64         { return f.Border }
-func (f *BaseFormField) GetColor() []float64          { return f.Color }
-func (f *BaseFormField) GetDefaultAppearance() string { return f.DefaultAppearance }
-func (f *BaseFormField) GetQuadding() int             { return f.Quadding }
-func (f *BaseFormField) Reference() raw.ObjectRef     { return f.Ref }
-func (f *BaseFormField) SetReference(r raw.ObjectRef) { f.Ref = r }
-func (f *BaseFormField) IsDirty() bool                { return f.Dirty }
-func (f *BaseFormField) SetDirty(d bool)              { f.Dirty = d }
+func (f *BaseFormField) FieldName() string                        { return f.Name }
+func (f *BaseFormField) FieldPageIndex() int                      { return f.PageIndex }
+func (f *BaseFormField) FieldRect() Rectangle                     { return f.Rect }
+func (f *BaseFormField) FieldFlags() int                          { return f.Flags }
+func (f *BaseFormField) SetFieldRect(r Rectangle)                 { f.Rect = r }
+func (f *BaseFormField) SetFieldPageIndex(i int)                  { f.PageIndex = i }
+func (f *BaseFormField) SetFieldFlags(flags int)                  { f.Flags = flags }
+func (f *BaseFormField) GetAppearance() []byte                    { return f.Appearance }
+func (f *BaseFormField) GetAppearanceState() string               { return f.AppearanceState }
+func (f *BaseFormField) GetBorder() []float64                     { return f.Border }
+func (f *BaseFormField) GetColor() []float64                      { return f.Color }
+func (f *BaseFormField) GetDefaultAppearance() string             { return f.DefaultAppearance }
+func (f *BaseFormField) GetQuadding() int                         { return f.Quadding }
+func (f *BaseFormField) Reference() raw.ObjectRef                 { return f.Ref }
+func (f *BaseFormField) SetReference(r raw.ObjectRef)             { f.Ref = r }
+func (f *BaseFormField) IsDirty() bool                            { return f.Dirty }
+func (f *BaseFormField) SetDirty(d bool)                          { f.Dirty = d }
+func (f *BaseFormField) GetAdditionalActions() *AdditionalActions { return f.AdditionalActions }
 
 // TextFormField represents a text field (Tx).
 type TextFormField struct {

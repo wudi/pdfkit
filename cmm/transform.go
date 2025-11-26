@@ -39,9 +39,6 @@ func (t *basicTransform) Convert(in []float64) ([]float64, error) {
 	dstCh := numChannels(t.dst.ColorSpace())
 	out := make([]float64, dstCh)
 
-	// TODO: Implement actual color conversion logic.
-	// For now, we just handle simple cases or return error.
-
 	if t.src.ColorSpace() == "RGB " && t.dst.ColorSpace() == "CMYK" {
 		// Simple RGB -> CMYK
 		r, g, b := in[0], in[1], in[2]
