@@ -3,6 +3,7 @@ package extensions
 import (
 	"context"
 
+	"github.com/wudi/pdfkit/extensions/dom"
 	"github.com/wudi/pdfkit/ir/semantic"
 	"github.com/wudi/pdfkit/scripting"
 )
@@ -39,8 +40,9 @@ func (r *JavaScriptRunner) Transform(ctx context.Context, doc *semantic.Document
 	}
 
 	// 1. Register DOM
-	// In a real implementation, we would wrap doc in a PDFDOM implementation
-	// r.engine.RegisterDOM(NewPDFDOM(doc))
+	if err := r.engine.RegisterDOM(dom.New(doc)); err != nil {
+		return err
+	}
 
 	// 2. Execute Document-level scripts (Names -> JavaScript)
 	if doc.Names != nil && len(doc.Names.JavaScript) > 0 {

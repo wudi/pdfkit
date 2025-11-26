@@ -192,6 +192,8 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **JavaScript Runner Completion**:
     - [x] Update `FormField` semantic model to expose `AA` (Additional Actions).
     - [x] Wire up `JavaScriptRunner` to execute form calculation scripts.
+    - [x] Implement PDF DOM adapters in `extensions/dom`.
+    - [x] Register DOM in `JavaScriptRunner`.
 - [x] **Font Parsing**:
     - [x] Implement `readReal` in CFF parser to replace placeholder.
 - [x] **Color Management**:
