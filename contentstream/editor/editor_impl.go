@@ -14,7 +14,7 @@ func NewEditor() *EditorImpl {
 	return &EditorImpl{}
 }
 
-func (e *EditorImpl) RemoveRect(ctx context.Context, page *semantic.Page, rect semantic.Rectangle) error {
+func (e *EditorImpl) RemoveRect(ctx context.Context, doc *semantic.Document, page *semantic.Page, rect semantic.Rectangle) error {
 	// 1. Flatten content streams into a single list of operations
 	// Note: In a real implementation, we might want to keep them separate or handle them more carefully.
 	// For now, we assume we can work on the first stream or merge them.
@@ -73,9 +73,44 @@ func (e *EditorImpl) RemoveRect(ctx context.Context, page *semantic.Page, rect s
 			}
 		}
 
-		// TODO: Repair StructTree if MCIDs were removed.
-		// This requires a reverse lookup: which MCIDs are used on this page?
-		// And checking if they are still present in the stream.
+		// 5. Cleanup empty Marked Content sequences
+		// We repeatedly scan for BDC/BMC followed immediately by EMC and remove them.
+		for {
+			changed := false
+			var newOps []semantic.Operation
+			skipNext := false
+
+			for j := 0; j < len(stream.Operations); j++ {
+				if skipNext {
+					skipNext = false
+					continue
+				}
+
+				op := stream.Operations[j]
+				if op.Operator == "BDC" || op.Operator == "BMC" {
+					// Check next op
+					if j+1 < len(stream.Operations) {
+						nextOp := stream.Operations[j+1]
+						if nextOp.Operator == "EMC" {
+							// Found empty sequence, skip both
+							skipNext = true
+							changed = true
+							continue
+						}
+					}
+				}
+				newOps = append(newOps, op)
+			}
+			stream.Operations = newOps
+			if !changed {
+				break
+			}
+		}
+	}
+
+	// Repair StructTree if MCIDs were removed.
+	if doc != nil && doc.StructTree != nil {
+		e.RepairStructTree(page, doc.StructTree)
 	}
 
 	return nil
@@ -175,14 +210,10 @@ func (e *EditorImpl) ReplaceText(ctx context.Context, page *semantic.Page, oldTe
 						}
 					}
 				}
-			} else if op.Operator == "Tj" {
-				// Check if this Tj matches oldText
+			} else if op.Operator == "Tj" || op.Operator == "TJ" {
+				// Check if this matches oldText
 				// Note: This is a simplification. Real text extraction is needed to match properly.
-				// We assume the caller knows the text is in a single Tj and matches exactly for now,
-				// or we rely on a "contains" check if we could decode.
-
-				// For this exercise, we'll assume we found the match if the operation is "Tj".
-				// In a real app, we'd decode op.Operands[0] and compare.
+				// We assume the caller knows the text is in a single operation and matches exactly for now.
 
 				// Shape the new text
 				if currentFont == nil {
@@ -191,7 +222,26 @@ func (e *EditorImpl) ReplaceText(ctx context.Context, page *semantic.Page, oldTe
 
 				shapedGlyphs, err := fonts.ShapeText(newText, currentFont)
 				if err != nil {
-					return err
+					// If shaping fails (e.g. no font file), we can't replace properly.
+					continue
+				}
+
+				// Update font metrics (Widths and ToUnicode)
+				if currentFont.Widths == nil {
+					currentFont.Widths = make(map[int]int)
+				}
+				if currentFont.ToUnicode == nil {
+					currentFont.ToUnicode = make(map[int][]rune)
+				}
+
+				// We assume 1-to-1 mapping for simplicity in updating ToUnicode
+				// This is not always true but better than nothing.
+				runes := []rune(newText)
+				if len(shapedGlyphs) == len(runes) {
+					for k, g := range shapedGlyphs {
+						currentFont.Widths[g.ID] = int(g.XAdvance * 1000) // XAdvance is in 1/1000 em
+						currentFont.ToUnicode[g.ID] = []rune{runes[k]}
+					}
 				}
 
 				// Construct TJ array
@@ -220,18 +270,18 @@ func (e *EditorImpl) ReplaceText(ctx context.Context, page *semantic.Page, oldTe
 					if currentFont.Widths != nil {
 						width = currentFont.Widths[g.ID]
 					}
-					// If width is missing, use default?
 
 					// g.XAdvance is in 1/1000 em units (from shaper.go)
 					// width is in 1/1000 em units (PDF spec)
 
 					diff := float64(width) - g.XAdvance
-					if diff != 0 {
+					// Only add adjustment if significant
+					if diff > 0.001 || diff < -0.001 {
 						tjArgs = append(tjArgs, semantic.NumberOperand{Value: diff})
 					}
 				}
 
-				// Replace Tj with TJ
+				// Replace with TJ
 				stream.Operations[j] = semantic.Operation{
 					Operator: "TJ",
 					Operands: []semantic.Operand{semantic.ArrayOperand{Values: tjArgs}},

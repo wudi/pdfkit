@@ -204,6 +204,7 @@ type builderImpl struct {
 	xobjectCount  int
 	xobjectNames  map[*semantic.Image]string
 	fontErr       error
+	err           error
 	structTree    *semantic.StructureTree
 	mcidCounters  map[*semantic.Page]int
 	embeddedFiles []semantic.EmbeddedFile
@@ -288,6 +289,10 @@ func (b *builderImpl) SetEncryptionWithOptions(ownerPassword, userPassword strin
 }
 
 func (b *builderImpl) RegisterFont(name string, font *semantic.Font) PDFBuilder {
+	if font.Subtype == "" {
+		b.err = fmt.Errorf("font %q missing Subtype", name)
+		return b
+	}
 	return b.addFont(name, font)
 }
 
@@ -302,6 +307,10 @@ func (b *builderImpl) RegisterTrueTypeFont(name string, data []byte) PDFBuilder 
 
 func (b *builderImpl) AddEmbeddedFile(file semantic.EmbeddedFile) PDFBuilder {
 	if file.Name == "" || len(file.Data) == 0 {
+		return b
+	}
+	if file.Subtype == "" {
+		b.err = fmt.Errorf("embedded file %q missing Subtype", file.Name)
 		return b
 	}
 	if file.Relationship == "" {
@@ -340,6 +349,9 @@ func (b *builderImpl) addFont(name string, font *semantic.Font) PDFBuilder {
 func (b *builderImpl) Build() (*semantic.Document, error) {
 	if b.fontErr != nil {
 		return nil, b.fontErr
+	}
+	if b.err != nil {
+		return nil, b.err
 	}
 	pageIndexByPtr := make(map[*semantic.Page]int, len(b.pages))
 	for i, p := range b.pages {

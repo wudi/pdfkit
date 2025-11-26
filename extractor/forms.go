@@ -32,7 +32,7 @@ func (e *Extractor) ExtractAcroForm() (*semantic.AcroForm, error) {
 	fieldsArr := derefArray(e.raw, valueFromDict(acroFormDict, "Fields"))
 	if fieldsArr != nil {
 		for _, item := range fieldsArr.Items {
-			e.walkField(item, fieldMap, &form.Fields)
+			e.walkField(item, "", fieldMap, &form.Fields)
 		}
 	}
 
@@ -53,10 +53,16 @@ func (e *Extractor) ExtractAcroForm() (*semantic.AcroForm, error) {
 	return form, nil
 }
 
-func (e *Extractor) walkField(obj raw.Object, fieldMap map[raw.ObjectRef]semantic.FormField, list *[]semantic.FormField) {
+func (e *Extractor) walkField(obj raw.Object, parentFT string, fieldMap map[raw.ObjectRef]semantic.FormField, list *[]semantic.FormField) {
 	dict := derefDict(e.raw, obj)
 	if dict == nil {
 		return
+	}
+
+	// Resolve FT for this node
+	ft, _ := nameFromDict(dict, "FT")
+	if ft == "" {
+		ft = parentFT
 	}
 
 	// Check if this is a field (has T) or a widget (no T, but might be a child widget)
@@ -75,7 +81,7 @@ func (e *Extractor) walkField(obj raw.Object, fieldMap map[raw.ObjectRef]semanti
 
 	// If it has "T", it is a field.
 	if _, hasT := dict.Get(raw.NameLiteral("T")); hasT {
-		field, err := e.extractFieldNode(obj, dict)
+		field, err := e.extractFieldNode(obj, dict, ft)
 		if err == nil && field != nil {
 			*list = append(*list, field)
 
@@ -89,14 +95,17 @@ func (e *Extractor) walkField(obj raw.Object, fieldMap map[raw.ObjectRef]semanti
 	// Recurse into kids
 	if kidsArr != nil {
 		for _, kid := range kidsArr.Items {
-			e.walkField(kid, fieldMap, list)
+			e.walkField(kid, ft, fieldMap, list)
 		}
 	}
 }
 
-func (e *Extractor) extractFieldNode(obj raw.Object, dict *raw.DictObj) (semantic.FormField, error) {
+func (e *Extractor) extractFieldNode(obj raw.Object, dict *raw.DictObj, inheritedFT string) (semantic.FormField, error) {
 	// Determine field type
 	ft, _ := nameFromDict(dict, "FT")
+	if ft == "" {
+		ft = inheritedFT
+	}
 
 	// If FT is missing, it might be inherited.
 	// For this pass, if FT is missing, we might skip or treat as generic.

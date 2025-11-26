@@ -11,7 +11,7 @@ type Editor interface {
 	// RemoveRect removes all content within the specified rectangle.
 	// This is useful for redaction.
 	// It also updates the StructureTree to remove references to deleted content (MCIDs).
-	RemoveRect(ctx context.Context, page *semantic.Page, rect semantic.Rectangle) error
+	RemoveRect(ctx context.Context, doc *semantic.Document, page *semantic.Page, rect semantic.Rectangle) error
 
 	// ReplaceText replaces occurrences of oldText with newText.
 	// Note: This is a complex operation that may require font subsetting adjustments

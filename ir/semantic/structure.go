@@ -72,8 +72,13 @@ type Namespace struct {
 
 // Schema represents a PDF 2.0 Structure Element Schema.
 type Schema struct {
-	// Simplified for now
+	Type        string
+	O           string // Owner
+	NS          string // URI
+	RoleMap     RoleMap
+	ClassMap    ClassMap
 	OriginalRef raw.ObjectRef
+	Dirty       bool
 }
 
 // AttributeObject represents Layout or PrintField attributes.

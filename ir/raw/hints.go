@@ -7,7 +7,7 @@ type HintTable struct {
 }
 
 type PageOffsetHint struct {
-	MinObjNum      int
+	NumObjects     int
 	PageLength     int64
 	ContentStream  int64 // Offset
 	ContentLength  int64

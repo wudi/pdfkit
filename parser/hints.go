@@ -140,7 +140,7 @@ func ParseHintStream(data []byte, dict *raw.DictObj, npages int) (*raw.HintTable
 		}
 
 		hints[i] = raw.PageOffsetHint{
-			MinObjNum:      nObjs, // Using MinObjNum field to store nObjs for now, or we should update struct
+			NumObjects:     nObjs,
 			PageLength:     int64(pageLen),
 			ContentStream:  contentOffsetAbs,
 			ContentLength:  int64(contentLen),

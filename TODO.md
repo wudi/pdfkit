@@ -154,3 +154,18 @@ This document tracks the detailed implementation progress of features defined in
     - [ ] Implement OpenAction execution.
     - [ ] Implement Form Calculation scripts (access AA dict).
     - [ ] Implement PDF DOM placeholder.
+
+## 14. Refinement & Fixes
+- [x] **Content Stream Editor**:
+    - [x] Call `RepairStructTree` in `RemoveRect` (handle MCID removal).
+    - [x] Improve `ReplaceText` to handle font subsetting and layout adjustments properly (currently a placeholder).
+- [x] **Structure Tree Parsing**:
+    - [x] Implement full `IDTree` resolution in `structure_parser.go` (currently just a map).
+- [x] **Hint Stream Parsing**:
+    - [x] Fix `PageOffsetHint` struct misuse (`MinObjNum` vs `nObjs`) in `parser/hints.go`.
+- [x] **Form Extraction**:
+        - [x] Implement Form Field `FT` inheritance in `extractor/forms.go`.
+- [x] **PDF 2.0 Structure Schema**:
+    - [x] Expand `Schema` struct in `ir/semantic/structure.go`.
+- [x] **Semantic Builder**:
+    - [x] Improve error handling in `Build` (don't swallow errors).

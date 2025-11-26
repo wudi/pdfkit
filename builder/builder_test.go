@@ -13,7 +13,7 @@ import (
 
 func TestBuilder_DrawTextPopulatesResourcesAndOps(t *testing.T) {
 	b := NewBuilder()
-	font := &semantic.Font{BaseFont: "Helvetica-Bold"}
+	font := &semantic.Font{BaseFont: "Helvetica-Bold", Subtype: "Type1"}
 	b.RegisterFont("Body", font)
 
 	b.NewPage(200, 200).
@@ -302,5 +302,31 @@ func TestBuilder_SetEncryption(t *testing.T) {
 	}
 	if !doc.MetadataEncrypted {
 		t.Fatalf("metadata encryption flag not set")
+	}
+}
+
+func TestBuilder_ErrorHandling(t *testing.T) {
+	b := NewBuilder()
+
+	// Register font without Subtype (should fail)
+	font := &semantic.Font{BaseFont: "BadFont"}
+	b.RegisterFont("Bad", font)
+
+	_, err := b.Build()
+	if err == nil {
+		t.Error("Expected error when registering font without Subtype")
+	}
+
+	b = NewBuilder()
+	// Add embedded file without Subtype (should fail)
+	file := semantic.EmbeddedFile{
+		Name: "test.txt",
+		Data: []byte("content"),
+	}
+	b.AddEmbeddedFile(file)
+
+	_, err = b.Build()
+	if err == nil {
+		t.Error("Expected error when adding embedded file without Subtype")
 	}
 }

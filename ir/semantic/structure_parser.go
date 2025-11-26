@@ -96,16 +96,40 @@ func parseStructureTree(catalog *raw.DictObj, resolver rawResolver, pages []*Pag
 		}
 	}
 
-	// Parse IDTree
-	if idtObj, ok := rootDict.Get(raw.NameLiteral("IDTree")); ok {
-		idt, err := parseNameTree(idtObj, resolver)
-		if err == nil {
-			tree.IDTree = make(map[string]*StructureElement)
-			// Note: We are not resolving the IDTree values to StructureElements here
-			// because it might require recursive resolution or the elements might not be parsed yet.
-			// This is a placeholder for full IDTree support.
-			_ = idt
+	// Parse Namespaces (PDF 2.0)
+	if nsObj, ok := rootDict.Get(raw.NameLiteral("Namespaces")); ok {
+		if nsArr, ok := nsObj.(*raw.ArrayObj); ok {
+			for _, item := range nsArr.Items {
+				ns, err := parseNamespace(item, resolver)
+				if err == nil {
+					tree.Namespaces = append(tree.Namespaces, ns)
+				}
+			}
 		}
+	}
+
+	// Parse IDTree
+	// Instead of parsing the NameTree directly (which gives raw references),
+	// we traverse the parsed structure tree to populate the ID map.
+	// This ensures consistency with the in-memory tree.
+	tree.IDTree = make(map[string]*StructureElement)
+	var collectIDs func(elem *StructureElement)
+	collectIDs = func(elem *StructureElement) {
+		if elem == nil {
+			return
+		}
+		if elem.ID != "" {
+			tree.IDTree[elem.ID] = elem
+		}
+		for _, kid := range elem.K {
+			if kid.Element != nil {
+				collectIDs(kid.Element)
+			}
+		}
+	}
+
+	for _, kid := range tree.K {
+		collectIDs(kid)
 	}
 
 	return tree, nil
@@ -218,6 +242,14 @@ func parseStructureItemFromDict(dict *raw.DictObj, ref raw.ObjectRef, parent *St
 		}
 	}
 
+	// Parse Namespace (PDF 2.0)
+	if nsObj, ok := dict.Get(raw.NameLiteral("NS")); ok {
+		ns, err := parseNamespace(nsObj, resolver)
+		if err == nil {
+			elem.Namespace = ns
+		}
+	}
+
 	// Parse Kids (K)
 	if kObj, ok := dict.Get(raw.NameLiteral("K")); ok {
 		kids, err := parseStructureKids(kObj, elem, resolver, pageMap)
@@ -267,6 +299,90 @@ func parseAttributeObject(obj raw.Object, resolver rawResolver) (*AttributeObjec
 		attr.Attributes[k] = convertRawToInterface(v)
 	}
 	return attr, nil
+}
+
+func parseNamespace(obj raw.Object, resolver rawResolver) (*Namespace, error) {
+	dict, ok := resolveDict(obj, resolver)
+	if !ok {
+		return nil, fmt.Errorf("namespace is not a dictionary")
+	}
+
+	ns := &Namespace{
+		Type:        "Namespace",
+		NS:          getString(dict, "NS"),
+		OriginalRef: raw.ObjectRef{},
+	}
+
+	if ref, ok := obj.(raw.RefObj); ok {
+		ns.OriginalRef = ref.Ref()
+	}
+
+	// Parse RoleMapNS
+	if rmObj, ok := dict.Get(raw.NameLiteral("RoleMapNS")); ok {
+		if rmDict, ok := resolveDict(rmObj, resolver); ok {
+			ns.RoleMapNS = make(RoleMap)
+			for k, v := range rmDict.KV {
+				if n, ok := v.(raw.NameObj); ok {
+					ns.RoleMapNS[k] = n.Val
+				}
+			}
+		}
+	}
+
+	// Parse Schema
+	if schemaObj, ok := dict.Get(raw.NameLiteral("Schema")); ok {
+		schema, err := parseSchema(schemaObj, resolver)
+		if err == nil {
+			ns.Schema = schema
+		}
+	}
+
+	return ns, nil
+}
+
+func parseSchema(obj raw.Object, resolver rawResolver) (*Schema, error) {
+	dict, ok := resolveDict(obj, resolver)
+	if !ok {
+		return nil, fmt.Errorf("schema is not a dictionary")
+	}
+
+	schema := &Schema{
+		Type:        "Schema",
+		O:           getString(dict, "O"),
+		NS:          getString(dict, "NS"),
+		OriginalRef: raw.ObjectRef{},
+	}
+
+	if ref, ok := obj.(raw.RefObj); ok {
+		schema.OriginalRef = ref.Ref()
+	}
+
+	// Parse RoleMap
+	if rmObj, ok := dict.Get(raw.NameLiteral("RoleMap")); ok {
+		if rmDict, ok := resolveDict(rmObj, resolver); ok {
+			schema.RoleMap = make(RoleMap)
+			for k, v := range rmDict.KV {
+				if n, ok := v.(raw.NameObj); ok {
+					schema.RoleMap[k] = n.Val
+				}
+			}
+		}
+	}
+
+	// Parse ClassMap
+	if cmObj, ok := dict.Get(raw.NameLiteral("ClassMap")); ok {
+		if cmDict, ok := resolveDict(cmObj, resolver); ok {
+			schema.ClassMap = make(ClassMap)
+			for k, v := range cmDict.KV {
+				attr, err := parseAttributeObject(v, resolver)
+				if err == nil {
+					schema.ClassMap[k] = attr
+				}
+			}
+		}
+	}
+
+	return schema, nil
 }
 
 func convertRawToInterface(obj raw.Object) interface{} {

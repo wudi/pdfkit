@@ -189,3 +189,120 @@ func TestRepairStructTree(t *testing.T) {
 		t.Error("Expected Span to contain MCID 2")
 	}
 }
+
+func TestRemoveRect_RepairsStructTree(t *testing.T) {
+	// Setup Page with MCID 1
+	page := &semantic.Page{
+		MediaBox: semantic.Rectangle{URX: 100, URY: 100},
+		Contents: []semantic.ContentStream{
+			{
+				Operations: []semantic.Operation{
+					// /Tag <</MCID 1>> BDC
+					{
+						Operator: "BDC",
+						Operands: []semantic.Operand{
+							semantic.NameOperand{Value: "P"},
+							semantic.DictOperand{
+								Values: map[string]semantic.Operand{
+									"MCID": semantic.NumberOperand{Value: 1},
+								},
+							},
+						},
+					},
+					// Tj (Content)
+					{
+						Operator: "Tj",
+						Operands: []semantic.Operand{semantic.StringOperand{Value: []byte("Content")}},
+					},
+					// EMC
+					{Operator: "EMC"},
+				},
+			},
+		},
+	}
+
+	// Setup StructTree referencing MCID 1
+	structTree := &semantic.StructureTree{
+		K: []*semantic.StructureElement{
+			{
+				Type: "StructElem",
+				S:    "P",
+				Pg:   page,
+				K: []semantic.StructureItem{
+					{MCID: 1},
+				},
+			},
+		},
+	}
+
+	doc := &semantic.Document{
+		Pages:      []*semantic.Page{page},
+		StructTree: structTree,
+	}
+
+	ed := editor.NewEditor()
+	// Remove the content (covering the whole page)
+	err := ed.RemoveRect(context.Background(), doc, page, semantic.Rectangle{LLX: 0, LLY: 0, URX: 100, URY: 100})
+	if err != nil {
+		t.Fatalf("RemoveRect: %v", err)
+	}
+
+	// Verify content is removed
+	if len(page.Contents[0].Operations) != 0 {
+		t.Errorf("Expected operations to be removed, got %d", len(page.Contents[0].Operations))
+	}
+
+	// Verify StructTree is repaired (MCID 1 removed)
+	if len(structTree.K) != 0 {
+		t.Errorf("Expected root element to be removed (empty), got %d", len(structTree.K))
+	}
+}
+
+func TestReplaceText_UpdatesFont(t *testing.T) {
+	// Load font
+	fontData, err := os.ReadFile("../../testdata/Rubik-Regular.ttf")
+	if err != nil {
+		t.Skip("skipping test: font file not found")
+	}
+
+	font := &semantic.Font{
+		Subtype:  "TrueType",
+		BaseFont: "Rubik-Regular",
+		Descriptor: &semantic.FontDescriptor{
+			FontFile: fontData,
+		},
+		Widths:    make(map[int]int),
+		ToUnicode: make(map[int][]rune),
+	}
+
+	page := &semantic.Page{
+		Resources: &semantic.Resources{
+			Fonts: map[string]*semantic.Font{
+				"F1": font,
+			},
+		},
+		Contents: []semantic.ContentStream{
+			{
+				Operations: []semantic.Operation{
+					{Operator: "Tf", Operands: []semantic.Operand{semantic.NameOperand{Value: "F1"}, semantic.NumberOperand{Value: 12}}},
+					{Operator: "Tj", Operands: []semantic.Operand{semantic.StringOperand{Value: []byte("A")}}},
+				},
+			},
+		},
+	}
+
+	ed := editor.NewEditor()
+	// Replace "A" with "B"
+	err = ed.ReplaceText(context.Background(), page, "A", "B")
+	if err != nil {
+		t.Fatalf("ReplaceText: %v", err)
+	}
+
+	// Verify font widths and ToUnicode are updated
+	if len(font.Widths) == 0 {
+		t.Error("Expected font widths to be updated")
+	}
+	if len(font.ToUnicode) == 0 {
+		t.Error("Expected font ToUnicode to be updated")
+	}
+}

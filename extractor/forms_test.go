@@ -5,6 +5,7 @@ import (
 
 	"github.com/wudi/pdfkit/ir/decoded"
 	"github.com/wudi/pdfkit/ir/raw"
+	"github.com/wudi/pdfkit/ir/semantic"
 )
 
 func TestExtractor_AcroForm(t *testing.T) {
@@ -115,5 +116,89 @@ func buildAcroFormDoc(t *testing.T) *decoded.DecodedDocument {
 	return &decoded.DecodedDocument{
 		Raw:     doc,
 		Streams: map[raw.ObjectRef]decoded.Stream{},
+	}
+}
+
+func TestExtractor_AcroForm_InheritedFT(t *testing.T) {
+	// Build a doc where FT is inherited from parent field
+	root := raw.Dict()
+	pages := raw.Dict()
+	page := raw.Dict()
+
+	// Parent Field (defines FT=Tx)
+	parentField := raw.Dict()
+	parentField.Set(raw.NameLiteral("FT"), raw.NameLiteral("Tx"))
+	parentField.Set(raw.NameLiteral("T"), raw.Str([]byte("Parent")))
+	parentField.Set(raw.NameLiteral("Kids"), raw.NewArray(raw.Ref(6, 0)))
+
+	// Child Field (inherits FT)
+	childField := raw.Dict()
+	childField.Set(raw.NameLiteral("T"), raw.Str([]byte("Child")))
+	childField.Set(raw.NameLiteral("V"), raw.Str([]byte("Value")))
+	childField.Set(raw.NameLiteral("Parent"), raw.Ref(5, 0))
+
+	// AcroForm
+	acroForm := raw.Dict()
+	acroForm.Set(raw.NameLiteral("Fields"), raw.NewArray(raw.Ref(5, 0)))
+
+	root.Set(raw.NameLiteral("Type"), raw.NameLiteral("Catalog"))
+	root.Set(raw.NameLiteral("Pages"), raw.Ref(2, 0))
+	root.Set(raw.NameLiteral("AcroForm"), raw.Ref(4, 0))
+
+	pages.Set(raw.NameLiteral("Type"), raw.NameLiteral("Pages"))
+	pages.Set(raw.NameLiteral("Kids"), raw.NewArray(raw.Ref(3, 0)))
+	pages.Set(raw.NameLiteral("Count"), raw.NumberInt(1))
+
+	page.Set(raw.NameLiteral("Type"), raw.NameLiteral("Page"))
+	page.Set(raw.NameLiteral("Parent"), raw.Ref(2, 0))
+
+	doc := &raw.Document{
+		Objects: map[raw.ObjectRef]raw.Object{
+			{Num: 1, Gen: 0}: root,
+			{Num: 2, Gen: 0}: pages,
+			{Num: 3, Gen: 0}: page,
+			{Num: 4, Gen: 0}: acroForm,
+			{Num: 5, Gen: 0}: parentField,
+			{Num: 6, Gen: 0}: childField,
+		},
+		Trailer: raw.Dict(),
+	}
+	doc.Trailer.Set(raw.NameLiteral("Root"), raw.Ref(1, 0))
+
+	dec := &decoded.DecodedDocument{
+		Raw:     doc,
+		Streams: map[raw.ObjectRef]decoded.Stream{},
+	}
+
+	ext, err := New(dec)
+	if err != nil {
+		t.Fatalf("new extractor: %v", err)
+	}
+
+	form, err := ext.ExtractAcroForm()
+	if err != nil {
+		t.Fatalf("extract acroform: %v", err)
+	}
+
+	// Should find Parent and Child
+	if len(form.Fields) != 2 {
+		t.Fatalf("expected 2 fields, got %d", len(form.Fields))
+	}
+
+	// Check Child
+	var child semantic.FormField
+	for _, f := range form.Fields {
+		if f.FieldName() == "Child" {
+			child = f
+			break
+		}
+	}
+	if child == nil {
+		t.Fatal("Child field not found")
+	}
+
+	// Child should be TextFormField (inherited FT=Tx)
+	if _, ok := child.(*semantic.TextFormField); !ok {
+		t.Errorf("expected Child to be TextFormField, got %T", child)
 	}
 }
