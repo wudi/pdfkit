@@ -100,6 +100,7 @@ type ButtonFormField struct {
 	IsCheck bool
 	Checked bool   // For check/radio
 	OnState string // The name of the "on" state (e.g., "Yes")
+	Caption string // CA entry from MK dict (Normal Caption)
 }
 
 func (f *ButtonFormField) FieldType() string { return "Btn" }

@@ -132,3 +132,25 @@ This document tracks the detailed implementation progress of features defined in
 - [x] **PDF/A Basic**: Create a PDF/A-1b compliant document.
 - [x] **PDF/A Advanced**: Create a PDF/A-3b compliant document with embedded XML (ZUGFeRD).
 - [x] **Dashboard**: Create a complex one-page executive dashboard with charts, tables, and forms.
+
+## 13. Outstanding Implementation Tasks
+- [x] **Structure Tree Parsing**:
+    - [x] Implement `ParentTree` (NumberTree) and `IDTree` (NameTree) parsing in `ir/semantic/structure_parser.go`.
+    - [x] Implement `ClassMap` attribute resolution.
+    - [x] Implement `MCR` page mapping (resolve `Pg` key).
+- [x] **Hint Stream Parsing**:
+    - [x] Implement value adjustment based on min/base values and deltas in `parser/hints.go` (Annex F).
+- [x] **Font Shaping**:
+    - [x] Improve script detection in `fonts/shaper.go` (currently only detects Arabic).
+- [x] **Builder & Appearance**:
+    - [x] Handle complex encodings/CMaps in `builder/appearance.go`.
+    - [x] Get actual caption from widget annotation MK dict in `builder/appearance.go`.
+- [x] **Content Stream Editor**:
+    - [x] Repair `StructTree` if MCIDs were removed in `contentstream/editor/editor_impl.go`.
+- [x] **Writer Helpers**:
+    - [x] Implement proper `RunLengthEncode` in `writer/helpers.go`.
+- [ ] **JavaScript Runner(low priority)**:
+    - [ ] Implement document-level script execution in `extensions/javascript_runner.go`.
+    - [ ] Implement OpenAction execution.
+    - [ ] Implement Form Calculation scripts (access AA dict).
+    - [ ] Implement PDF DOM placeholder.

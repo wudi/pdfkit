@@ -27,8 +27,8 @@ func ParseHintStream(data []byte, dict *raw.DictObj, npages int) (*raw.HintTable
 
 	br := &bitReader{data: data}
 
-	// Header
-	minObjNum, err := br.ReadBits(32)
+	// Header (Table F.4)
+	minObjsInPage, err := br.ReadBits(32)
 	if err != nil {
 		return nil, err
 	}
@@ -36,8 +36,7 @@ func ParseHintStream(data []byte, dict *raw.DictObj, npages int) (*raw.HintTable
 	if err != nil {
 		return nil, err
 	}
-	_ = firstPageLoc
-	bitsObjCount, err := br.ReadBits(16)
+	bitsDeltaObjs, err := br.ReadBits(16)
 	if err != nil {
 		return nil, err
 	}
@@ -45,28 +44,35 @@ func ParseHintStream(data []byte, dict *raw.DictObj, npages int) (*raw.HintTable
 	if err != nil {
 		return nil, err
 	}
-	_ = minPageLen
-	bitsPageLen, err := br.ReadBits(16)
+	bitsDeltaPageLen, err := br.ReadBits(16)
 	if err != nil {
 		return nil, err
 	}
-	bitsContentOff, err := br.ReadBits(16)
+	minContentOffset, err := br.ReadBits(32) // Relative to page start
 	if err != nil {
 		return nil, err
 	}
-	bitsContentLen, err := br.ReadBits(16)
+	bitsDeltaContentOffset, err := br.ReadBits(16)
 	if err != nil {
 		return nil, err
 	}
-	bitsSharedIdx, err := br.ReadBits(16)
+	minContentLen, err := br.ReadBits(32)
 	if err != nil {
 		return nil, err
 	}
-	bitsGreatestShared, err := br.ReadBits(16)
+	bitsDeltaContentLen, err := br.ReadBits(16)
 	if err != nil {
 		return nil, err
 	}
-	bitsNumShared, err := br.ReadBits(16)
+	bitsSharedObjIdx, err := br.ReadBits(16)
+	if err != nil {
+		return nil, err
+	}
+	bitsGreatestSharedObjIdx, err := br.ReadBits(16)
+	if err != nil {
+		return nil, err
+	}
+	bitsNumSharedObjs, err := br.ReadBits(16)
 	if err != nil {
 		return nil, err
 	}
@@ -75,58 +81,54 @@ func ParseHintStream(data []byte, dict *raw.DictObj, npages int) (*raw.HintTable
 		return nil, err
 	}
 
-	// Read per-page entries
-	// Note: Item 1 is the first page. Item 2 is the second page, etc.
-	// The header values correspond to Item 1 (or are baselines).
-	// Actually, the spec says:
-	// "Item 1: ... The first entry in the page offset hint table corresponds to the first page of the document."
-	// But the first page is usually page 0 in 0-indexed systems, or page 1 in 1-indexed.
-	// The Linearization dict says "O" is the object number of the first page.
-
 	hints := make([]raw.PageOffsetHint, npages)
 
-	// We need to handle the fact that values are delta-encoded or relative.
-	// For simplicity, we'll just read the bits for now.
+	currentPageStart := int64(firstPageLoc)
 
 	for i := 0; i < npages; i++ {
 		// 1. Number of objects in page
-		nObjs, err := br.ReadBits(bitsObjCount)
+		deltaObjs, err := br.ReadBits(bitsDeltaObjs)
 		if err != nil {
 			return nil, err
 		}
+		nObjs := minObjsInPage + deltaObjs
 
 		// 2. Page length
-		pLen, err := br.ReadBits(bitsPageLen)
+		deltaPageLen, err := br.ReadBits(bitsDeltaPageLen)
 		if err != nil {
 			return nil, err
 		}
+		pageLen := minPageLen + deltaPageLen
 
-		// 3. Content stream offset
-		cOff, err := br.ReadBits(bitsContentOff)
+		// 3. Content stream offset (relative to page start)
+		deltaContentOffset, err := br.ReadBits(bitsDeltaContentOffset)
 		if err != nil {
 			return nil, err
 		}
+		contentOffsetRel := minContentOffset + deltaContentOffset
+		contentOffsetAbs := currentPageStart + int64(contentOffsetRel)
 
 		// 4. Content stream length
-		cLen, err := br.ReadBits(bitsContentLen)
+		deltaContentLen, err := br.ReadBits(bitsDeltaContentLen)
 		if err != nil {
 			return nil, err
 		}
+		contentLen := minContentLen + deltaContentLen
 
 		// 5. Shared object index
-		sIdx, err := br.ReadBits(bitsSharedIdx)
+		sIdx, err := br.ReadBits(bitsSharedObjIdx)
 		if err != nil {
 			return nil, err
 		}
 
 		// 6. Greatest shared object index
-		gsIdx, err := br.ReadBits(bitsGreatestShared)
+		gsIdx, err := br.ReadBits(bitsGreatestSharedObjIdx)
 		if err != nil {
 			return nil, err
 		}
 
 		// 7. Number of shared objects
-		nsObjs, err := br.ReadBits(bitsNumShared)
+		nsObjs, err := br.ReadBits(bitsNumSharedObjs)
 		if err != nil {
 			return nil, err
 		}
@@ -138,21 +140,20 @@ func ParseHintStream(data []byte, dict *raw.DictObj, npages int) (*raw.HintTable
 		}
 
 		hints[i] = raw.PageOffsetHint{
-			MinObjNum:      minObjNum,   // Placeholder
-			PageLength:     int64(pLen), // Delta?
-			ContentStream:  int64(cOff),
-			ContentLength:  int64(cLen),
+			MinObjNum:      nObjs, // Using MinObjNum field to store nObjs for now, or we should update struct
+			PageLength:     int64(pageLen),
+			ContentStream:  contentOffsetAbs,
+			ContentLength:  int64(contentLen),
 			SharedObjIndex: sIdx,
 		}
-		_ = nObjs
+
+		// Update page start for next page
+		currentPageStart += int64(pageLen)
+
 		_ = gsIdx
 		_ = nsObjs
 		_ = frac
 	}
-
-	// TODO: Adjust values based on min/base values and deltas.
-	// This requires careful reading of the spec (Annex F).
-	// For now, we successfully parsed the structure.
 
 	return &raw.HintTable{
 		PageOffsets: hints,

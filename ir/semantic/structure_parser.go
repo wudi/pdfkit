@@ -7,7 +7,7 @@ import (
 )
 
 // parseStructureTree parses the logical structure tree from the catalog.
-func parseStructureTree(catalog *raw.DictObj, resolver rawResolver) (*StructureTree, error) {
+func parseStructureTree(catalog *raw.DictObj, resolver rawResolver, pages []*Page) (*StructureTree, error) {
 	if catalog == nil {
 		return nil, nil
 	}
@@ -36,6 +36,8 @@ func parseStructureTree(catalog *raw.DictObj, resolver rawResolver) (*StructureT
 		OriginalRef: stRootRef,
 	}
 
+	pageMap := buildPageMap(pages)
+
 	// Parse RoleMap
 	if rmObj, ok := rootDict.Get(raw.NameLiteral("RoleMap")); ok {
 		if rmDict, ok := resolveDict(rmObj, resolver); ok {
@@ -63,7 +65,7 @@ func parseStructureTree(catalog *raw.DictObj, resolver rawResolver) (*StructureT
 
 	// Parse K (Kids)
 	if kObj, ok := rootDict.Get(raw.NameLiteral("K")); ok {
-		kids, err := parseStructureKids(kObj, nil, resolver)
+		kids, err := parseStructureKids(kObj, nil, resolver, pageMap)
 		if err != nil {
 			return nil, err
 		}
@@ -75,15 +77,51 @@ func parseStructureTree(catalog *raw.DictObj, resolver rawResolver) (*StructureT
 		}
 	}
 
-	// ParentTree and IDTree are complex number trees / name trees.
-	// We'll skip full parsing for now or implement basic support if needed.
-	// The TODO implies "Full StructTree support", so we should probably try.
-	// But NumberTree/NameTree parsing is generic.
+	// Parse ParentTree
+	if ptObj, ok := rootDict.Get(raw.NameLiteral("ParentTree")); ok {
+		pt, err := parseNumberTree(ptObj, resolver)
+		if err == nil {
+			tree.ParentTree = make(map[int][]interface{})
+			for k, v := range pt {
+				var items []interface{}
+				if arr, ok := v.(*raw.ArrayObj); ok {
+					for _, item := range arr.Items {
+						items = append(items, item)
+					}
+				} else {
+					items = append(items, v)
+				}
+				tree.ParentTree[k] = items
+			}
+		}
+	}
+
+	// Parse IDTree
+	if idtObj, ok := rootDict.Get(raw.NameLiteral("IDTree")); ok {
+		idt, err := parseNameTree(idtObj, resolver)
+		if err == nil {
+			tree.IDTree = make(map[string]*StructureElement)
+			// Note: We are not resolving the IDTree values to StructureElements here
+			// because it might require recursive resolution or the elements might not be parsed yet.
+			// This is a placeholder for full IDTree support.
+			_ = idt
+		}
+	}
 
 	return tree, nil
 }
 
-func parseStructureKids(kObj raw.Object, parent *StructureElement, resolver rawResolver) ([]StructureItem, error) {
+func buildPageMap(pages []*Page) map[raw.ObjectRef]*Page {
+	m := make(map[raw.ObjectRef]*Page)
+	for _, p := range pages {
+		if p.OriginalRef.Num != 0 {
+			m[p.OriginalRef] = p
+		}
+	}
+	return m
+}
+
+func parseStructureKids(kObj raw.Object, parent *StructureElement, resolver rawResolver, pageMap map[raw.ObjectRef]*Page) ([]StructureItem, error) {
 	var items []StructureItem
 
 	// K can be a dictionary (single kid), an array (multiple kids), or integer (MCID - only for elements)
@@ -97,23 +135,21 @@ func parseStructureKids(kObj raw.Object, parent *StructureElement, resolver rawR
 		kObj = obj
 		// If it's a dictionary, it's a child element or OBJR or MCR
 		if dict, ok := kObj.(*raw.DictObj); ok {
-			return parseStructureItemFromDict(dict, ref.Ref(), parent, resolver)
+			return parseStructureItemFromDict(dict, ref.Ref(), parent, resolver, pageMap)
 		}
 	}
 
 	switch v := kObj.(type) {
 	case *raw.ArrayObj:
 		for _, item := range v.Items {
-			kids, err := parseStructureKids(item, parent, resolver)
+			kids, err := parseStructureKids(item, parent, resolver, pageMap)
 			if err != nil {
 				return nil, err
 			}
 			items = append(items, kids...)
 		}
 	case *raw.DictObj:
-		// It's a direct dictionary (unlikely for K array elements, but possible)
-		// We need a reference for it if we want to track it properly, but if it's direct, ref is empty.
-		kids, err := parseStructureItemFromDict(v, raw.ObjectRef{}, parent, resolver)
+		kids, err := parseStructureItemFromDict(v, raw.ObjectRef{}, parent, resolver, pageMap)
 		if err != nil {
 			return nil, err
 		}
@@ -126,17 +162,18 @@ func parseStructureKids(kObj raw.Object, parent *StructureElement, resolver rawR
 	return items, nil
 }
 
-func parseStructureItemFromDict(dict *raw.DictObj, ref raw.ObjectRef, parent *StructureElement, resolver rawResolver) ([]StructureItem, error) {
+func parseStructureItemFromDict(dict *raw.DictObj, ref raw.ObjectRef, parent *StructureElement, resolver rawResolver, pageMap map[raw.ObjectRef]*Page) ([]StructureItem, error) {
 	// Check Type
 	typ := getName(dict, "Type")
 	if typ == "MCR" {
 		mcr := &MCR{MCID: int(getInt(dict, "MCID"))}
 		// Resolve Page
-		if _, ok := dict.Get(raw.NameLiteral("Pg")); ok {
-			// We need to map page object to Page struct.
-			// This requires access to the document's page map.
-			// For now, we'll store the raw ref or skip.
-			// Ideally, resolver should help or we pass a page mapper.
+		if pgObj, ok := dict.Get(raw.NameLiteral("Pg")); ok {
+			if pgRef, ok := pgObj.(raw.RefObj); ok {
+				if p, ok := pageMap[pgRef.Ref()]; ok {
+					mcr.Pg = p
+				}
+			}
 		}
 		return []StructureItem{{MCR: mcr, MCID: -1}}, nil
 	}
@@ -164,6 +201,15 @@ func parseStructureItemFromDict(dict *raw.DictObj, ref raw.ObjectRef, parent *St
 		OriginalRef: ref,
 	}
 
+	// Resolve Page for Element
+	if pgObj, ok := dict.Get(raw.NameLiteral("Pg")); ok {
+		if pgRef, ok := pgObj.(raw.RefObj); ok {
+			if p, ok := pageMap[pgRef.Ref()]; ok {
+				elem.Pg = p
+			}
+		}
+	}
+
 	// Parse Attributes (A)
 	if aObj, ok := dict.Get(raw.NameLiteral("A")); ok {
 		attr, err := parseAttributeObject(aObj, resolver)
@@ -172,15 +218,9 @@ func parseStructureItemFromDict(dict *raw.DictObj, ref raw.ObjectRef, parent *St
 		}
 	}
 
-	// Parse Classes (C)
-	// C can be name or array of names.
-	// We need to look up in ClassMap.
-	// For now, we just store the names? StructureElement has `C *ClassMap`.
-	// This seems to imply it stores the resolved attributes.
-
 	// Parse Kids (K)
 	if kObj, ok := dict.Get(raw.NameLiteral("K")); ok {
-		kids, err := parseStructureKids(kObj, elem, resolver)
+		kids, err := parseStructureKids(kObj, elem, resolver, pageMap)
 		if err != nil {
 			return nil, err
 		}
@@ -193,13 +233,30 @@ func parseStructureItemFromDict(dict *raw.DictObj, ref raw.ObjectRef, parent *St
 func parseAttributeObject(obj raw.Object, resolver rawResolver) (*AttributeObject, error) {
 	dict, ok := resolveDict(obj, resolver)
 	if !ok {
-		return nil, fmt.Errorf("attribute is not a dictionary")
+		// It might be an array of attributes
+		if arr, ok := obj.(*raw.ArrayObj); ok {
+			// Merge attributes? Or just take the first one?
+			// For simplicity, we'll take the first dictionary we find.
+			for _, item := range arr.Items {
+				if d, ok := resolveDict(item, resolver); ok {
+					dict = d
+					break
+				}
+			}
+		}
+		if dict == nil {
+			return nil, fmt.Errorf("attribute is not a dictionary or array of dictionaries")
+		}
 	}
 
 	attr := &AttributeObject{
 		Owner:       getName(dict, "O"),
 		Attributes:  make(map[string]interface{}),
-		OriginalRef: raw.ObjectRef{}, // We might need to pass ref if resolved
+		OriginalRef: raw.ObjectRef{},
+	}
+
+	if ref, ok := obj.(raw.RefObj); ok {
+		attr.OriginalRef = ref.Ref()
 	}
 
 	for k, v := range dict.KV {
@@ -207,9 +264,139 @@ func parseAttributeObject(obj raw.Object, resolver rawResolver) (*AttributeObjec
 			continue
 		}
 		// Convert raw object to interface{}
-		attr.Attributes[k] = v // Simplified
+		attr.Attributes[k] = convertRawToInterface(v)
 	}
 	return attr, nil
+}
+
+func convertRawToInterface(obj raw.Object) interface{} {
+	switch v := obj.(type) {
+	case raw.NameObj:
+		return v.Val
+	case raw.StringObj:
+		return string(v.Bytes)
+	case raw.NumberObj:
+		if v.IsInt {
+			return v.Int()
+		}
+		return v.Float()
+	case raw.BoolObj:
+		return v.Value()
+	case *raw.ArrayObj:
+		var arr []interface{}
+		for _, item := range v.Items {
+			arr = append(arr, convertRawToInterface(item))
+		}
+		return arr
+	case *raw.DictObj:
+		m := make(map[string]interface{})
+		for k, val := range v.KV {
+			m[k] = convertRawToInterface(val)
+		}
+		return m
+	default:
+		return nil
+	}
+}
+
+// NumberTree parsing
+func parseNumberTree(root raw.Object, resolver rawResolver) (map[int]raw.Object, error) {
+	result := make(map[int]raw.Object)
+
+	var visit func(obj raw.Object) error
+	visit = func(obj raw.Object) error {
+		dict, ok := resolveDict(obj, resolver)
+		if !ok {
+			return nil
+		}
+
+		// Kids
+		if kidsObj, ok := dict.Get(raw.NameLiteral("Kids")); ok {
+			if kidsArr, ok := kidsObj.(*raw.ArrayObj); ok {
+				for _, kid := range kidsArr.Items {
+					if err := visit(kid); err != nil {
+						return err
+					}
+				}
+			}
+		}
+
+		// Nums
+		if numsObj, ok := dict.Get(raw.NameLiteral("Nums")); ok {
+			if numsArr, ok := numsObj.(*raw.ArrayObj); ok {
+				for i := 0; i+1 < len(numsArr.Items); i += 2 {
+					keyObj := numsArr.Items[i]
+					valObj := numsArr.Items[i+1]
+
+					var key int
+					if n, ok := keyObj.(raw.NumberObj); ok {
+						key = int(n.Int())
+					} else {
+						continue
+					}
+
+					result[key] = valObj
+				}
+			}
+		}
+		return nil
+	}
+
+	if err := visit(root); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// NameTree parsing
+func parseNameTree(root raw.Object, resolver rawResolver) (map[string]raw.Object, error) {
+	result := make(map[string]raw.Object)
+
+	var visit func(obj raw.Object) error
+	visit = func(obj raw.Object) error {
+		dict, ok := resolveDict(obj, resolver)
+		if !ok {
+			return nil
+		}
+
+		// Kids
+		if kidsObj, ok := dict.Get(raw.NameLiteral("Kids")); ok {
+			if kidsArr, ok := kidsObj.(*raw.ArrayObj); ok {
+				for _, kid := range kidsArr.Items {
+					if err := visit(kid); err != nil {
+						return err
+					}
+				}
+			}
+		}
+
+		// Names
+		if namesObj, ok := dict.Get(raw.NameLiteral("Names")); ok {
+			if namesArr, ok := namesObj.(*raw.ArrayObj); ok {
+				for i := 0; i+1 < len(namesArr.Items); i += 2 {
+					keyObj := namesArr.Items[i]
+					valObj := namesArr.Items[i+1]
+
+					var key string
+					if s, ok := keyObj.(raw.StringObj); ok {
+						key = string(s.Bytes)
+					} else if s, ok := keyObj.(raw.HexStringObj); ok {
+						key = string(s.Value())
+					} else {
+						continue
+					}
+
+					result[key] = valObj
+				}
+			}
+		}
+		return nil
+	}
+
+	if err := visit(root); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // Helpers

@@ -133,32 +133,41 @@ func ascii85Encode(data []byte) []byte {
 }
 
 func runLengthEncode(data []byte) []byte {
-	// Simplified RunLength encoder (just literal copy for now as placeholder, real one is complex)
-	// In production this should be a real RLE encoder.
-	// For now, we just return data as is (which is valid RLE if we don't compress)
-	// Wait, RLE decoder expects RLE stream.
-	// Let's implement a basic one.
 	var buf bytes.Buffer
-	for i := 0; i < len(data); {
-		// Find run
+	i := 0
+	for i < len(data) {
+		// Check for run of identical bytes
+		// Run length must be at least 2 to be worth encoding as a run
 		runLen := 1
 		for i+runLen < len(data) && runLen < 128 && data[i+runLen] == data[i] {
 			runLen++
 		}
+
 		if runLen > 1 {
+			// Found a run
+			// n = 257 - length
 			buf.WriteByte(byte(257 - runLen))
 			buf.WriteByte(data[i])
 			i += runLen
-			continue
+		} else {
+			// Literal sequence
+			// Find length of literal sequence
+			// Stop if we find a run of 2+ identical bytes or reach 128 bytes
+			litLen := 0
+			for i+litLen < len(data) && litLen < 128 {
+				// Check if a run starts here
+				if i+litLen+1 < len(data) && data[i+litLen] == data[i+litLen+1] {
+					// Found a run of at least 2, stop literal
+					break
+				}
+				litLen++
+			}
+
+			// n = length - 1
+			buf.WriteByte(byte(litLen - 1))
+			buf.Write(data[i : i+litLen])
+			i += litLen
 		}
-		// Literal
-		litLen := 1
-		for i+litLen < len(data) && litLen < 128 && (i+litLen+1 >= len(data) || data[i+litLen] != data[i+litLen+1]) {
-			litLen++
-		}
-		buf.WriteByte(byte(litLen - 1))
-		buf.Write(data[i : i+litLen])
-		i += litLen
 	}
 	buf.WriteByte(128) // EOD
 	return buf.Bytes()

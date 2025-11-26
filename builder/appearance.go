@@ -107,18 +107,43 @@ func (g *AppearanceGenerator) measureText(text string, fontName string, fontSize
 
 	width := 0.0
 	for _, r := range text {
-		// Simple lookup for WinAnsi/Standard encoding
-		// TODO: Handle complex encodings/CMaps
-		w := 0
-		if font.Widths != nil {
-			w = font.Widths[int(r)]
-		}
-		if w == 0 {
-			w = 500 // Default 500/1000 em
-		}
-		width += float64(w) / 1000.0 * fontSize
+		w := g.getCharWidth(font, r)
+		width += w / 1000.0 * fontSize
 	}
 	return width
+}
+
+func (g *AppearanceGenerator) getCharWidth(font *semantic.Font, r rune) float64 {
+	if font == nil {
+		return 500
+	}
+
+	// 1. Check ToUnicode (Reverse lookup)
+	if len(font.ToUnicode) > 0 {
+		for code, runes := range font.ToUnicode {
+			if len(runes) == 1 && runes[0] == r {
+				// Found code for rune
+				if w, ok := font.Widths[code]; ok {
+					return float64(w)
+				}
+				if font.DescendantFont != nil {
+					if w, ok := font.DescendantFont.W[code]; ok {
+						return float64(w)
+					}
+					return float64(font.DescendantFont.DW)
+				}
+			}
+		}
+	}
+
+	// 2. Simple Encoding (Rune == Code)
+	if int(r) < 256 {
+		if w, ok := font.Widths[int(r)]; ok {
+			return float64(w)
+		}
+	}
+
+	return 500 // Default
 }
 
 func (g *AppearanceGenerator) generateButtonAppearance(field *semantic.ButtonFormField) (*semantic.XObject, error) {
@@ -192,9 +217,13 @@ func (g *AppearanceGenerator) generateButtonAppearance(field *semantic.ButtonFor
 		// Draw Label (Caption)
 		// Assuming field.OnState or Name is the label?
 		// Usually PushButtons have a caption in MK dictionary (CA/RC).
-		// We'll use field.Name as fallback or "Button"
+		// We'll use field.Caption if available, else Name, else "Button"
 		label := "Button"
-		// TODO: Get actual caption from widget annotation MK dict if available
+		if field.Caption != "" {
+			label = field.Caption
+		} else if field.Name != "" {
+			label = field.Name
+		}
 
 		// Center text
 		fontSize := 12.0

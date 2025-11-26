@@ -37,15 +37,8 @@ func ShapeText(text string, font *semantic.Font) ([]ShapedGlyph, error) {
 	shaper := &shaping.HarfbuzzShaper{}
 	runes := []rune(text)
 
-	// Detect script (simplified)
-	// In a real implementation, we'd use a proper script detector
-	script := language.Latin
-	for _, r := range runes {
-		if r >= 0x0600 && r <= 0x06FF { // Arabic block
-			script = language.Arabic
-			break
-		}
-	}
+	// Detect script
+	script := detectScript(runes)
 
 	dir := scriptDirection(script)
 	if strings.HasSuffix(font.Encoding, "V") {
@@ -149,4 +142,52 @@ func scriptDirection(script language.Script) di.Direction {
 	default:
 		return di.DirectionLTR
 	}
+}
+
+func detectScript(runes []rune) language.Script {
+	for _, r := range runes {
+		switch {
+		case r >= 0x0600 && r <= 0x06FF:
+			return language.Arabic
+		case r >= 0x0590 && r <= 0x05FF:
+			return language.Hebrew
+		case r >= 0x0700 && r <= 0x074F:
+			return language.Syriac
+		case r >= 0x0780 && r <= 0x07BF:
+			return language.Thaana
+		case r >= 0x07C0 && r <= 0x07FF:
+			return language.Nko
+		case r >= 0x0900 && r <= 0x097F:
+			return language.Devanagari
+		case r >= 0x0980 && r <= 0x09FF:
+			return language.Bengali
+		case r >= 0x0A00 && r <= 0x0A7F:
+			return language.Gurmukhi
+		case r >= 0x0A80 && r <= 0x0AFF:
+			return language.Gujarati
+		case r >= 0x0B00 && r <= 0x0B7F:
+			return language.Oriya
+		case r >= 0x0B80 && r <= 0x0BFF:
+			return language.Tamil
+		case r >= 0x0C00 && r <= 0x0C7F:
+			return language.Telugu
+		case r >= 0x0C80 && r <= 0x0CFF:
+			return language.Kannada
+		case r >= 0x0D00 && r <= 0x0D7F:
+			return language.Malayalam
+		case r >= 0x0D80 && r <= 0x0DFF:
+			return language.Sinhala
+		case r >= 0x0E00 && r <= 0x0E7F:
+			return language.Thai
+		case r >= 0x0E80 && r <= 0x0EFF:
+			return language.Lao
+		case r >= 0x0F00 && r <= 0x0FFF:
+			return language.Tibetan
+		case r >= 0x1000 && r <= 0x109F:
+			return language.Myanmar
+		case r >= 0x1780 && r <= 0x17FF:
+			return language.Khmer
+		}
+	}
+	return language.Latin
 }

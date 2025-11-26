@@ -146,6 +146,16 @@ func (e *Extractor) extractFieldNode(obj raw.Object, dict *raw.DictObj) (semanti
 				btn.OnState = v
 			}
 		}
+
+		// Extract Caption from MK
+		mkObj := valueFromDict(dict, "MK")
+		mkDict := derefDict(e.raw, mkObj)
+		if mkDict != nil {
+			if ca, ok := stringFromDict(mkDict, "CA"); ok {
+				btn.Caption = ca
+			}
+		}
+
 		field = btn
 	case "Ch":
 		ch := &semantic.ChoiceFormField{BaseFormField: base}

@@ -108,11 +108,56 @@ func (e *EditorImpl) RepairStructTree(page *semantic.Page, structTree *semantic.
 	}
 
 	// 2. Traverse StructTree and prune missing MCIDs
-	// This is a recursive operation.
-	// We need to find StructureItems that point to this page and have an MCID.
-	// If the MCID is not in existingMCIDs, remove the item.
+	var pruneElement func(elem *semantic.StructureElement) bool
+	pruneElement = func(elem *semantic.StructureElement) bool {
+		if elem == nil {
+			return true // Remove nil elements
+		}
 
-	// Note: This is a simplified view. Real implementation needs full tree traversal.
+		var newK []semantic.StructureItem
+		for _, item := range elem.K {
+			keep := true
+
+			if item.Element != nil {
+				// Recursive check
+				if pruneElement(item.Element) {
+					keep = false // Child element became empty, remove it
+				}
+			} else if item.MCID >= 0 {
+				// Direct MCID reference.
+				// Check if this element belongs to the target page.
+				if elem.Pg == page {
+					if !existingMCIDs[item.MCID] {
+						keep = false
+					}
+				}
+			} else if item.MCR != nil {
+				// MCR reference
+				if item.MCR.Pg == page {
+					if !existingMCIDs[item.MCR.MCID] {
+						keep = false
+					}
+				}
+			}
+
+			if keep {
+				newK = append(newK, item)
+			}
+		}
+		elem.K = newK
+
+		// If element is empty, return true to indicate it should be removed
+		return len(elem.K) == 0
+	}
+
+	// Process root children
+	var newRootK []*semantic.StructureElement
+	for _, child := range structTree.K {
+		if !pruneElement(child) {
+			newRootK = append(newRootK, child)
+		}
+	}
+	structTree.K = newRootK
 }
 
 func (e *EditorImpl) ReplaceText(ctx context.Context, page *semantic.Page, oldText, newText string) error {

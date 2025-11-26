@@ -58,7 +58,7 @@ func (b *builderImpl) Build(ctx context.Context, dec *decoded.DecodedDocument) (
 					}
 				}
 
-				st, err := parseStructureTree(catalog, resolver)
+				st, err := parseStructureTree(catalog, resolver, doc.Pages)
 				if err != nil {
 					// Log warning or ignore? Structure tree errors shouldn't necessarily fail the whole doc load.
 					// For now, we'll ignore or log.
