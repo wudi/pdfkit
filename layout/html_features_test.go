@@ -28,6 +28,10 @@ func (m *MockBuilder) NewPage(width, height float64) builder.PageBuilder {
 	return m.Page
 }
 
+func (m *MockBuilder) NewPaper(size builder.PaperSize) builder.PageBuilder {
+	return m.NewPage(size.Weight, size.Height)
+}
+
 func (m *MockBuilder) MeasureText(text string, fontSize float64, fontName string) float64 {
 	return float64(len(text)) * fontSize * 0.5
 }

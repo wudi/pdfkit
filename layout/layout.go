@@ -30,67 +30,6 @@ type Margins struct {
 	Top, Bottom, Left, Right float64
 }
 
-// PaperSize defines standard paper dimensions.
-type PaperSize string
-
-const (
-	A0     PaperSize = "A0"
-	A1     PaperSize = "A1"
-	A2     PaperSize = "A2"
-	A3     PaperSize = "A3"
-	A4     PaperSize = "A4"
-	A5     PaperSize = "A5"
-	A6     PaperSize = "A6"
-	A7     PaperSize = "A7"
-	A8     PaperSize = "A8"
-	A9     PaperSize = "A9"
-	A10    PaperSize = "A10"
-	A11    PaperSize = "A11"
-	A12    PaperSize = "A12"
-	A13    PaperSize = "A13"
-	TwoA0  PaperSize = "2A0"
-	FourA0 PaperSize = "4A0"
-	A0Plus PaperSize = "A0+"
-	A1Plus PaperSize = "A1+"
-	A3Plus PaperSize = "A3+"
-	C4     PaperSize = "C4"
-	C5     PaperSize = "C5"
-	C6     PaperSize = "C6"
-	C76    PaperSize = "C7/6"
-	DL     PaperSize = "DL"
-	Letter PaperSize = "Letter"
-	Legal  PaperSize = "Legal"
-)
-
-var paperSizes = map[PaperSize][2]float64{
-	A0:     {2383.94, 3370.39},
-	A1:     {1683.78, 2383.94},
-	A2:     {1190.55, 1683.78},
-	A3:     {841.89, 1190.55},
-	A4:     {595.28, 841.89},
-	A5:     {419.53, 595.28},
-	A6:     {297.64, 419.53},
-	A7:     {209.76, 297.64},
-	A8:     {147.40, 209.76},
-	A9:     {104.88, 147.40},
-	A10:    {73.70, 104.88},
-	A11:    {51.02, 73.70},
-	A12:    {36.85, 51.02},
-	A13:    {25.51, 36.85},
-	TwoA0:  {3370.39, 4767.87},
-	FourA0: {4767.87, 6740.79},
-	A0Plus: {2590.87, 3662.36},
-	A1Plus: {1726.30, 2590.87},
-	A3Plus: {932.60, 1369.14},
-	C4:     {649.13, 918.43},
-	C5:     {459.21, 649.13},
-	C6:     {323.15, 459.21},
-	C76:    {252.28, 467.72},
-	DL:     {311.81, 623.62},
-	Letter: {612.00, 792.00},
-	Legal:  {612.00, 1008.00},
-}
-
 // Option defines a configuration option for the Engine.
 type Option func(*Engine)
 
@@ -131,12 +70,10 @@ func WithPageSize(width, height float64) Option {
 }
 
 // WithPaperSize sets the page dimensions using a standard paper size.
-func WithPaperSize(size PaperSize) Option {
+func WithPaperSize(size builder.PaperSize) Option {
 	return func(e *Engine) {
-		if dims, ok := paperSizes[size]; ok {
-			e.pageWidth = dims[0]
-			e.pageHeight = dims[1]
-		}
+		e.pageWidth = size.Weight
+		e.pageHeight = size.Height
 	}
 }
 
@@ -153,8 +90,8 @@ func NewEngine(b builder.PDFBuilder, opts ...Option) *Engine {
 			Left:   50,
 			Right:  50,
 		},
-		pageWidth:  paperSizes[A4][0],
-		pageHeight: paperSizes[A4][1],
+		pageWidth:  builder.A4.Weight,
+		pageHeight: builder.A4.Height,
 	}
 	for _, opt := range opts {
 		opt(e)

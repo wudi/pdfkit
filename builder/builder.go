@@ -14,6 +14,7 @@ import (
 // PDFBuilder provides a fluent API for PDF construction.
 type PDFBuilder interface {
 	NewPage(width, height float64) PageBuilder
+	NewPaper(size PaperSize) PageBuilder
 	AddPage(page *semantic.Page) PDFBuilder
 	SetInfo(info *semantic.DocumentInfo) PDFBuilder
 	SetMetadata(xmp []byte) PDFBuilder
@@ -229,6 +230,40 @@ const (
 	defaultBaseFont     = "Helvetica"
 )
 
+// PaperSize defines standard paper dimensions.
+type PaperSize struct {
+	Weight, Height float64
+}
+
+var (
+	A0     = PaperSize{2383.94, 3370.39}
+	A1     = PaperSize{1683.78, 2383.94}
+	A2     = PaperSize{1190.55, 1683.78}
+	A3     = PaperSize{841.89, 1190.55}
+	A4     = PaperSize{595.28, 841.89}
+	A5     = PaperSize{419.53, 595.28}
+	A6     = PaperSize{297.64, 419.53}
+	A7     = PaperSize{209.76, 297.64}
+	A8     = PaperSize{147.40, 209.76}
+	A9     = PaperSize{104.88, 147.40}
+	A10    = PaperSize{73.70, 104.88}
+	A11    = PaperSize{51.02, 73.70}
+	A12    = PaperSize{36.85, 51.02}
+	A13    = PaperSize{25.51, 36.85}
+	TwoA0  = PaperSize{3370.39, 4767.87}
+	FourA0 = PaperSize{4767.87, 6740.79}
+	A0Plus = PaperSize{2590.87, 3662.36}
+	A1Plus = PaperSize{1726.30, 2590.87}
+	A3Plus = PaperSize{932.60, 1369.14}
+	C4     = PaperSize{649.13, 918.43}
+	C5     = PaperSize{459.21, 649.13}
+	C6     = PaperSize{323.15, 459.21}
+	C76    = PaperSize{252.28, 467.72}
+	DL     = PaperSize{311.81, 623.62}
+	Letter = PaperSize{612.00, 792.00}
+	Legal  = PaperSize{612.00, 1008.00}
+)
+
 // NewBuilder constructs a PDFBuilder.
 func NewBuilder() PDFBuilder { return &builderImpl{defaultFont: defaultFontResource} }
 
@@ -236,6 +271,10 @@ func (b *builderImpl) NewPage(w, h float64) PageBuilder {
 	p := &semantic.Page{MediaBox: semantic.Rectangle{LLX: 0, LLY: 0, URX: w, URY: h}}
 	b.pages = append(b.pages, p)
 	return &pageBuilderImpl{parent: b, page: p}
+}
+
+func (b *builderImpl) NewPaper(size PaperSize) PageBuilder {
+	return b.NewPage(size.Weight, size.Height)
 }
 
 func (b *builderImpl) AddPage(p *semantic.Page) PDFBuilder {

@@ -2,6 +2,8 @@ package layout
 
 import (
 	"testing"
+
+	"github.com/wudi/pdfkit/builder"
 )
 
 func TestEngineConfiguration(t *testing.T) {
@@ -47,7 +49,7 @@ func TestEngineConfiguration(t *testing.T) {
 	})
 
 	t.Run("Paper Size Configuration", func(t *testing.T) {
-		e := NewEngine(mb, WithPaperSize(A3))
+		e := NewEngine(mb, WithPaperSize(builder.A3))
 		if e.pageWidth != 841.89 {
 			t.Errorf("Expected A3 width 841.89, got %f", e.pageWidth)
 		}
