@@ -14,7 +14,7 @@ export LIBRARY_PATH=/opt/homebrew/lib
 ### Ubuntu/Debian:
 ```bash
 sudo apt update
-sudo apt install tesseract-ocr
+sudo apt install libtesseract-dev
 sudo apt install libleptonica-dev
 ```
 
