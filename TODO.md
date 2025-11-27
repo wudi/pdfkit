@@ -149,11 +149,11 @@ This document tracks the detailed implementation progress of features defined in
     - [x] Repair `StructTree` if MCIDs were removed in `contentstream/editor/editor_impl.go`.
 - [x] **Writer Helpers**:
     - [x] Implement proper `RunLengthEncode` in `writer/helpers.go`.
-- [ ] **JavaScript Runner(low priority)**:
+- [x] **JavaScript Runner(low priority)**:
     - [x] Implement document-level script execution in `extensions/javascript_runner.go`.
     - [x] Implement OpenAction execution.
-    - [ ] Implement Form Calculation scripts (access AA dict).
-    - [ ] Implement PDF DOM placeholder.
+    - [x] Implement Form Calculation scripts (access AA dict).
+    - [x] Implement PDF DOM placeholder.
 
 ## 14. Refinement & Fixes
 - [x] **Content Stream Editor**:
@@ -198,6 +198,20 @@ This document tracks the detailed implementation progress of features defined in
     - [x] Implement `readReal` in CFF parser to replace placeholder.
 - [x] **Color Management**:
     - [x] Clean up `cmm/transform.go` placeholders.
+
+## Refinement Phase 3 (Sequential Fixes)
+- [x] **Color Management Module (CMM)**:
+    - [x] Implement LUT-based transform (A2B0/B2A0) in `cmm/transform.go`.
+- [x] **Content Stream Editor**:
+    - [x] Improve `ReplaceText` to handle multi-operation text and complex encodings.
+- [x] **Font Shaping**:
+    - [x] Improve script detection in `fonts/shaper.go` using `unicode` package ranges.
+- [x] **DOM Extension**:
+    - [x] Optimize `GetField` with map-based lookup in `extensions/dom/dom.go`.
+- [x] **Scanner**:
+    - [x] Replace panic with error return in `ensureCapacity` in `scanner/scanner.go`.
+- [x] **Writer/Signer**:
+    - [x] Implement `ByteRange` calculation in `writer/signer.go`.
 
 ## Phase 3: Advanced Features (Future)
 

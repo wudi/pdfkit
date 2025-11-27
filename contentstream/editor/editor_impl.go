@@ -3,6 +3,7 @@ package editor
 import (
 	"context"
 	"sort"
+	"strings"
 
 	"github.com/wudi/pdfkit/fonts"
 	"github.com/wudi/pdfkit/ir/semantic"
@@ -196,98 +197,328 @@ func (e *EditorImpl) RepairStructTree(page *semantic.Page, structTree *semantic.
 }
 
 func (e *EditorImpl) ReplaceText(ctx context.Context, page *semantic.Page, oldText, newText string) error {
-	// Iterate over content streams
 	for i := range page.Contents {
 		stream := &page.Contents[i]
+		if err := e.replaceInStream(stream, page.Resources, oldText, newText); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *EditorImpl) replaceInStream(stream *semantic.ContentStream, resources *semantic.Resources, oldText, newText string) error {
+	// Loop to handle multiple occurrences
+	for {
+		// 1. Build Text Map
+		type TextPart struct {
+			Text    string
+			OpIndex int
+			Font    *semantic.Font
+		}
+
+		var parts []TextPart
 		var currentFont *semantic.Font
 
 		for j, op := range stream.Operations {
 			if op.Operator == "Tf" {
 				if len(op.Operands) > 0 {
 					if nameOp, ok := op.Operands[0].(semantic.NameOperand); ok {
-						if page.Resources != nil && page.Resources.Fonts != nil {
-							currentFont = page.Resources.Fonts[nameOp.Value]
+						if resources != nil && resources.Fonts != nil {
+							currentFont = resources.Fonts[nameOp.Value]
 						}
 					}
 				}
-			} else if op.Operator == "Tj" || op.Operator == "TJ" {
-				// Check if this matches oldText
-				// Note: This is a simplification. Real text extraction is needed to match properly.
-				// We assume the caller knows the text is in a single operation and matches exactly for now.
+			} else if isTextOp(op.Operator) {
+				text := decodeOp(op, currentFont)
+				parts = append(parts, TextPart{text, j, currentFont})
+			}
+		}
 
-				// Shape the new text
-				if currentFont == nil {
+		// 2. Reconstruct full text
+		var fullTextBuilder strings.Builder
+		var partIndices []int // maps char index in fullText to part index
+		var charOffsets []int // maps char index in fullText to char index in part.Text
+
+		for k, part := range parts {
+			runes := []rune(part.Text)
+			for rIdx := range runes {
+				partIndices = append(partIndices, k)
+				charOffsets = append(charOffsets, rIdx)
+			}
+			fullTextBuilder.WriteString(part.Text)
+		}
+		fullText := fullTextBuilder.String()
+
+		// 3. Find match
+		idx := strings.Index(fullText, oldText)
+		if idx == -1 {
+			break // No more matches
+		}
+
+		// 4. Identify range
+		// startCharIdx := idx
+		// endCharIdx := idx + len(oldText) // exclusive
+
+		// Map back to parts
+		// Note: strings.Index returns byte index, but we built partIndices based on runes?
+		// Wait, fullTextBuilder.WriteString appends bytes.
+		// But partIndices logic above assumed 1 rune = 1 entry?
+		// "for rIdx := range runes" iterates runes.
+		// But strings.Index returns byte offset.
+		// We need to convert byte offset to rune index.
+
+		// Let's rebuild fullText as []rune to be safe and easy
+		fullRunes := []rune(fullText)
+		oldRunes := []rune(oldText)
+
+		// Find in runes
+		runeIdx := -1
+		for i := 0; i <= len(fullRunes)-len(oldRunes); i++ {
+			match := true
+			for k := 0; k < len(oldRunes); k++ {
+				if fullRunes[i+k] != oldRunes[k] {
+					match = false
+					break
+				}
+			}
+			if match {
+				runeIdx = i
+				break
+			}
+		}
+
+		if runeIdx == -1 {
+			break // Should not happen if strings.Index found it, unless encoding issues
+		}
+
+		startRuneIdx := runeIdx
+		endRuneIdx := runeIdx + len(oldRunes)
+
+		startPartIdx := partIndices[startRuneIdx]
+		endPartIdx := partIndices[endRuneIdx-1]
+
+		startPart := parts[startPartIdx]
+		endPart := parts[endPartIdx]
+
+		// 5. Construct replacements
+		// Prefix: Text in startPart before match
+		startOffset := charOffsets[startRuneIdx]
+		prefix := string([]rune(startPart.Text)[:startOffset])
+
+		// Suffix: Text in endPart after match
+		endOffset := charOffsets[endRuneIdx-1] + 1 // +1 because endRuneIdx is exclusive in fullRunes, but inclusive in loop
+		suffix := string([]rune(endPart.Text)[endOffset:])
+
+		// New Ops
+		var newOps []semantic.Operation
+
+		// Start Op with Prefix + NewText
+		// We use the font of startPart
+		if prefix != "" || newText != "" {
+			// We combine prefix and newText into one op?
+			// Or separate? Separate is safer for positioning if we don't recalculate everything.
+			// But here we are replacing text, so we assume flow.
+
+			// Let's put prefix back as it was (re-encoded)
+			if prefix != "" {
+				op, err := encodeOp(prefix, startPart.Font)
+				if err == nil {
+					newOps = append(newOps, op)
+				}
+			}
+
+			// Put newText
+			if newText != "" {
+				op, err := encodeOp(newText, startPart.Font)
+				if err == nil {
+					newOps = append(newOps, op)
+				}
+			}
+		}
+
+		// End Op with Suffix
+		if suffix != "" {
+			// Use endPart font
+			op, err := encodeOp(suffix, endPart.Font)
+			if err == nil {
+				newOps = append(newOps, op)
+			}
+		}
+
+		// 6. Apply replacement
+		// We need to replace ops from startPart.OpIndex to endPart.OpIndex
+		// But wait, parts only contain text ops. There might be other ops in between (e.g. color changes).
+		// If we remove range [startPart.OpIndex, endPart.OpIndex], we might remove color changes!
+		// This is tricky.
+		// If there are intervening non-text ops, we should preserve them?
+		// But if the text flows across them, preserving them might be wrong (e.g. color change in middle of word?).
+		// For now, let's assume we remove everything in between.
+
+		startOpIndex := startPart.OpIndex
+		endOpIndex := endPart.OpIndex
+
+		// Construct the new stream operations
+		var finalOps []semantic.Operation
+		finalOps = append(finalOps, stream.Operations[:startOpIndex]...)
+		finalOps = append(finalOps, newOps...)
+		if endOpIndex+1 < len(stream.Operations) {
+			finalOps = append(finalOps, stream.Operations[endOpIndex+1:]...)
+		}
+
+		stream.Operations = finalOps
+
+		// Continue loop to find next occurrence
+	}
+	return nil
+}
+
+func isTextOp(op string) bool {
+	return op == "Tj" || op == "TJ" || op == "'" || op == "\""
+}
+
+func decodeOp(op semantic.Operation, font *semantic.Font) string {
+	if font == nil {
+		return ""
+	}
+	var sb strings.Builder
+
+	decodeBytes := func(b []byte) string {
+		if font.ToUnicode != nil {
+			// Map bytes to runes using ToUnicode CMap
+			// This is complex because CMap keys can be variable length.
+			// We assume 1-byte or 2-byte based on font type or CMap.
+			// Simplified: Try to match bytes to CMap keys.
+
+			// For now, let's assume 1-byte or 2-byte keys.
+			// If ToUnicode has entries, we use them.
+
+			// Try to read all bytes
+			res := ""
+			i := 0
+			for i < len(b) {
+				// Try 2 bytes
+				if i+1 < len(b) {
+					code := int(b[i])<<8 | int(b[i+1])
+					if runes, ok := font.ToUnicode[code]; ok {
+						res += string(runes)
+						i += 2
+						continue
+					}
+				}
+				// Try 1 byte
+				code := int(b[i])
+				if runes, ok := font.ToUnicode[code]; ok {
+					res += string(runes)
+					i++
 					continue
 				}
+				// Fallback
+				res += string(rune(b[i]))
+				i++
+			}
+			return res
+		}
+		// Fallback to simple encoding if no ToUnicode
+		return string(b)
+	}
 
-				shapedGlyphs, err := fonts.ShapeText(newText, currentFont)
-				if err != nil {
-					// If shaping fails (e.g. no font file), we can't replace properly.
-					continue
-				}
-
-				// Update font metrics (Widths and ToUnicode)
-				if currentFont.Widths == nil {
-					currentFont.Widths = make(map[int]int)
-				}
-				if currentFont.ToUnicode == nil {
-					currentFont.ToUnicode = make(map[int][]rune)
-				}
-
-				// We assume 1-to-1 mapping for simplicity in updating ToUnicode
-				// This is not always true but better than nothing.
-				runes := []rune(newText)
-				if len(shapedGlyphs) == len(runes) {
-					for k, g := range shapedGlyphs {
-						currentFont.Widths[g.ID] = int(g.XAdvance * 1000) // XAdvance is in 1/1000 em
-						currentFont.ToUnicode[g.ID] = []rune{runes[k]}
-					}
-				}
-
-				// Construct TJ array
-				var tjArgs []semantic.Operand
-
-				for _, g := range shapedGlyphs {
-					// Encode Glyph ID
-					var encoded []byte
-					if currentFont.Subtype == "Type0" {
-						// Identity-H: 2 bytes
-						encoded = []byte{byte(g.ID >> 8), byte(g.ID)}
-					} else {
-						// Simple font: 1 byte
-						encoded = []byte{byte(g.ID)}
-					}
-
-					tjArgs = append(tjArgs, semantic.StringOperand{Value: encoded})
-
-					// Calculate adjustment
-					// TJ adjustment is subtracted from position.
-					// Advance = Width - (Adj / 1000)
-					// Adj = (Width - Advance) * 1000
-
-					// Get natural width
-					width := 0
-					if currentFont.Widths != nil {
-						width = currentFont.Widths[g.ID]
-					}
-
-					// g.XAdvance is in 1/1000 em units (from shaper.go)
-					// width is in 1/1000 em units (PDF spec)
-
-					diff := float64(width) - g.XAdvance
-					// Only add adjustment if significant
-					if diff > 0.001 || diff < -0.001 {
-						tjArgs = append(tjArgs, semantic.NumberOperand{Value: diff})
-					}
-				}
-
-				// Replace with TJ
-				stream.Operations[j] = semantic.Operation{
-					Operator: "TJ",
-					Operands: []semantic.Operand{semantic.ArrayOperand{Values: tjArgs}},
+	for _, operand := range op.Operands {
+		if strOp, ok := operand.(semantic.StringOperand); ok {
+			sb.WriteString(decodeBytes(strOp.Value))
+		} else if arrOp, ok := operand.(semantic.ArrayOperand); ok {
+			for _, item := range arrOp.Values {
+				if strItem, ok := item.(semantic.StringOperand); ok {
+					sb.WriteString(decodeBytes(strItem.Value))
 				}
 			}
 		}
 	}
-	return nil
+	return sb.String()
+}
+
+func encodeOp(text string, font *semantic.Font) (semantic.Operation, error) {
+	if font == nil {
+		return semantic.Operation{}, nil
+	}
+
+	// Shape text
+	shapedGlyphs, err := fonts.ShapeText(text, font)
+	if err != nil {
+		return semantic.Operation{}, err
+	}
+
+	// Update Font Widths and ToUnicode
+	if font.Widths == nil {
+		font.Widths = make(map[int]int)
+	}
+	if font.ToUnicode == nil {
+		font.ToUnicode = make(map[int][]rune)
+	}
+
+	runes := []rune(text)
+	clusterGlyphs := make(map[int][]int)
+	for _, g := range shapedGlyphs {
+		clusterGlyphs[g.Cluster] = append(clusterGlyphs[g.Cluster], g.ID)
+		font.Widths[g.ID] = int(g.XAdvance)
+	}
+
+	var clusters []int
+	for c := range clusterGlyphs {
+		clusters = append(clusters, c)
+	}
+	sort.Ints(clusters)
+
+	for i, c := range clusters {
+		start := c
+		end := len(runes)
+		if i+1 < len(clusters) {
+			end = clusters[i+1]
+		}
+		if start >= len(runes) {
+			continue
+		}
+		if end > len(runes) {
+			end = len(runes)
+		}
+
+		clusterRunes := runes[start:end]
+		gids := clusterGlyphs[c]
+
+		if len(gids) > 0 {
+			// Map the first glyph to the runes.
+			// This handles ligatures (1 glyph -> N runes).
+			// For 1 rune -> N glyphs (decomposition), we map first glyph to rune, others to empty (implicitly).
+			font.ToUnicode[gids[0]] = clusterRunes
+		}
+	}
+
+	// Construct TJ
+	var tjArgs []semantic.Operand
+
+	for _, g := range shapedGlyphs {
+		// Encode Glyph ID
+		var encoded []byte
+		if font.Subtype == "Type0" {
+			encoded = []byte{byte(g.ID >> 8), byte(g.ID)}
+		} else {
+			encoded = []byte{byte(g.ID)}
+		}
+
+		tjArgs = append(tjArgs, semantic.StringOperand{Value: encoded})
+
+		// Adjustment
+		width := 0
+		if font.Widths != nil {
+			width = font.Widths[g.ID]
+		}
+		diff := float64(width) - g.XAdvance
+		if diff > 0.001 || diff < -0.001 {
+			tjArgs = append(tjArgs, semantic.NumberOperand{Value: diff})
+		}
+	}
+
+	return semantic.Operation{
+		Operator: "TJ",
+		Operands: []semantic.Operand{semantic.ArrayOperand{Values: tjArgs}},
+	}, nil
 }

@@ -265,7 +265,9 @@ func (s *pdfScanner) ensure(n int64) error {
 		// Cap at a reasonable limit to avoid massive allocation on bad input,
 		// though ensureCapacity handles OOM by panic usually.
 		// We assume missing fits in int.
-		s.ensureCapacity(int(missing))
+		if err := s.ensureCapacity(int(missing)); err != nil {
+			return err
+		}
 	}
 	for n >= s.base+int64(len(s.data)) {
 		if s.eof {
@@ -285,7 +287,9 @@ func (s *pdfScanner) loadMore() error {
 	off := s.base + int64(len(s.data))
 	n, err := s.reader.ReadAt(s.readBuf, off)
 	if n > 0 {
-		s.appendData(s.readBuf[:n])
+		if err := s.appendData(s.readBuf[:n]); err != nil {
+			return err
+		}
 	}
 	if err == io.EOF {
 		s.eof = true
@@ -352,37 +356,57 @@ func (s *pdfScanner) trimBuffer() {
 	s.base += excess
 }
 
-func (s *pdfScanner) appendData(chunk []byte) {
+func (s *pdfScanner) appendData(chunk []byte) error {
 	if len(chunk) == 0 {
-		return
+		return nil
 	}
-	s.ensureCapacity(len(chunk))
+	if err := s.ensureCapacity(len(chunk)); err != nil {
+		return err
+	}
 	start := len(s.data)
 	copy(s.windowBuf[start:start+len(chunk)], chunk)
 	s.data = s.windowBuf[:start+len(chunk)]
 	s.trimBuffer()
+	return nil
 }
 
-func (s *pdfScanner) ensureCapacity(add int) {
+func (s *pdfScanner) ensureCapacity(add int) error {
 	if add <= 0 {
-		return
+		return nil
 	}
 	need := len(s.data) + add
+	if need < len(s.data) {
+		return errors.New("buffer overflow")
+	}
 	if need <= cap(s.windowBuf) {
-		return
+		return nil
 	}
 	s.compactWindow()
 	if need <= cap(s.windowBuf) {
-		return
+		return nil
 	}
+
+	if s.cfg.MaxBufferSize > 0 && int64(need) > s.cfg.MaxBufferSize {
+		return errors.New("buffer size limit exceeded")
+	}
+
 	newCap := cap(s.windowBuf) * 2
 	if newCap < need {
 		newCap = need
 	}
+
+	if s.cfg.MaxBufferSize > 0 && int64(newCap) > s.cfg.MaxBufferSize {
+		newCap = int(s.cfg.MaxBufferSize)
+		if newCap < need {
+			return errors.New("buffer size limit exceeded")
+		}
+	}
+
 	buf := make([]byte, newCap)
 	copy(buf, s.data)
 	s.windowBuf = buf
 	s.data = s.windowBuf[:len(s.data)]
+	return nil
 }
 
 func (s *pdfScanner) compactWindow() {

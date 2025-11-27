@@ -375,3 +375,30 @@ func TestScanner_RecoveryContextIncludesObject(t *testing.T) {
 		t.Fatalf("expected component to include scanner:hex, got %q", rec.loc.Component)
 	}
 }
+
+func TestScanner_EnsureCapacity_Error(t *testing.T) {
+	// Create a scanner with a small buffer limit
+	// We want to trigger "buffer size limit exceeded"
+	// MaxBufferSize = 10 bytes
+	cfg := Config{
+		MaxBufferSize: 10,
+		WindowSize:    5, // Small window to force growth
+	}
+
+	// Input larger than MaxBufferSize
+	// Use a keyword (starts with letter) to ensure error propagation
+	// scanNumber swallows errors and returns "invalid number"
+	data := "A123456789012345"
+	s := newScanner(t, data, cfg)
+
+	// Try to scan a token that requires buffering all of it.
+
+	_, err := s.Next()
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "buffer size limit exceeded") {
+		t.Errorf("Expected 'buffer size limit exceeded', got '%v'", err)
+	}
+}

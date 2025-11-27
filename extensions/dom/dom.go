@@ -8,22 +8,29 @@ import (
 )
 
 type Adapter struct {
-	doc *semantic.Document
+	doc      *semantic.Document
+	fieldMap map[string]scripting.FormFieldProxy
 }
 
 func New(doc *semantic.Document) *Adapter {
-	return &Adapter{doc: doc}
+	a := &Adapter{doc: doc}
+	a.buildFieldMap()
+	return a
+}
+
+func (a *Adapter) buildFieldMap() {
+	a.fieldMap = make(map[string]scripting.FormFieldProxy)
+	if a.doc.AcroForm == nil {
+		return
+	}
+	for _, f := range a.doc.AcroForm.Fields {
+		a.fieldMap[f.FieldName()] = NewFieldProxy(f)
+	}
 }
 
 func (a *Adapter) GetField(name string) (scripting.FormFieldProxy, error) {
-	if a.doc.AcroForm == nil {
-		return nil, fmt.Errorf("no form found")
-	}
-	// Simple linear search for now. In a real implementation, we might want a map.
-	for _, f := range a.doc.AcroForm.Fields {
-		if f.FieldName() == name {
-			return NewFieldProxy(f), nil
-		}
+	if val, ok := a.fieldMap[name]; ok {
+		return val, nil
 	}
 	return nil, fmt.Errorf("field not found: %s", name)
 }

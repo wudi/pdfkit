@@ -21,14 +21,12 @@ func (t *basicTransform) Convert(in []float64) ([]float64, error) {
 	// 2. Try ICC-based conversion if available
 	if srcICC, ok := t.src.(*ICCProfile); ok {
 		if dstICC, ok := t.dst.(*ICCProfile); ok {
-			// Try RGB -> XYZ -> RGB
-			if t.src.ColorSpace() == "RGB " && t.dst.ColorSpace() == "RGB " {
-				out, err := convertICC_RGB_RGB(srcICC, dstICC, in)
-				if err == nil {
-					return out, nil
-				}
-				// Fallback if ICC fails (e.g. complex LUTs)
+			// Try generic ICC conversion (LUT or Matrix)
+			out, err := convertICC(srcICC, dstICC, in)
+			if err == nil {
+				return out, nil
 			}
+			// Fallback if ICC fails (e.g. complex LUTs)
 		}
 	}
 
@@ -181,28 +179,123 @@ func max(a, b float64) float64 {
 	return b
 }
 
-func convertICC_RGB_RGB(src, dst *ICCProfile, in []float64) ([]float64, error) {
-	// 1. Src -> XYZ (Matrix/TRC)
-	srcXform, err := tryCreateMatrixTRC(src)
+func convertICC(src, dst *ICCProfile, in []float64) ([]float64, error) {
+	// 1. Src -> PCS
+	toPCS, err := createToPCS(src)
 	if err != nil {
 		return nil, err
 	}
-	xyz, err := srcXform.Convert(in)
-	if err != nil {
-		return nil, err
-	}
-
-	// 2. XYZ -> Dst (Inverse Matrix/TRC)
-	dstXform, err := tryCreateMatrixTRC(dst)
-	if err != nil {
-		return nil, err
-	}
-	invDstXform, err := dstXform.Inverse()
+	pcsSrc, err := toPCS.Convert(in)
 	if err != nil {
 		return nil, err
 	}
 
-	return invDstXform.Convert(xyz)
+	// Check PCS mismatch
+	srcPCS := src.PCS()
+	dstPCS := dst.PCS()
+
+	var pcsDst []float64
+	if srcPCS == dstPCS {
+		pcsDst = pcsSrc
+	} else {
+		// Convert PCS -> PCS (XYZ <-> Lab)
+		if srcPCS == "XYZ " && dstPCS == "Lab " {
+			pcsDst = XYZToLab(pcsSrc)
+		} else if srcPCS == "Lab " && dstPCS == "XYZ " {
+			pcsDst = LabToXYZ(pcsSrc)
+		} else {
+			// Fallback or error?
+			pcsDst = pcsSrc
+		}
+	}
+
+	// 2. PCS -> Dst
+	fromPCS, err := createFromPCS(dst)
+	if err != nil {
+		return nil, err
+	}
+	return fromPCS.Convert(pcsDst)
+}
+
+func createToPCS(p *ICCProfile) (Transform, error) {
+	// Try A2B0 (Device to PCS)
+	if lut, err := p.ReadLUTTag("A2B0"); err == nil {
+		return lut, nil
+	}
+	// Try Matrix/TRC
+	return tryCreateMatrixTRC(p)
+}
+
+func createFromPCS(p *ICCProfile) (Transform, error) {
+	// Try B2A0 (PCS to Device)
+	if lut, err := p.ReadLUTTag("B2A0"); err == nil {
+		return lut, nil
+	}
+	// Try Matrix/TRC (Inverse)
+	mat, err := tryCreateMatrixTRC(p)
+	if err != nil {
+		return nil, err
+	}
+	return mat.Inverse()
+}
+
+// D50 White Point for XYZ <-> Lab conversion
+const (
+	D50X = 0.9642
+	D50Y = 1.0000
+	D50Z = 0.8249
+)
+
+func XYZToLab(xyz []float64) []float64 {
+	if len(xyz) < 3 {
+		return xyz
+	}
+	x := xyz[0] / D50X
+	y := xyz[1] / D50Y
+	z := xyz[2] / D50Z
+
+	f := func(t float64) float64 {
+		if t > 0.008856 {
+			return math.Pow(t, 1.0/3.0)
+		}
+		return 7.787*t + 16.0/116.0
+	}
+
+	fx := f(x)
+	fy := f(y)
+	fz := f(z)
+
+	L := 116.0*fy - 16.0
+	a := 500.0 * (fx - fy)
+	b := 200.0 * (fy - fz)
+
+	return []float64{L, a, b}
+}
+
+func LabToXYZ(lab []float64) []float64 {
+	if len(lab) < 3 {
+		return lab
+	}
+	L := lab[0]
+	a := lab[1]
+	b := lab[2]
+
+	fy := (L + 16.0) / 116.0
+	fx := a/500.0 + fy
+	fz := fy - b/200.0
+
+	fInv := func(t float64) float64 {
+		if t > 0.206893 { // 6/29
+			return t * t * t
+		}
+		return (t - 16.0/116.0) / 7.787
+	}
+
+	x := D50X * fInv(fx)
+	y := D50Y * fInv(fy)
+	z := D50Z * fInv(fz)
+
+	return []float64{x, y, z}
 }
 
 func (t *matrixTRCTransform) Inverse() (Transform, error) {

@@ -85,7 +85,7 @@ func Sign(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, signer se
 	prefixLen := updateBuf.Len()
 
 	// Calculate offsets
-	byteRangeStrLen := len("0 0000000000 0000000000 0000000000]")
+	byteRangeStrLen := len("0 00000000000000000000 00000000000000000000 00000000000000000000]")
 	contentsKeyLen := len(" /Contents <")
 
 	holeStart := size + int64(prefixLen) + int64(byteRangeStrLen) + int64(contentsKeyLen)
@@ -126,7 +126,7 @@ func Sign(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, signer se
 	lenAfterHole := int64(trailerBuf.Len())
 
 	// ByteRange: [0, holeStart, holeEnd, lenAfterHole]
-	byteRangeStr := fmt.Sprintf("0 %010d %010d %010d]", holeStart, holeEnd, lenAfterHole)
+	byteRangeStr := fmt.Sprintf("0 %020d %020d %020d]", holeStart, holeEnd, lenAfterHole)
 	if len(byteRangeStr) != byteRangeStrLen {
 		diff := byteRangeStrLen - len(byteRangeStr)
 		for i := 0; i < diff; i++ {

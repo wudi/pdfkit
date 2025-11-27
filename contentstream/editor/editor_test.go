@@ -306,3 +306,79 @@ func TestReplaceText_UpdatesFont(t *testing.T) {
 		t.Error("Expected font ToUnicode to be updated")
 	}
 }
+
+func TestReplaceText_MultiOp(t *testing.T) {
+	// Load font
+	fontData, err := os.ReadFile("../../testdata/Rubik-Regular.ttf")
+	if err != nil {
+		t.Skip("skipping test: font file not found")
+	}
+
+	font := &semantic.Font{
+		Subtype:  "TrueType",
+		BaseFont: "Rubik-Regular",
+		Descriptor: &semantic.FontDescriptor{
+			FontFile: fontData,
+		},
+		Widths:    make(map[int]int),
+		ToUnicode: make(map[int][]rune),
+	}
+
+	// "Hel" in one op, "lo" in another
+	page := &semantic.Page{
+		Resources: &semantic.Resources{
+			Fonts: map[string]*semantic.Font{
+				"F1": font,
+			},
+		},
+		Contents: []semantic.ContentStream{
+			{
+				Operations: []semantic.Operation{
+					{Operator: "Tf", Operands: []semantic.Operand{semantic.NameOperand{Value: "F1"}, semantic.NumberOperand{Value: 12}}},
+					{Operator: "Tj", Operands: []semantic.Operand{semantic.StringOperand{Value: []byte("Hel")}}},
+					{Operator: "Tj", Operands: []semantic.Operand{semantic.StringOperand{Value: []byte("lo")}}},
+				},
+			},
+		},
+	}
+
+	ed := editor.NewEditor()
+	// Replace "Hello" with "World"
+	err = ed.ReplaceText(context.Background(), page, "Hello", "World")
+	if err != nil {
+		t.Fatalf("ReplaceText: %v", err)
+	}
+
+	// Verify operations
+	// Should have combined/replaced ops.
+	// The implementation might merge them or keep structure.
+	// Current impl: reconstructs full text, finds match, replaces range.
+	// It replaces the ops covering the range.
+	// "Hel" (op 1) and "lo" (op 2) cover the match.
+	// They should be replaced by new ops for "World".
+
+	ops := page.Contents[0].Operations
+	// Op 0 is Tf.
+	// Op 1 should be TJ for "World" (or part of it).
+
+	// We expect "World" to be present.
+	found := false
+	for _, op := range ops {
+		if op.Operator == "TJ" {
+			// Check content
+			if len(op.Operands) > 0 {
+				if arr, ok := op.Operands[0].(semantic.ArrayOperand); ok {
+					// We can't easily check the encoded bytes without decoding,
+					// but we can check if we have enough glyphs.
+					if len(arr.Values) >= 5 {
+						found = true
+					}
+				}
+			}
+		}
+	}
+
+	if !found {
+		t.Error("Did not find replacement TJ operator")
+	}
+}

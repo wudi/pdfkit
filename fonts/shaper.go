@@ -2,8 +2,8 @@ package fonts
 
 import (
 	"bytes"
-
 	"strings"
+	"unicode"
 
 	"github.com/go-text/typesetting/di"
 	gofont "github.com/go-text/typesetting/font"
@@ -17,6 +17,7 @@ import (
 // ShapedGlyph represents a single shaped glyph with positioning information.
 type ShapedGlyph struct {
 	ID       int
+	Cluster  int
 	XAdvance float64 // In PDF text units (1/1000 em)
 	YAdvance float64
 	XOffset  float64
@@ -80,6 +81,7 @@ func ShapeText(text string, font *semantic.Font) ([]ShapedGlyph, error) {
 
 		result = append(result, ShapedGlyph{
 			ID:       int(g.GlyphID),
+			Cluster:  int(g.ClusterIndex),
 			XAdvance: xAdv,
 			YAdvance: yAdv,
 			XOffset:  xOff,
@@ -145,49 +147,74 @@ func scriptDirection(script language.Script) di.Direction {
 }
 
 func detectScript(runes []rune) language.Script {
+	counts := make(map[language.Script]int)
+	maxCount := 0
+	bestScript := language.Latin
+
 	for _, r := range runes {
-		switch {
-		case r >= 0x0600 && r <= 0x06FF:
-			return language.Arabic
-		case r >= 0x0590 && r <= 0x05FF:
-			return language.Hebrew
-		case r >= 0x0700 && r <= 0x074F:
-			return language.Syriac
-		case r >= 0x0780 && r <= 0x07BF:
-			return language.Thaana
-		case r >= 0x07C0 && r <= 0x07FF:
-			return language.Nko
-		case r >= 0x0900 && r <= 0x097F:
-			return language.Devanagari
-		case r >= 0x0980 && r <= 0x09FF:
-			return language.Bengali
-		case r >= 0x0A00 && r <= 0x0A7F:
-			return language.Gurmukhi
-		case r >= 0x0A80 && r <= 0x0AFF:
-			return language.Gujarati
-		case r >= 0x0B00 && r <= 0x0B7F:
-			return language.Oriya
-		case r >= 0x0B80 && r <= 0x0BFF:
-			return language.Tamil
-		case r >= 0x0C00 && r <= 0x0C7F:
-			return language.Telugu
-		case r >= 0x0C80 && r <= 0x0CFF:
-			return language.Kannada
-		case r >= 0x0D00 && r <= 0x0D7F:
-			return language.Malayalam
-		case r >= 0x0D80 && r <= 0x0DFF:
-			return language.Sinhala
-		case r >= 0x0E00 && r <= 0x0E7F:
-			return language.Thai
-		case r >= 0x0E80 && r <= 0x0EFF:
-			return language.Lao
-		case r >= 0x0F00 && r <= 0x0FFF:
-			return language.Tibetan
-		case r >= 0x1000 && r <= 0x109F:
-			return language.Myanmar
-		case r >= 0x1780 && r <= 0x17FF:
-			return language.Khmer
+		script := scriptFromRune(r)
+		if script == language.Unknown {
+			continue
+		}
+		counts[script]++
+		if counts[script] > maxCount {
+			maxCount = counts[script]
+			bestScript = script
 		}
 	}
-	return language.Latin
+	return bestScript
+}
+
+func scriptFromRune(r rune) language.Script {
+	switch {
+	case unicode.Is(unicode.Arabic, r):
+		return language.Arabic
+	case unicode.Is(unicode.Hebrew, r):
+		return language.Hebrew
+	case unicode.Is(unicode.Latin, r):
+		return language.Latin
+	case unicode.Is(unicode.Cyrillic, r):
+		return language.Cyrillic
+	case unicode.Is(unicode.Greek, r):
+		return language.Greek
+	case unicode.Is(unicode.Thai, r):
+		return language.Thai
+	case unicode.Is(unicode.Devanagari, r):
+		return language.Devanagari
+	case unicode.Is(unicode.Bengali, r):
+		return language.Bengali
+	case unicode.Is(unicode.Gurmukhi, r):
+		return language.Gurmukhi
+	case unicode.Is(unicode.Gujarati, r):
+		return language.Gujarati
+	case unicode.Is(unicode.Oriya, r):
+		return language.Oriya
+	case unicode.Is(unicode.Tamil, r):
+		return language.Tamil
+	case unicode.Is(unicode.Telugu, r):
+		return language.Telugu
+	case unicode.Is(unicode.Kannada, r):
+		return language.Kannada
+	case unicode.Is(unicode.Malayalam, r):
+		return language.Malayalam
+	case unicode.Is(unicode.Sinhala, r):
+		return language.Sinhala
+	case unicode.Is(unicode.Lao, r):
+		return language.Lao
+	case unicode.Is(unicode.Tibetan, r):
+		return language.Tibetan
+	case unicode.Is(unicode.Myanmar, r):
+		return language.Myanmar
+	case unicode.Is(unicode.Khmer, r):
+		return language.Khmer
+	case unicode.Is(unicode.Han, r):
+		return language.Han
+	case unicode.Is(unicode.Hiragana, r):
+		return language.Hiragana
+	case unicode.Is(unicode.Katakana, r):
+		return language.Katakana
+	case unicode.Is(unicode.Hangul, r):
+		return language.Hangul
+	}
+	return language.Unknown
 }

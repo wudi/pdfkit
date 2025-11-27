@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -172,5 +173,87 @@ func TestSign_PAdES(t *testing.T) {
 	signedData := signedBuf.Bytes()
 	if !bytes.Contains(signedData, []byte("/SubFilter /ETSI.CAdES.detached")) {
 		t.Error("Expected /SubFilter /ETSI.CAdES.detached in signed PDF")
+	}
+}
+
+func TestSign_ByteRangePadding(t *testing.T) {
+	// 1. Create a minimal valid PDF
+	b := builder.NewBuilder()
+	b.NewPage(612, 792).DrawText("Padding Test", 100, 700, builder.TextOptions{FontSize: 12}).Finish()
+	doc, err := b.Build()
+	if err != nil {
+		t.Fatalf("Failed to build PDF doc: %v", err)
+	}
+
+	var buf bytes.Buffer
+	w := NewWriter()
+	err = w.Write(context.Background(), doc, &buf, Config{Version: PDF17})
+	if err != nil {
+		t.Fatalf("Failed to write PDF: %v", err)
+	}
+	pdfContent := buf.Bytes()
+
+	// 2. Create a signer
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName: "Padding Signer",
+		},
+		NotBefore: time.Now(),
+		NotAfter:  time.Now().Add(time.Hour),
+		KeyUsage:  x509.KeyUsageDigitalSignature,
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer := security.NewRSASigner(key, []*x509.Certificate{cert})
+
+	// 3. Sign it
+	var signedBuf bytes.Buffer
+	err = Sign(context.Background(), bytes.NewReader(pdfContent), int64(len(pdfContent)), &signedBuf, signer, SignConfig{
+		Reason: "Padding Check",
+	})
+	if err != nil {
+		t.Fatalf("Sign failed: %v", err)
+	}
+
+	// 4. Verify ByteRange padding
+	signedData := signedBuf.Bytes()
+	// Look for /ByteRange [
+	idx := bytes.Index(signedData, []byte("/ByteRange ["))
+	if idx == -1 {
+		t.Fatal("/ByteRange not found")
+	}
+
+	// Extract the array content
+	start := idx + len("/ByteRange [")
+	end := bytes.Index(signedData[start:], []byte("]"))
+	if end == -1 {
+		t.Fatal("ByteRange array end not found")
+	}
+
+	byteRangeContent := string(signedData[start : start+end])
+	// Should look like "0 00000000000000000000 00000000000000000000 00000000000000000000"
+	// We check if we have 20-digit numbers.
+
+	parts := strings.Fields(byteRangeContent)
+	if len(parts) != 4 {
+		t.Fatalf("Expected 4 parts in ByteRange, got %d", len(parts))
+	}
+
+	// Check length of the 2nd, 3rd, 4th parts
+	for i := 1; i < 4; i++ {
+		if len(parts[i]) != 20 {
+			t.Errorf("Expected ByteRange part %d to be 20 digits, got %d (%s)", i, len(parts[i]), parts[i])
+		}
 	}
 }

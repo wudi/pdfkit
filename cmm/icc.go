@@ -231,3 +231,7 @@ func uint32ToString(v uint32) string {
 	binary.BigEndian.PutUint32(b, v)
 	return string(b)
 }
+
+func (p *ICCProfile) PCS() string {
+	return uint32ToString(p.header.PCS)
+}
