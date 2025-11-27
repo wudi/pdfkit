@@ -5,6 +5,8 @@ import (
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -206,6 +208,17 @@ func (e *Engine) renderHTMLInput(n *html.Node) {
 	height := fontSize * 1.5
 	width := 100.0 // Default width
 
+	if val := getAttr(n, "width"); val != "" {
+		if v, err := strconv.ParseFloat(val, 64); err == nil {
+			width = v
+		}
+	}
+	if val := getAttr(n, "height"); val != "" {
+		if v, err := strconv.ParseFloat(val, 64); err == nil {
+			height = v
+		}
+	}
+
 	name := getAttr(n, "name")
 	val := getAttr(n, "value")
 	typ := getAttr(n, "type")
@@ -300,6 +313,17 @@ func (e *Engine) renderHTMLTextarea(n *html.Node) {
 	height := fontSize * 4 // Multiline
 	width := 200.0
 
+	if val := getAttr(n, "width"); val != "" {
+		if v, err := strconv.ParseFloat(val, 64); err == nil {
+			width = v
+		}
+	}
+	if val := getAttr(n, "height"); val != "" {
+		if v, err := strconv.ParseFloat(val, 64); err == nil {
+			height = v
+		}
+	}
+
 	name := getAttr(n, "name")
 	val := extractText(n)
 
@@ -338,6 +362,17 @@ func (e *Engine) renderHTMLSelect(n *html.Node) {
 	fontSize := e.DefaultFontSize
 	height := fontSize * 1.5
 	width := 120.0
+
+	if val := getAttr(n, "width"); val != "" {
+		if v, err := strconv.ParseFloat(val, 64); err == nil {
+			width = v
+		}
+	}
+	if val := getAttr(n, "height"); val != "" {
+		if v, err := strconv.ParseFloat(val, 64); err == nil {
+			height = v
+		}
+	}
 
 	name := getAttr(n, "name")
 
@@ -438,11 +473,13 @@ func (e *Engine) extractSpans(n *html.Node) []TextSpan {
 }
 
 type TextStyle struct {
-	Font     string
-	FontSize float64
-	Bold     bool
-	Italic   bool
-	Link     string
+	Font          string
+	FontSize      float64
+	Bold          bool
+	Italic        bool
+	Link          string
+	Underline     bool
+	Strikethrough bool
 }
 
 func (e *Engine) walkSpans(n *html.Node, style TextStyle, spans *[]TextSpan) {
@@ -454,10 +491,12 @@ func (e *Engine) walkSpans(n *html.Node, style TextStyle, spans *[]TextSpan) {
 
 		fontName := e.resolveFont(style.Font, style.Bold, style.Italic)
 		*spans = append(*spans, TextSpan{
-			Text:     text,
-			Font:     fontName,
-			FontSize: style.FontSize,
-			Link:     style.Link,
+			Text:          text,
+			Font:          fontName,
+			FontSize:      style.FontSize,
+			Link:          style.Link,
+			Underline:     style.Underline,
+			Strikethrough: style.Strikethrough,
 		})
 		return
 	}
@@ -468,6 +507,12 @@ func (e *Engine) walkSpans(n *html.Node, style TextStyle, spans *[]TextSpan) {
 			style.Bold = true
 		case atom.I, atom.Em:
 			style.Italic = true
+		case atom.U, atom.Ins:
+			style.Underline = true
+		case atom.S, atom.Strike, atom.Del:
+			style.Strikethrough = true
+		case atom.Code, atom.Kbd, atom.Samp, atom.Tt:
+			style.Font = "Courier"
 		case atom.A:
 			for _, a := range n.Attr {
 				if a.Key == "href" {
@@ -534,19 +579,36 @@ func (e *Engine) renderHTMLImage(n *html.Node) {
 		return
 	}
 
-	f, err := os.Open(src)
-	if err != nil {
-		// Fallback to alt text
-		alt := getAttr(n, "alt")
-		if alt != "" {
-			e.renderTextWrapped("[Image: "+alt+"]", e.cursorX, e.DefaultFontSize, e.DefaultFontSize*e.LineHeight)
-		}
-		return
-	}
-	defer f.Close()
+	var r io.Reader
+	var closer io.Closer
 
-	img, _, err := image.Decode(f)
+	if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
+		resp, err := http.Get(src)
+		if err != nil {
+			e.renderImageError(n, "Network Error")
+			return
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			e.renderImageError(n, fmt.Sprintf("HTTP %d", resp.StatusCode))
+			return
+		}
+		r = resp.Body
+		closer = resp.Body
+	} else {
+		f, err := os.Open(src)
+		if err != nil {
+			e.renderImageError(n, "File Not Found")
+			return
+		}
+		r = f
+		closer = f
+	}
+	defer closer.Close()
+
+	img, _, err := image.Decode(r)
 	if err != nil {
+		e.renderImageError(n, "Decode Error")
 		return
 	}
 
@@ -582,9 +644,33 @@ func (e *Engine) renderHTMLImage(n *html.Node) {
 	e.renderParagraphSpacing()
 }
 
+func (e *Engine) renderImageError(n *html.Node, msg string) {
+	alt := getAttr(n, "alt")
+	text := fmt.Sprintf("[Image: %s (%s)]", alt, msg)
+	if alt == "" {
+		text = fmt.Sprintf("[Image: %s]", msg)
+	}
+	e.renderTextWrapped(text, e.cursorX, e.DefaultFontSize, e.DefaultFontSize*e.LineHeight)
+}
+
 func (e *Engine) renderHTMLTable(n *html.Node) {
 	var rows []builder.TableRow
 	var headerRows int
+
+	// Parse table attributes
+	borderW := 1.0
+	if val := getAttr(n, "border"); val != "" {
+		if v, err := strconv.ParseFloat(val, 64); err == nil {
+			borderW = v
+		}
+	}
+
+	padding := 5.0
+	if val := getAttr(n, "cellpadding"); val != "" {
+		if v, err := strconv.ParseFloat(val, 64); err == nil {
+			padding = v
+		}
+	}
 
 	processRow := func(tr *html.Node, isHeader bool) {
 		var cells []builder.TableCell
@@ -607,8 +693,8 @@ func (e *Engine) renderHTMLTable(n *html.Node) {
 					Text:            txt,
 					ColSpan:         colSpan,
 					BackgroundColor: bgColor,
-					BorderWidth:     1,
-					Padding:         &builder.CellPadding{Top: 5, Bottom: 5, Left: 5, Right: 5},
+					BorderWidth:     borderW,
+					Padding:         &builder.CellPadding{Top: padding, Bottom: padding, Left: padding, Right: padding},
 				})
 			}
 		}
@@ -674,7 +760,7 @@ func (e *Engine) renderHTMLTable(n *html.Node) {
 	}, builder.TableOptions{
 		X:            e.cursorX,
 		Y:            e.cursorY,
-		BorderWidth:  1,
+		BorderWidth:  borderW,
 		BorderColor:  builder.Color{R: 0, G: 0, B: 0},
 		DefaultFont:  e.DefaultFont,
 		DefaultSize:  e.DefaultFontSize,
