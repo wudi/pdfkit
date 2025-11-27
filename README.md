@@ -52,6 +52,8 @@ Check the `examples/` directory for usage examples, including:
 
 ## Testing
 
+> OCR tests require Tesseract OCR to be installed. Please refer to the [Tesseract OCR installation guide](ocr/tesseract/README.md) for instructions specific to your operating system.
+
 Run the full test suite:
 
 ```bash
