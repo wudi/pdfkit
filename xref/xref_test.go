@@ -316,3 +316,61 @@ func TestResolverParsesHybridXRefTableWithXRefStream(t *testing.T) {
 		t.Fatalf("resolver missing trailer data")
 	}
 }
+
+func TestResolverParsesXRefStreamWithFakeEndstream(t *testing.T) {
+	buf := &bytes.Buffer{}
+	buf.WriteString("%PDF-1.7\n")
+
+	// Obj 1: Catalog
+	buf.WriteString("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+
+	// Obj 2: Pages
+	buf.WriteString("2 0 obj\n<< /Type /Pages /Count 0 >>\nendobj\n")
+
+	// XRef Stream (Obj 3)
+	// We want content that contains "\nendstream".
+	// Content: "A\nendstreamB"
+	// Length = 1 + 1 + 9 + 1 = 12 bytes.
+	// W = [0, 1, 0] -> 1 byte per entry.
+	// So we have 12 entries.
+	// Start index 10.
+
+	fakeEndstream := []byte("A\nendstreamB")
+
+	xrefOff := buf.Len()
+	buf.WriteString("3 0 obj\n<< /Type /XRef /Size 22 /Root 1 0 R /W [0 1 0] /Index [10 12] /Length 12 >>\nstream\n")
+	buf.Write(fakeEndstream)
+	buf.WriteString("\nendstream\nendobj\n")
+
+	buf.WriteString("startxref\n")
+	buf.WriteString(fmt.Sprintf("%d\n", xrefOff))
+	buf.WriteString("%%EOF\n")
+
+	r := &readerAt{data: buf.Bytes()}
+	resolver := xref.NewResolver(xref.ResolverConfig{})
+	table, err := resolver.Resolve(context.Background(), r)
+	if err != nil {
+		t.Fatalf("resolve failed: %v", err)
+	}
+
+	// Verify we can lookup an object from the stream
+	// The fakeEndstream bytes are offsets.
+	// 'A' = 65. Obj 10 offset 65.
+	off, _, ok := table.Lookup(10)
+	if !ok {
+		t.Fatalf("missing object 10")
+	}
+	if off != 65 {
+		t.Fatalf("object 10 offset: want 65, got %d", off)
+	}
+
+	// 'B' is the last byte. Obj 21.
+	// 'B' = 66.
+	off, _, ok = table.Lookup(21)
+	if !ok {
+		t.Fatalf("missing object 21")
+	}
+	if off != 66 {
+		t.Fatalf("object 21 offset: want 66, got %d", off)
+	}
+}

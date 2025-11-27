@@ -402,6 +402,11 @@ func parseXRefStream(ctx context.Context, r io.ReaderAt, offset int64, headerOff
 	if !ok {
 		return nil, nil, 0, errors.New("xref stream must start with dictionary")
 	}
+	if lenObj, ok := dict.Get(raw.NameObj{Val: "Length"}); ok {
+		if n, ok := lenObj.(raw.NumberObj); ok {
+			s.SetNextStreamLength(n.Int())
+		}
+	}
 	streamTok, err := tr.next()
 	if err != nil || streamTok.Type != scanner.TokenStream {
 		return nil, nil, 0, errors.New("xref stream payload missing")
@@ -460,7 +465,10 @@ func parseXRefStream(ctx context.Context, r io.ReaderAt, offset int64, headerOff
 			}
 			fields := streamData[cursor : cursor+entrySize]
 			cursor += entrySize
-			tVal := parseField(fields[:w[0]])
+			tVal := 1
+			if w[0] > 0 {
+				tVal = parseField(fields[:w[0]])
+			}
 			f1 := parseField(fields[w[0] : w[0]+w[1]])
 			f2 := parseField(fields[w[0]+w[1]:])
 			objNum := startObj + j
