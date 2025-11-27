@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libopenjp2-7-dev tesseract-ocr libleptonica-dev
+          sudo apt-get install -y libjbig2dec0 libjbig2dec-dev libopenjp2-7-dev libtesseract-dev libleptonica-dev
 
       - name: Run tests
         run: go test ./...
