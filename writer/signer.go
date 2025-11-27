@@ -78,16 +78,22 @@ func Sign(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, signer se
 	}
 	fmt.Fprintf(&updateBuf, " /M (%s)", formatDate(time.Now()))
 
-	// ByteRange Placeholder
+	// ByteRange
+	// We use a fixed format for ByteRange to ensure stable length.
+	// Format: "0 %020d %020d %020d]"
+	const byteRangeFormat = "0 %020d %020d %020d]"
+	dummyByteRange := fmt.Sprintf(byteRangeFormat, 0, 0, 0)
+	byteRangeStrLen := len(dummyByteRange)
+
 	updateBuf.WriteString(" /ByteRange [")
 
 	// Current offset in updateBuf
 	prefixLen := updateBuf.Len()
 
-	// Calculate offsets
-	byteRangeStrLen := len("0 00000000000000000000 00000000000000000000 00000000000000000000]")
-	contentsKeyLen := len(" /Contents <")
+	contentsKey := " /Contents <"
+	contentsKeyLen := len(contentsKey)
 
+	// holeStart is the offset in the file where the signature hex string begins.
 	holeStart := size + int64(prefixLen) + int64(byteRangeStrLen) + int64(contentsKeyLen)
 	holeLen := int64(sigLen * 2)
 	holeEnd := holeStart + holeLen
@@ -97,7 +103,8 @@ func Sign(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, signer se
 	trailerBuf.WriteString("> >>\nendobj\n")
 
 	// XRef Table for the new object
-	xrefOffset := size + int64(updateBuf.Len()) + int64(byteRangeStrLen) + int64(contentsKeyLen) + holeLen + int64(len("> >>\nendobj\n"))
+	// The xref table starts after the signature object is closed.
+	xrefOffset := holeEnd + int64(trailerBuf.Len())
 
 	// Construct XRef section
 	fmt.Fprintf(&trailerBuf, "xref\n0 1\n0000000000 65535 f \n%d 1\n%010d 00000 n \n", sigObjID, size)
@@ -126,11 +133,17 @@ func Sign(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, signer se
 	lenAfterHole := int64(trailerBuf.Len())
 
 	// ByteRange: [0, holeStart, holeEnd, lenAfterHole]
-	byteRangeStr := fmt.Sprintf("0 %020d %020d %020d]", holeStart, holeEnd, lenAfterHole)
+	byteRangeStr := fmt.Sprintf(byteRangeFormat, holeStart, holeEnd, lenAfterHole)
 	if len(byteRangeStr) != byteRangeStrLen {
-		diff := byteRangeStrLen - len(byteRangeStr)
-		for i := 0; i < diff; i++ {
-			byteRangeStr += " "
+		// This should theoretically not happen given the %020d format and int64 limits,
+		// but as a safety measure we can pad with spaces if it's too short.
+		if len(byteRangeStr) < byteRangeStrLen {
+			diff := byteRangeStrLen - len(byteRangeStr)
+			for i := 0; i < diff; i++ {
+				byteRangeStr += " "
+			}
+		} else {
+			return fmt.Errorf("calculated ByteRange string too long: %d > %d", len(byteRangeStr), byteRangeStrLen)
 		}
 	}
 
@@ -144,7 +157,7 @@ func Sign(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, signer se
 	if _, err := w.Write([]byte(byteRangeStr)); err != nil {
 		return err
 	}
-	if _, err := w.Write([]byte(" /Contents <")); err != nil {
+	if _, err := w.Write([]byte(contentsKey)); err != nil {
 		return err
 	}
 
@@ -153,7 +166,7 @@ func Sign(ctx context.Context, r io.ReaderAt, size int64, w io.Writer, signer se
 	hasher.Write(originalData)
 	hasher.Write(updateBuf.Bytes())
 	hasher.Write([]byte(byteRangeStr))
-	hasher.Write([]byte(" /Contents <"))
+	hasher.Write([]byte(contentsKey))
 
 	// Now we need to hash the second part: trailerBuf
 	hasher.Write(trailerBuf.Bytes())

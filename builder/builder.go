@@ -29,6 +29,7 @@ type PDFBuilder interface {
 	SetCalculationOrder(fields []semantic.FormField) PDFBuilder
 	Form() FormBuilder
 	Build() (*semantic.Document, error)
+	MeasureText(text string, fontSize float64, fontName string) float64
 }
 
 // PageBuilder provides a fluent API for page construction.
@@ -330,6 +331,10 @@ func (b *builderImpl) SetCalculationOrder(fields []semantic.FormField) PDFBuilde
 	}
 	b.acroForm.CalculationOrder = fields
 	return b
+}
+
+func (b *builderImpl) MeasureText(text string, fontSize float64, fontName string) float64 {
+	return measureTextWidth(b, text, fontSize, fontName)
 }
 
 func (b *builderImpl) addFont(name string, font *semantic.Font) PDFBuilder {

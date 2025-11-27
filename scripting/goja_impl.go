@@ -74,7 +74,24 @@ func (e *GojaEngine) RegisterDOM(dom PDFDOM) error {
 		if err != nil || field == nil {
 			return goja.Null()
 		}
-		return e.vm.ToValue(&fieldProxyWrapper{p: field})
+
+		// Create JS object for field with 'value' property
+		obj := e.vm.NewObject()
+		obj.DefineAccessorProperty("value",
+			e.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+				return e.vm.ToValue(field.GetValue())
+			}),
+			e.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+				if len(call.Arguments) > 0 {
+					field.SetValue(call.Arguments[0].Export())
+				}
+				return goja.Undefined()
+			}),
+			goja.FLAG_TRUE, // Configurable
+			goja.FLAG_TRUE, // Enumerable
+		)
+
+		return obj
 	})
 
 	e.vm.Set("getPage", func(call goja.FunctionCall) goja.Value {
@@ -90,28 +107,6 @@ func (e *GojaEngine) RegisterDOM(dom PDFDOM) error {
 	})
 
 	return nil
-}
-
-type fieldProxyWrapper struct {
-	p FormFieldProxy
-}
-
-// Goja will map "Value" field to "value" property if we configure it,
-// but here we use methods or we need to use a custom object with getters/setters.
-// For simplicity, we expose GetValue/SetValue as methods first,
-// or we can try to simulate properties.
-// Acrobat JS uses `f.value`.
-// To support `f.value`, we can use `DefineDataProperty` or similar if we create an Object.
-// But mapping a Go struct to have getters/setters for fields is tricky in goja without using `DefineProperty` in JS.
-
-// Let's just expose methods for now to satisfy the "Engine" requirement,
-// and maybe add a TODO for full Acrobat API compliance.
-func (f *fieldProxyWrapper) GetValue() interface{} {
-	return f.p.GetValue()
-}
-
-func (f *fieldProxyWrapper) SetValue(v interface{}) {
-	f.p.SetValue(v)
 }
 
 type pageProxyWrapper struct {

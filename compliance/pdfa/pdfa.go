@@ -1,12 +1,19 @@
 package pdfa
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 
 	"github.com/wudi/pdfkit/cmm"
 	"github.com/wudi/pdfkit/compliance"
+	"github.com/wudi/pdfkit/filters"
+	"github.com/wudi/pdfkit/ir/decoded"
 	"github.com/wudi/pdfkit/ir/raw"
 	"github.com/wudi/pdfkit/ir/semantic"
+	"github.com/wudi/pdfkit/parser"
+	"github.com/wudi/pdfkit/recovery"
+	"github.com/wudi/pdfkit/security"
 )
 
 // Level represents a PDF/A conformance level shared across writer and enforcer.
@@ -298,14 +305,81 @@ func (e *enforcerImpl) Validate(ctx context.Context, doc *semantic.Document, lev
 						})
 					}
 				}
-				// Ideally, we would parse `ef.Data` as a PDF and validate it recursively.
-				// For now, we flag non-PDF files in A-2.
+				// Recursively validate embedded PDF
+				if ef.Subtype == "application/pdf" && len(ef.Data) > 0 {
+					if err := validateEmbeddedPDF(ctx, ef.Data, level); err != nil {
+						report.Violations = append(report.Violations, compliance.Violation{
+							Code:        "ATT003",
+							Description: "Embedded PDF validation failed: " + err.Error(),
+							Location:    "EmbeddedFile " + ef.Name,
+						})
+					}
+				}
 			}
 		}
 	}
 
 	report.Compliant = len(report.Violations) == 0
 	return report, nil
+}
+
+func validateEmbeddedPDF(ctx context.Context, data []byte, level Level) error {
+	// Parse
+	p := parser.NewDocumentParser(parser.Config{
+		Recovery: recovery.NewStrictStrategy(),
+		Limits:   security.DefaultLimits(),
+	})
+	rawDoc, err := p.Parse(ctx, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("parse error: %w", err)
+	}
+
+	// Decode
+	pipeline := filters.NewPipeline([]filters.Decoder{
+		filters.NewFlateDecoder(),
+		filters.NewASCII85Decoder(),
+		filters.NewASCIIHexDecoder(),
+		filters.NewLZWDecoder(),
+		filters.NewRunLengthDecoder(),
+	}, filters.Limits{MaxDecompressedSize: 100 * 1024 * 1024})
+
+	dec := decoded.NewDecoder(pipeline)
+	decodedDoc, err := dec.Decode(ctx, rawDoc)
+	if err != nil {
+		return fmt.Errorf("decode error: %w", err)
+	}
+
+	// Build Semantic
+	b := semantic.NewBuilder()
+	semDoc, err := b.Build(ctx, decodedDoc)
+	if err != nil {
+		return fmt.Errorf("build error: %w", err)
+	}
+
+	// Validate recursively
+	enforcer := NewEnforcer()
+	report, err := enforcer.Validate(ctx, semDoc, level)
+	if err != nil {
+		return fmt.Errorf("validation error: %w", err)
+	}
+
+	if !report.Compliant {
+		// Summarize violations
+		msg := "embedded file has violations: "
+		for i, v := range report.Violations {
+			if i > 0 {
+				msg += "; "
+			}
+			msg += fmt.Sprintf("[%s] %s", v.Code, v.Description)
+			if i >= 5 {
+				msg += "..."
+				break
+			}
+		}
+		return fmt.Errorf("%s", msg)
+	}
+
+	return nil
 }
 
 func isTransparent(gs semantic.ExtGState) bool {

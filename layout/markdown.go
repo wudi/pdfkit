@@ -213,11 +213,9 @@ func (e *Engine) renderTextWrapped(text string, x float64, fontSize, lineHeight 
 	currentLine := words[0]
 
 	for _, word := range words[1:] {
-		// Rough estimation of width: 0.6 * fontSize * length (very approximate)
-		// Ideally we need font metrics here.
-		// Since we don't have easy access to font metrics in this simple engine yet,
-		// we'll use a heuristic.
-		if e.estimateWidth(currentLine+" "+word, fontSize) <= maxWidth {
+		// Use actual font metrics
+		width := e.b.MeasureText(currentLine+" "+word, fontSize, e.DefaultFont)
+		if width <= maxWidth {
 			currentLine += " " + word
 		} else {
 			e.checkPageBreak(lineHeight)
@@ -235,9 +233,4 @@ func (e *Engine) renderTextWrapped(text string, x float64, fontSize, lineHeight 
 		FontSize: fontSize,
 	})
 	e.cursorY -= lineHeight
-}
-
-func (e *Engine) estimateWidth(text string, fontSize float64) float64 {
-	// Very rough estimate assuming average char width is 0.5 em
-	return float64(len(text)) * fontSize * 0.5
 }

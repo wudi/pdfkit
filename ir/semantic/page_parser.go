@@ -173,6 +173,16 @@ func parsePage(dict *raw.DictObj, resolver rawResolver, inherited inheritedPageP
 		}
 	}
 
+	// StructParents
+	if spObj, ok := dict.Get(raw.NameLiteral("StructParents")); ok {
+		if n, ok := spObj.(raw.NumberObj); ok {
+			if n.IsInt {
+				val := int(n.I)
+				page.StructParents = &val
+			}
+		}
+	}
+
 	// Parse OutputIntents (PDF 2.0)
 	if oiObj, ok := dict.Get(raw.NameLiteral("OutputIntents")); ok {
 		ois, err := parseOutputIntents(oiObj, resolver)

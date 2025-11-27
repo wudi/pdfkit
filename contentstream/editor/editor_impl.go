@@ -57,19 +57,9 @@ func (e *EditorImpl) RemoveRect(ctx context.Context, doc *semantic.Document, pag
 		// Remove
 		for _, index := range uniqueIndices {
 			if index >= 0 && index < len(stream.Operations) {
-				// Check if this operation is a Marked Content operator
-				op := stream.Operations[index]
-				if op.Operator == "BMC" || op.Operator == "BDC" {
-					// If we remove a marked content sequence start, we should probably remove the end too (EMC).
-					// Or better: don't remove the structure tags, just the content inside.
-					// But if the content is gone, the tag is empty.
-					// If we remove the tag, we must update the StructTree.
-
-					// For "Zero Compromise", we must handle this.
-					// If we delete content that is marked, we need to know its MCID.
-					// If the operation IS the content (e.g. Tj), we need to know if it was inside a marked sequence.
-				}
-
+				// Note: BDC/BMC operators are typically not indexed by OpSpatialIndex as they have no bounding box.
+				// Therefore, we are usually removing content operations (Tj, Do, etc.).
+				// If removing content leaves an empty BDC...EMC block, it will be cleaned up in the next step.
 				stream.Operations = append(stream.Operations[:index], stream.Operations[index+1:]...)
 			}
 		}
@@ -194,6 +184,22 @@ func (e *EditorImpl) RepairStructTree(page *semantic.Page, structTree *semantic.
 		}
 	}
 	structTree.K = newRootK
+
+	// 3. Update ParentTree (Zero Compromise)
+	// If MCIDs are removed from the page, we must ensure the ParentTree doesn't point to stale objects.
+	// The ParentTree maps the page's StructParents ID to an array where index = MCID.
+	if page.StructParents != nil && structTree.ParentTree != nil {
+		spID := *page.StructParents
+		if items, ok := structTree.ParentTree[spID]; ok {
+			// Iterate over all potential MCIDs in the ParentTree array for this page.
+			// If an MCID is no longer present on the page, clear its entry.
+			for mcid := 0; mcid < len(items); mcid++ {
+				if !existingMCIDs[mcid] {
+					items[mcid] = nil
+				}
+			}
+		}
+	}
 }
 
 func (e *EditorImpl) ReplaceText(ctx context.Context, page *semantic.Page, oldText, newText string) error {

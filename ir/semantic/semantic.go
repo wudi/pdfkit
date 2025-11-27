@@ -56,6 +56,7 @@ type Page struct {
 	Contents        []ContentStream
 	Annotations     []Annotation
 	UserUnit        float64
+	StructParents   *int           // PDF 1.3
 	OutputIntents   []OutputIntent // PDF 2.0
 	AssociatedFiles []EmbeddedFile // PDF 2.0
 	Viewports       []geo.Viewport // PDF 2.0 / GeoPDF
