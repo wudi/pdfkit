@@ -2,6 +2,9 @@ package extensions
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"sort"
 
 	"github.com/wudi/pdfkit/extensions/dom"
 	"github.com/wudi/pdfkit/ir/semantic"
@@ -39,58 +42,162 @@ func (r *JavaScriptRunner) Transform(ctx context.Context, doc *semantic.Document
 		return nil
 	}
 
+	collector := &scriptCollector{}
+
 	// 1. Register DOM
 	if err := r.engine.RegisterDOM(dom.New(doc)); err != nil {
 		return err
 	}
 
 	// 2. Execute Document-level scripts (Names -> JavaScript)
-	if doc.Names != nil && len(doc.Names.JavaScript) > 0 {
-		for name, action := range doc.Names.JavaScript {
-			if _, err := r.engine.Execute(ctx, action.JS); err != nil {
-				// Log error but continue? Or fail?
-				// For now, we continue to execute other scripts.
-				_ = name // ignore unused
-			}
-		}
+	if err := r.executeNamedScripts(ctx, doc, collector); err != nil {
+		return err
 	}
 
 	// 3. Execute OpenAction if it is JavaScript
-	if doc.OpenAction != nil {
-		if jsAction, ok := doc.OpenAction.(semantic.JavaScriptAction); ok {
-			if _, err := r.engine.Execute(ctx, jsAction.JS); err != nil {
-				return err
-			}
-		}
+	if err := r.executeOpenAction(ctx, doc, collector); err != nil {
+		return err
 	}
 
 	// 4. Execute Form Calculation scripts
 	if doc.AcroForm != nil {
-		if err := r.executeFormScripts(ctx, doc.AcroForm); err != nil {
+		if err := r.executeFormScripts(ctx, doc.AcroForm, collector); err != nil {
 			return err
+		}
+	}
+
+	return collector.Err()
+}
+
+func (r *JavaScriptRunner) executeNamedScripts(ctx context.Context, doc *semantic.Document, collector *scriptCollector) error {
+	if doc.Names == nil || len(doc.Names.JavaScript) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(doc.Names.JavaScript))
+	for name := range doc.Names.JavaScript {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+
+	for _, name := range keys {
+		action := doc.Names.JavaScript[name]
+		if err := r.runScript(ctx, action.JS); err != nil {
+			if isContextError(err) {
+				return err
+			}
+			collector.add("Names.JavaScript", name, err)
 		}
 	}
 
 	return nil
 }
 
-func (r *JavaScriptRunner) executeFormScripts(ctx context.Context, form *semantic.AcroForm) error {
-	// If CalculationOrder is defined, use it. Otherwise iterate over Fields.
-	fields := form.Fields
-	if len(form.CalculationOrder) > 0 {
-		fields = form.CalculationOrder
+func (r *JavaScriptRunner) executeOpenAction(ctx context.Context, doc *semantic.Document, collector *scriptCollector) error {
+	if doc.OpenAction == nil {
+		return nil
 	}
 
-	for _, field := range fields {
-		if aa := field.GetAdditionalActions(); aa != nil {
-			if aa.C != nil {
-				if jsAction, ok := aa.C.(semantic.JavaScriptAction); ok {
-					if _, err := r.engine.Execute(ctx, jsAction.JS); err != nil {
-						// Log error but continue
-					}
-				}
+	jsAction, ok := doc.OpenAction.(semantic.JavaScriptAction)
+	if !ok {
+		return nil
+	}
+
+	if err := r.runScript(ctx, jsAction.JS); err != nil {
+		if isContextError(err) {
+			return err
+		}
+		collector.add("OpenAction", "", err)
+	}
+
+	return nil
+}
+
+func (r *JavaScriptRunner) executeFormScripts(ctx context.Context, form *semantic.AcroForm, collector *scriptCollector) error {
+	if form == nil {
+		return nil
+	}
+
+	ordered := make([]semantic.FormField, 0, len(form.Fields))
+	seen := make(map[semantic.FormField]struct{})
+
+	for _, field := range form.CalculationOrder {
+		if field == nil {
+			continue
+		}
+		ordered = append(ordered, field)
+		seen[field] = struct{}{}
+	}
+
+	for _, field := range form.Fields {
+		if field == nil {
+			continue
+		}
+		if _, ok := seen[field]; ok {
+			continue
+		}
+		ordered = append(ordered, field)
+	}
+
+	for _, field := range ordered {
+		if field == nil {
+			continue
+		}
+		additional := field.GetAdditionalActions()
+		if additional == nil || additional.C == nil {
+			continue
+		}
+		jsAction, ok := additional.C.(semantic.JavaScriptAction)
+		if !ok || jsAction.JS == "" {
+			continue
+		}
+		if err := r.runScript(ctx, jsAction.JS); err != nil {
+			if isContextError(err) {
+				return err
 			}
+			collector.add("AcroForm.Calculate", field.FieldName(), err)
 		}
 	}
+
 	return nil
+}
+
+func (r *JavaScriptRunner) runScript(ctx context.Context, script string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if script == "" {
+		return nil
+	}
+	_, err := r.engine.Execute(ctx, script)
+	return err
+}
+
+func isContextError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+type scriptCollector struct {
+	errs []error
+}
+
+func (c *scriptCollector) add(stage, target string, err error) {
+	if err == nil {
+		return
+	}
+	label := stage
+	if target != "" {
+		label = fmt.Sprintf("%s (%s)", stage, target)
+	}
+	c.errs = append(c.errs, fmt.Errorf("%s: %w", label, err))
+}
+
+func (c *scriptCollector) Err() error {
+	if len(c.errs) == 0 {
+		return nil
+	}
+	return errors.Join(c.errs...)
 }

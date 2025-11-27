@@ -2,6 +2,8 @@ package extensions
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/wudi/pdfkit/ir/semantic"
@@ -10,10 +12,14 @@ import (
 
 type mockEngine struct {
 	executedScripts []string
+	failFor         map[string]error
 }
 
 func (m *mockEngine) Execute(ctx context.Context, script string) (interface{}, error) {
 	m.executedScripts = append(m.executedScripts, script)
+	if err := m.failFor[script]; err != nil {
+		return nil, err
+	}
 	return nil, nil
 }
 
@@ -21,43 +27,89 @@ func (m *mockEngine) RegisterDOM(dom scripting.PDFDOM) error {
 	return nil
 }
 
-func TestJavaScriptRunner_Execute(t *testing.T) {
+func TestJavaScriptRunner_OrderAndFormScripts(t *testing.T) {
 	engine := &mockEngine{}
 	runner := NewJavaScriptRunner(engine)
+
+	fieldOne := &semantic.TextFormField{
+		BaseFormField: semantic.BaseFormField{
+			Name: "FieldOne",
+			AdditionalActions: &semantic.AdditionalActions{
+				C: semantic.JavaScriptAction{JS: "field-1"},
+			},
+		},
+	}
+	fieldTwo := &semantic.TextFormField{
+		BaseFormField: semantic.BaseFormField{
+			Name: "FieldTwo",
+			AdditionalActions: &semantic.AdditionalActions{
+				C: semantic.JavaScriptAction{JS: "field-2"},
+			},
+		},
+	}
 
 	doc := &semantic.Document{
 		Names: &semantic.Names{
 			JavaScript: map[string]semantic.JavaScriptAction{
-				"Init": {JS: "console.log('Init')"},
+				"Zeta":  {JS: "names-z"},
+				"Alpha": {JS: "names-a"},
 			},
 		},
-		OpenAction: semantic.JavaScriptAction{JS: "app.alert('Open')"},
+		OpenAction: semantic.JavaScriptAction{JS: "open-action"},
+		AcroForm: &semantic.AcroForm{
+			Fields:           []semantic.FormField{fieldOne, fieldTwo},
+			CalculationOrder: []semantic.FormField{fieldTwo},
+		},
 	}
 
 	if err := runner.Execute(context.Background(), doc); err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
 
-	if len(engine.executedScripts) != 2 {
-		t.Fatalf("expected 2 scripts executed, got %d", len(engine.executedScripts))
+	expected := []string{"names-a", "names-z", "open-action", "field-2", "field-1"}
+	if len(engine.executedScripts) != len(expected) {
+		t.Fatalf("expected %d scripts, got %d", len(expected), len(engine.executedScripts))
 	}
-
-	// Order of map iteration is random, so check existence
-	foundInit := false
-	foundOpen := false
-	for _, s := range engine.executedScripts {
-		if s == "console.log('Init')" {
-			foundInit = true
-		}
-		if s == "app.alert('Open')" {
-			foundOpen = true
+	for i, script := range expected {
+		if engine.executedScripts[i] != script {
+			t.Fatalf("script %d mismatch: expected %q, got %q", i, script, engine.executedScripts[i])
 		}
 	}
+}
 
-	if !foundInit {
-		t.Error("Init script not executed")
+func TestJavaScriptRunner_ErrorAggregation(t *testing.T) {
+	engine := &mockEngine{
+		failFor: map[string]error{
+			"names-bad": errors.New("boom"),
+		},
 	}
-	if !foundOpen {
-		t.Error("OpenAction script not executed")
+	runner := NewJavaScriptRunner(engine)
+
+	doc := &semantic.Document{
+		Names: &semantic.Names{
+			JavaScript: map[string]semantic.JavaScriptAction{
+				"Good": {JS: "names-good"},
+				"Bad":  {JS: "names-bad"},
+			},
+		},
+	}
+
+	err := runner.Execute(context.Background(), doc)
+	if err == nil {
+		t.Fatal("expected error but got nil")
+	}
+
+	if want := "Names.JavaScript (Bad)"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("expected error to mention %q, got %v", want, err)
+	}
+
+	expected := []string{"names-bad", "names-good"}
+	if len(engine.executedScripts) != len(expected) {
+		t.Fatalf("expected %d scripts, got %d", len(expected), len(engine.executedScripts))
+	}
+	for i, script := range expected {
+		if engine.executedScripts[i] != script {
+			t.Fatalf("script %d mismatch: expected %q, got %q", i, script, engine.executedScripts[i])
+		}
 	}
 }

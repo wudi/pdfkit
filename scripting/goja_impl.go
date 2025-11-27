@@ -16,9 +16,33 @@ func NewEngine() *GojaEngine {
 }
 
 func (e *GojaEngine) Execute(ctx context.Context, script string) (interface{}, error) {
-	// TODO: Handle context cancellation using Interrupt
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	done := make(chan struct{})
+	defer close(done)
+	defer e.vm.ClearInterrupt()
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			e.vm.Interrupt(ctx.Err())
+		case <-done:
+		}
+	}()
+
 	val, err := e.vm.RunString(script)
 	if err != nil {
+		if interruptedErr, ok := err.(*goja.InterruptedError); ok {
+			if cause := interruptedErr.Unwrap(); cause != nil {
+				return nil, cause
+			}
+			return nil, context.Canceled
+		}
 		return nil, err
 	}
 	return val.Export(), nil
