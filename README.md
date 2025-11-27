@@ -65,3 +65,6 @@ To run tests with native OpenJPEG support (requires `libopenjp2`):
 ```bash
 go test ./... -tags openjpeg
 ```
+
+## License
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
