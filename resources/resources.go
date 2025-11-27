@@ -32,9 +32,11 @@ type Resolver interface {
 	ResolveWithInheritance(ctx context.Context, category ResourceCategory, name string, page *semantic.Page) (raw.Object, error)
 }
 
-type resolverImpl struct{}
+type resolverImpl struct {
+	doc *semantic.Document
+}
 
-func NewResolver() Resolver { return &resolverImpl{} }
+func NewResolver(doc *semantic.Document) Resolver { return &resolverImpl{doc: doc} }
 
 func (r *resolverImpl) ResolveWithInheritance(ctx context.Context, category ResourceCategory, name string, page *semantic.Page) (raw.Object, error) {
 	var scope Scope = &PageScope{Page: page}
@@ -45,9 +47,17 @@ func (r *resolverImpl) ResolveWithInheritance(ctx context.Context, category Reso
 			continue
 		}
 		if category == CategoryFont {
-			if _, ok := res.Fonts[name]; ok {
-				// Font found (placeholder); real implementation would load raw object.
-				return nil, nil
+			if font, ok := res.Fonts[name]; ok {
+				if font.OriginalRef.Num == 0 {
+					return nil, fmt.Errorf("font %s has no raw object", name)
+				}
+				if r.doc == nil || r.doc.Decoded() == nil || r.doc.Decoded().Raw == nil {
+					return nil, fmt.Errorf("document context missing")
+				}
+				if obj, ok := r.doc.Decoded().Raw.Objects[font.OriginalRef]; ok {
+					return obj, nil
+				}
+				return nil, fmt.Errorf("raw object %s not found", font.OriginalRef)
 			}
 		}
 		scope = scope.ParentScope()

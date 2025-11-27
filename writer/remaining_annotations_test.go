@@ -17,15 +17,6 @@ func TestRemainingAnnotationsSerialization(t *testing.T) {
 	}
 	// We need to manually set the ref for the parent since we are mocking the build process
 	// In a real build, the builder assigns refs.
-	// Here we can't easily set the ref on the struct because it's private or handled by the builder.
-	// However, the serializer calls t.Parent.Reference().
-	// Let's see if we can mock it or if we need to rely on the builder to set it.
-	// The builder sets the ref on the annotation struct before calling Serialize?
-	// No, Serialize returns the ref.
-	// But for Popup, we need the parent's ref.
-	// Let's skip Popup parent check for now or try to hack it if possible.
-	// Actually, semantic.BaseAnnotation has SetReference.
-
 	parentRef := raw.ObjectRef{Num: 999, Gen: 0}
 	parentAnnot.SetReference(parentRef)
 

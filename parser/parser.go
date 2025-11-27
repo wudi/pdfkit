@@ -95,7 +95,15 @@ func (p *DocumentParser) Parse(ctx context.Context, r io.ReaderAt) (*raw.Documen
 							// This logic is simplified; real check involves checking schema
 							// and potentially "EncryptedPayload" in the Collection dictionary
 							// or associated files.
-							_ = collection // Placeholder for future implementation
+							if colDict, ok := collection.(raw.Dictionary); ok {
+								doc.Collection = colDict
+							} else if ref, ok := collection.(raw.Reference); ok {
+								if colObj, err := loader.Load(ctx, ref.Ref()); err == nil {
+									if colDict, ok := colObj.(raw.Dictionary); ok {
+										doc.Collection = colDict
+									}
+								}
+							}
 						}
 					}
 				}

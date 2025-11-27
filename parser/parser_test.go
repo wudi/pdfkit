@@ -132,6 +132,61 @@ func TestDocumentParserEnforcesLimits(t *testing.T) {
 	}
 }
 
+func TestDocumentParserDetectsCollection(t *testing.T) {
+	buf := &bytes.Buffer{}
+	buf.WriteString("%PDF-2.0\n")
+	off1 := buf.Len()
+	// Catalog with Collection
+	buf.WriteString("1 0 obj\n<< /Type /Catalog /Collection << /Type /Collection /View /D >> >>\nendobj\n")
+	xrefOffset := buf.Len()
+	fmt.Fprintf(buf, "xref\n0 2\n0000000000 65535 f \n%010d 00000 n \n", off1)
+	buf.WriteString("trailer\n<< /Size 2 /Root 1 0 R >>\nstartxref\n")
+	fmt.Fprintf(buf, "%d\n%%%%EOF\n", xrefOffset)
+
+	p := NewDocumentParser(Config{})
+	doc, err := p.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if doc.Collection == nil {
+		t.Fatal("expected Collection dictionary, got nil")
+	}
+	if view, ok := doc.Collection.Get(raw.NameObj{Val: "View"}); !ok {
+		t.Error("expected View entry in Collection")
+	} else if name, ok := view.(raw.NameObj); !ok || name.Val != "D" {
+		t.Errorf("expected View /D, got %v", view)
+	}
+}
+
+func TestDocumentParserDetectsIndirectCollection(t *testing.T) {
+	buf := &bytes.Buffer{}
+	buf.WriteString("%PDF-2.0\n")
+	off1 := buf.Len()
+	// Catalog with Indirect Collection
+	buf.WriteString("1 0 obj\n<< /Type /Catalog /Collection 2 0 R >>\nendobj\n")
+	off2 := buf.Len()
+	// Collection Object
+	buf.WriteString("2 0 obj\n<< /Type /Collection /View /T >>\nendobj\n")
+	xrefOffset := buf.Len()
+	fmt.Fprintf(buf, "xref\n0 3\n0000000000 65535 f \n%010d 00000 n \n%010d 00000 n \n", off1, off2)
+	buf.WriteString("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n")
+	fmt.Fprintf(buf, "%d\n%%%%EOF\n", xrefOffset)
+
+	p := NewDocumentParser(Config{})
+	doc, err := p.Parse(context.Background(), bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if doc.Collection == nil {
+		t.Fatal("expected Collection dictionary, got nil")
+	}
+	if view, ok := doc.Collection.Get(raw.NameObj{Val: "View"}); !ok {
+		t.Error("expected View entry in Collection")
+	} else if name, ok := view.(raw.NameObj); !ok || name.Val != "T" {
+		t.Errorf("expected View /T, got %v", view)
+	}
+}
+
 func buildClassicPDF() []byte {
 	buf := &bytes.Buffer{}
 	buf.WriteString("%PDF-1.7\n")

@@ -107,6 +107,7 @@ type Document struct {
 	Encrypted         bool
 	Linearized        bool
 	HintTable         *HintTable
+	Collection        Dictionary
 }
 
 // Parser converts bytes into a raw.Document.
