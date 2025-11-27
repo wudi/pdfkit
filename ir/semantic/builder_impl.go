@@ -24,7 +24,7 @@ func (b *builderImpl) Build(ctx context.Context, dec *decoded.DecodedDocument) (
 	}
 
 	if dec.Raw != nil && dec.Raw.Trailer != nil {
-		resolver := &simpleResolver{doc: dec.Raw}
+		resolver := &simpleResolver{doc: dec.Raw, dec: dec}
 
 		// Get Root (Catalog)
 		rootObj, ok := dec.Raw.Trailer.Get(raw.NameLiteral("Root"))
@@ -75,6 +75,7 @@ func (b *builderImpl) Build(ctx context.Context, dec *decoded.DecodedDocument) (
 
 type simpleResolver struct {
 	doc *raw.Document
+	dec *decoded.DecodedDocument
 }
 
 func (r *simpleResolver) Resolve(ref raw.ObjectRef) (raw.Object, error) {
@@ -82,4 +83,11 @@ func (r *simpleResolver) Resolve(ref raw.ObjectRef) (raw.Object, error) {
 		return obj, nil
 	}
 	return nil, fmt.Errorf("object %v not found", ref)
+}
+
+func (r *simpleResolver) ResolveStream(ref raw.ObjectRef) ([]byte, error) {
+	if s, ok := r.dec.Streams[ref]; ok {
+		return s.Data(), nil
+	}
+	return nil, fmt.Errorf("stream %v not found", ref)
 }

@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"fmt"
+	"unicode/utf16"
 
 	"github.com/wudi/pdfkit/ir/raw"
 )
@@ -247,6 +248,14 @@ func parseStructureItemFromDict(dict *raw.DictObj, ref raw.ObjectRef, parent *St
 		ns, err := parseNamespace(nsObj, resolver)
 		if err == nil {
 			elem.Namespace = ns
+		}
+	}
+
+	// Parse Associated Files (AF)
+	if afObj, ok := dict.Get(raw.NameLiteral("AF")); ok {
+		files, err := parseAssociatedFiles(afObj, resolver)
+		if err == nil {
+			elem.AssociatedFiles = files
 		}
 	}
 
@@ -544,14 +553,34 @@ func getName(d *raw.DictObj, key string) string {
 
 func getString(d *raw.DictObj, key string) string {
 	if v, ok := d.Get(raw.NameLiteral(key)); ok {
+		var b []byte
 		if s, ok := v.(raw.StringObj); ok {
-			return string(s.Value())
+			b = s.Value()
+		} else if s, ok := v.(raw.HexStringObj); ok {
+			b = s.Value()
 		}
-		if s, ok := v.(raw.HexStringObj); ok {
-			return string(s.Value())
+
+		if len(b) >= 2 && b[0] == 0xFE && b[1] == 0xFF {
+			return decodeUTF16BE(b[2:])
 		}
+		return string(b)
 	}
 	return ""
+}
+
+func decodeUTF16BE(data []byte) string {
+	if len(data)%2 != 0 {
+		data = data[:len(data)-1]
+	}
+	if len(data) == 0 {
+		return ""
+	}
+	buf := make([]uint16, len(data)/2)
+	for i := 0; i < len(buf); i++ {
+		buf[i] = uint16(data[2*i])<<8 | uint16(data[2*i+1])
+	}
+	runes := utf16.Decode(buf)
+	return string(runes)
 }
 
 func getInt(d *raw.DictObj, key string) int64 {
@@ -561,4 +590,95 @@ func getInt(d *raw.DictObj, key string) int64 {
 		}
 	}
 	return 0
+}
+
+type streamResolver interface {
+	ResolveStream(ref raw.ObjectRef) ([]byte, error)
+}
+
+func parseAssociatedFiles(obj raw.Object, resolver rawResolver) ([]EmbeddedFile, error) {
+	// AF can be an array of file specifications
+	var files []EmbeddedFile
+
+	arr, ok := obj.(*raw.ArrayObj)
+	if !ok {
+		// Could be a single object? Spec says array.
+		return nil, nil
+	}
+
+	for _, item := range arr.Items {
+		ef, err := parseEmbeddedFile(item, resolver)
+		if err == nil {
+			files = append(files, ef)
+		}
+	}
+	return files, nil
+}
+
+func parseEmbeddedFile(obj raw.Object, resolver rawResolver) (EmbeddedFile, error) {
+	dict, ok := resolveDict(obj, resolver)
+	if !ok {
+		return EmbeddedFile{}, fmt.Errorf("file spec is not a dictionary")
+	}
+
+	ef := EmbeddedFile{
+		OriginalRef: raw.ObjectRef{},
+	}
+	if ref, ok := obj.(raw.RefObj); ok {
+		ef.OriginalRef = ref.Ref()
+	}
+
+	// Name (F or UF)
+	ef.Name = getString(dict, "UF")
+	if ef.Name == "" {
+		ef.Name = getString(dict, "F")
+	}
+
+	// Description (Desc)
+	ef.Description = getString(dict, "Desc")
+
+	// Relationship (AFRelationship)
+	ef.Relationship = getName(dict, "AFRelationship")
+
+	// Embedded File Stream (EF)
+	if efObj, ok := dict.Get(raw.NameLiteral("EF")); ok {
+		if efDict, ok := resolveDict(efObj, resolver); ok {
+			// Prefer UF, then F
+			streamObj, ok := efDict.Get(raw.NameLiteral("UF"))
+			if !ok {
+				streamObj, ok = efDict.Get(raw.NameLiteral("F"))
+			}
+
+			if ok {
+				// Resolve stream
+				ref := raw.ObjectRef{}
+				if r, ok := streamObj.(raw.RefObj); ok {
+					ref = r.Ref()
+					o, err := resolver.Resolve(ref)
+					if err == nil {
+						streamObj = o
+					}
+				}
+
+				if stream, ok := streamObj.(*raw.StreamObj); ok {
+					// Get Subtype
+					ef.Subtype = getName(stream.Dict, "Subtype")
+
+					// Get Data
+					// Try to use streamResolver to get decoded data
+					if sr, ok := resolver.(streamResolver); ok && ref.Num != 0 {
+						if data, err := sr.ResolveStream(ref); err == nil {
+							ef.Data = data
+						} else {
+							ef.Data = stream.Data // Fallback to raw
+						}
+					} else {
+						ef.Data = stream.Data // Fallback to raw
+					}
+				}
+			}
+		}
+	}
+
+	return ef, nil
 }

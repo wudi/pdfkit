@@ -33,6 +33,10 @@ func (e *Engine) RenderHTML(source string) error {
 
 func (e *Engine) walkHTML(n *html.Node) {
 	if n.Type == html.ElementNode {
+		if n.Data == "math" {
+			e.renderMath(n)
+			return
+		}
 		switch n.DataAtom {
 		case atom.H1, atom.H2, atom.H3, atom.H4, atom.H5, atom.H6:
 			e.renderHTMLHeader(n)
