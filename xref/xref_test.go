@@ -74,6 +74,30 @@ func TestResolverParsesXRefTable(t *testing.T) {
 	}
 }
 
+func TestResolverHandlesPreambleBeforeHeader(t *testing.T) {
+	base, offsets := buildSimplePDF()
+	preamble := bytes.Repeat([]byte("# preamble line that forces scanning\n"), 4000) // > 32KB
+	data := append(preamble, base...)
+	r := &readerAt{data: data}
+
+	resolver := xref.NewResolver(xref.ResolverConfig{})
+	table, err := resolver.Resolve(context.Background(), r)
+	if err != nil {
+		t.Fatalf("resolve with preamble: %v", err)
+	}
+	shift := int64(len(preamble))
+	for obj, off := range offsets {
+		absolute := off + shift
+		got, _, ok := table.Lookup(obj)
+		if !ok {
+			t.Fatalf("missing object %d", obj)
+		}
+		if got != absolute {
+			t.Fatalf("object %d offset: want %d got %d", obj, absolute, got)
+		}
+	}
+}
+
 func buildXRefStreamPDF() []byte {
 	buf := &bytes.Buffer{}
 	buf.WriteString("%PDF-1.7\n")

@@ -66,11 +66,26 @@ func (t *tableResolver) Resolve(ctx context.Context, r io.ReaderAt) (Table, erro
 		size = int64(len(data))
 	}
 
-	startOffset, err := findStartXRef(reader, size)
+	headerOffset, err := findHeaderOffset(reader, size)
 	if err != nil {
 		return t.tryRepair(ctx, reader, size, err)
 	}
-	t.linearized = detectLinearized(reader)
+	pdfSize := size - headerOffset
+	if pdfSize <= 0 {
+		return nil, errors.New("pdf payload empty after header")
+	}
+	pdfReader := reader
+	if headerOffset > 0 {
+		pdfReader = io.NewSectionReader(reader, headerOffset, pdfSize)
+	}
+
+	startRel, err := findStartXRef(pdfReader, pdfSize)
+	if err != nil {
+		return t.tryRepair(ctx, reader, size, err)
+	}
+	startOffset := startRel + headerOffset
+
+	t.linearized = detectLinearized(pdfReader)
 
 	var sections []Table
 	var trailers []*raw.DictObj
@@ -89,7 +104,7 @@ func (t *tableResolver) Resolve(ctx context.Context, r io.ReaderAt) (Table, erro
 		}
 		seen[off] = struct{}{}
 
-		tbl, trailer, prev, err := parseSection(ctx, reader, off, t.cfg)
+		tbl, trailer, prev, err := parseSection(ctx, reader, off, headerOffset, t.cfg)
 		if err != nil {
 			return t.tryRepair(ctx, reader, size, err)
 		}
@@ -97,11 +112,12 @@ func (t *tableResolver) Resolve(ctx context.Context, r io.ReaderAt) (Table, erro
 		if trailer != nil {
 			trailers = append(trailers, trailer)
 			if xrefStmOff, ok := xrefStmOffset(trailer); ok {
+				xrefStmOff += headerOffset
 				if _, exists := seen[xrefStmOff]; exists {
 					return nil, errors.New("xref loop detected (xrefstm)")
 				}
 				seen[xrefStmOff] = struct{}{}
-				stmTable, stmTrailer, stmPrev, err := parseXRefStream(ctx, reader, xrefStmOff, t.cfg)
+				stmTable, stmTrailer, stmPrev, err := parseXRefStream(ctx, reader, xrefStmOff, headerOffset, t.cfg)
 				if err != nil {
 					return t.tryRepair(ctx, reader, size, err)
 				}
@@ -273,7 +289,7 @@ func (m *mergedTable) maxObjectNumber() int {
 	return max
 }
 
-func parseSection(ctx context.Context, r io.ReaderAt, offset int64, cfg ResolverConfig) (Table, *raw.DictObj, int64, error) {
+func parseSection(ctx context.Context, r io.ReaderAt, offset int64, headerOffset int64, cfg ResolverConfig) (Table, *raw.DictObj, int64, error) {
 	s := scanner.New(r, scanner.Config{Recovery: cfg.Recovery})
 	if err := s.SeekTo(offset); err != nil {
 		return nil, nil, 0, err
@@ -283,13 +299,13 @@ func parseSection(ctx context.Context, r io.ReaderAt, offset int64, cfg Resolver
 		return nil, nil, 0, err
 	}
 	if tok.Type == scanner.TokenKeyword && tok.Str == "xref" {
-		return parseClassic(s)
+		return parseClassic(s, headerOffset)
 	}
-	return parseXRefStream(ctx, r, offset, cfg)
+	return parseXRefStream(ctx, r, offset, headerOffset, cfg)
 }
 
 // parseClassic parses a traditional xref table (already positioned at the "xref" keyword).
-func parseClassic(s scanner.Scanner) (Table, *raw.DictObj, int64, error) {
+func parseClassic(s scanner.Scanner, headerOffset int64) (Table, *raw.DictObj, int64, error) {
 	entries := make(map[int]entry)
 	for {
 		tok, err := s.Next()
@@ -326,7 +342,7 @@ func parseClassic(s scanner.Scanner) (Table, *raw.DictObj, int64, error) {
 			}
 			flag := flagTok.Str
 			if len(flag) > 0 && flag[0] == 'n' {
-				entries[startObj+i] = entry{offset: offTok.Int, gen: int(genTok.Int)}
+				entries[startObj+i] = entry{offset: offTok.Int + headerOffset, gen: int(genTok.Int)}
 			}
 		}
 	}
@@ -341,13 +357,13 @@ func parseClassic(s scanner.Scanner) (Table, *raw.DictObj, int64, error) {
 	}
 	prev := int64(0)
 	if p, ok := dict.Get(raw.NameObj{Val: "Prev"}); ok {
-		prev = toInt64(p)
+		prev = toInt64(p) + headerOffset
 	}
 	return &table{entries: entries, trailer: dict}, dict, prev, nil
 }
 
 // parseXRefStream decodes a cross-reference stream at the given offset.
-func parseXRefStream(ctx context.Context, r io.ReaderAt, offset int64, cfg ResolverConfig) (Table, *raw.DictObj, int64, error) {
+func parseXRefStream(ctx context.Context, r io.ReaderAt, offset int64, headerOffset int64, cfg ResolverConfig) (Table, *raw.DictObj, int64, error) {
 	if offset < 0 {
 		return nil, nil, 0, errors.New("xref stream offset out of range")
 	}
@@ -452,7 +468,7 @@ func parseXRefStream(ctx context.Context, r io.ReaderAt, offset int64, cfg Resol
 			case 0:
 				continue // free
 			case 1:
-				st.offsets[objNum] = entry{offset: int64(f1), gen: int(f2)}
+				st.offsets[objNum] = entry{offset: int64(f1) + headerOffset, gen: int(f2)}
 			case 2:
 				st.objStream[objNum] = struct {
 					objstm int
@@ -468,7 +484,7 @@ func parseXRefStream(ctx context.Context, r io.ReaderAt, offset int64, cfg Resol
 
 	prev := int64(0)
 	if p, ok := dict.Get(raw.NameObj{Val: "Prev"}); ok {
-		prev = toInt64(p)
+		prev = toInt64(p) + headerOffset
 	}
 
 	return st, dict, prev, nil
@@ -784,4 +800,30 @@ func (t *tableResolver) tryRepair(ctx context.Context, r io.ReaderAt, size int64
 		return repair(ctx, r, size)
 	}
 	return nil, originalErr
+}
+
+func findHeaderOffset(r io.ReaderAt, size int64) (int64, error) {
+	const chunk = 32 * 1024
+	signature := []byte("%PDF-")
+	if size <= 0 {
+		return 0, errors.New("pdf file empty")
+	}
+	buf := make([]byte, chunk+len(signature)-1)
+	for offset := int64(0); offset < size; offset += chunk {
+		readLen := int64(len(buf))
+		if remaining := size - offset; remaining < readLen {
+			readLen = remaining
+		}
+		n, err := r.ReadAt(buf[:readLen], offset)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return 0, err
+		}
+		if idx := bytes.Index(buf[:n], signature); idx >= 0 {
+			return offset + int64(idx), nil
+		}
+		if offset+chunk >= size {
+			break
+		}
+	}
+	return 0, errors.New("pdf header signature not found")
 }
