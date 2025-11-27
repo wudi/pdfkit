@@ -161,6 +161,7 @@ type TableOptions struct {
 	DefaultSize   float64
 	TopMargin     float64
 	LeftMargin    float64
+	FinalY        *float64
 }
 
 // HAlign controls horizontal text alignment within a cell.
@@ -853,6 +854,9 @@ func (p *pageBuilderImpl) DrawTable(table Table, opts TableOptions) PageBuilder 
 
 	for i, row := range table.Rows {
 		renderRow(row, rowHeights[i], i < headerCount, true)
+	}
+	if opts.FinalY != nil {
+		*opts.FinalY = curY
 	}
 	return cur
 }

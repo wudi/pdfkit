@@ -1,6 +1,12 @@
 package layout
 
 import (
+	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/wudi/pdfkit/builder"
@@ -44,6 +50,12 @@ func (e *Engine) walkHTML(n *html.Node) {
 		case atom.Hr:
 			e.renderHTMLHr(n)
 			return
+		case atom.Img:
+			e.renderHTMLImage(n)
+			return
+		case atom.Table:
+			e.renderHTMLTable(n)
+			return
 		case atom.Input:
 			e.renderHTMLInput(n)
 			return
@@ -62,7 +74,6 @@ func (e *Engine) walkHTML(n *html.Node) {
 }
 
 func (e *Engine) renderHTMLHeader(n *html.Node) {
-	text := extractText(n)
 	level := 1
 	switch n.DataAtom {
 	case atom.H1:
@@ -84,41 +95,56 @@ func (e *Engine) renderHTMLHeader(n *html.Node) {
 
 	e.ensurePage()
 	lineHeight := fontSize * e.LineHeight
-	e.checkPageBreak(lineHeight)
 
-	e.currentPage.DrawText(text, e.cursorX, e.cursorY-fontSize, builder.TextOptions{
-		Font:     e.DefaultFont,
-		FontSize: fontSize,
-	})
-	e.cursorY -= lineHeight
+	spans := e.extractSpans(n)
+	for i := range spans {
+		spans[i].FontSize = fontSize
+		// Headers are typically bold
+		spans[i].Font = e.resolveFont(e.DefaultFont, true, strings.Contains(spans[i].Font, "Oblique") || strings.Contains(spans[i].Font, "Italic"))
+	}
+
+	e.renderSpans(spans, e.cursorX, lineHeight)
 }
 
 func (e *Engine) renderHTMLParagraph(n *html.Node) {
-	text := extractText(n)
+	spans := e.extractSpans(n)
 	e.ensurePage()
-	fontSize := e.DefaultFontSize
-	lineHeight := fontSize * e.LineHeight
-	e.renderTextWrapped(text, e.cursorX, fontSize, lineHeight)
+	// Use default font size for line height calculation
+	lineHeight := e.DefaultFontSize * e.LineHeight
+	e.renderSpans(spans, e.cursorX, lineHeight)
 	e.renderParagraphSpacing()
 }
 
 func (e *Engine) renderHTMLListItem(n *html.Node) {
-	text := extractText(n)
+	spans := e.extractSpans(n)
 	e.ensurePage()
 
 	fontSize := e.DefaultFontSize
 	lineHeight := fontSize * e.LineHeight
 
-	// Simple bullet
+	marker := "•"
+	if n.Parent != nil && n.Parent.DataAtom == atom.Ol {
+		index := 1
+		for c := n.PrevSibling; c != nil; c = c.PrevSibling {
+			if c.Type == html.ElementNode && c.DataAtom == atom.Li {
+				index++
+			}
+		}
+		marker = fmt.Sprintf("%d.", index)
+	}
+
 	e.checkPageBreak(lineHeight)
-	e.currentPage.DrawText("•", e.cursorX, e.cursorY-fontSize, builder.TextOptions{
+	e.currentPage.DrawText(marker, e.cursorX, e.cursorY-fontSize, builder.TextOptions{
 		Font:     e.DefaultFont,
 		FontSize: fontSize,
 	})
 
 	// Indent text
 	indent := 15.0
-	e.renderTextWrapped(text, e.cursorX+indent, fontSize, lineHeight)
+	if len(marker) > 2 {
+		indent += float64(len(marker)-1) * 5
+	}
+	e.renderSpans(spans, e.cursorX+indent, lineHeight)
 }
 
 func (e *Engine) renderHTMLBlockquote(n *html.Node) {
@@ -153,7 +179,7 @@ func (e *Engine) renderHTMLPre(n *html.Node) {
 
 		e.checkPageBreak(lineHeight)
 		e.currentPage.DrawText(line, e.cursorX+indent, e.cursorY-fontSize, builder.TextOptions{
-			Font:     e.DefaultFont, // Ideally monospace
+			Font:     "Courier", // Ideally monospace
 			FontSize: fontSize,
 		})
 		e.cursorY -= lineHeight
@@ -403,4 +429,284 @@ func hasAttr(n *html.Node, key string) bool {
 		}
 	}
 	return false
+}
+
+func (e *Engine) extractSpans(n *html.Node) []TextSpan {
+	var spans []TextSpan
+	e.walkSpans(n, TextStyle{Font: e.DefaultFont, FontSize: e.DefaultFontSize}, &spans)
+	return spans
+}
+
+type TextStyle struct {
+	Font     string
+	FontSize float64
+	Bold     bool
+	Italic   bool
+	Link     string
+}
+
+func (e *Engine) walkSpans(n *html.Node, style TextStyle, spans *[]TextSpan) {
+	if n.Type == html.TextNode {
+		text := n.Data
+		// Clean up newlines/spaces?
+		// HTML collapses whitespace.
+		text = strings.ReplaceAll(text, "\n", " ")
+
+		fontName := e.resolveFont(style.Font, style.Bold, style.Italic)
+		*spans = append(*spans, TextSpan{
+			Text:     text,
+			Font:     fontName,
+			FontSize: style.FontSize,
+			Link:     style.Link,
+		})
+		return
+	}
+
+	if n.Type == html.ElementNode {
+		switch n.DataAtom {
+		case atom.B, atom.Strong:
+			style.Bold = true
+		case atom.I, atom.Em:
+			style.Italic = true
+		case atom.A:
+			for _, a := range n.Attr {
+				if a.Key == "href" {
+					style.Link = a.Val
+					break
+				}
+			}
+		case atom.Br:
+			*spans = append(*spans, TextSpan{Text: "\n"})
+			return
+		}
+	}
+
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		e.walkSpans(c, style, spans)
+	}
+}
+
+func (e *Engine) resolveFont(base string, bold, italic bool) string {
+	// Simple mapping for standard fonts
+	if base == "Helvetica" || base == "Arial" {
+		if bold && italic {
+			return "Helvetica-BoldOblique"
+		}
+		if bold {
+			return "Helvetica-Bold"
+		}
+		if italic {
+			return "Helvetica-Oblique"
+		}
+		return "Helvetica"
+	}
+	if base == "Times" || base == "Times New Roman" {
+		if bold && italic {
+			return "Times-BoldItalic"
+		}
+		if bold {
+			return "Times-Bold"
+		}
+		if italic {
+			return "Times-Italic"
+		}
+		return "Times-Roman"
+	}
+	if base == "Courier" {
+		if bold && italic {
+			return "Courier-BoldOblique"
+		}
+		if bold {
+			return "Courier-Bold"
+		}
+		if italic {
+			return "Courier-Oblique"
+		}
+		return "Courier"
+	}
+	// Fallback: append suffixes?
+	return base
+}
+
+func (e *Engine) renderHTMLImage(n *html.Node) {
+	src := getAttr(n, "src")
+	if src == "" {
+		return
+	}
+
+	f, err := os.Open(src)
+	if err != nil {
+		// Fallback to alt text
+		alt := getAttr(n, "alt")
+		if alt != "" {
+			e.renderTextWrapped("[Image: "+alt+"]", e.cursorX, e.DefaultFontSize, e.DefaultFontSize*e.LineHeight)
+		}
+		return
+	}
+	defer f.Close()
+
+	img, _, err := image.Decode(f)
+	if err != nil {
+		return
+	}
+
+	semImg := imageToSemantic(img)
+
+	w := float64(semImg.Width)
+	h := float64(semImg.Height)
+
+	if val := getAttr(n, "width"); val != "" {
+		if v, err := strconv.ParseFloat(val, 64); err == nil {
+			w = v
+		}
+	}
+	if val := getAttr(n, "height"); val != "" {
+		if v, err := strconv.ParseFloat(val, 64); err == nil {
+			h = v
+		}
+	}
+
+	// Scale to fit page if too large
+	maxWidth := e.pageWidth - e.Margins.Left - e.Margins.Right
+	if w > maxWidth {
+		scale := maxWidth / w
+		w = maxWidth
+		h *= scale
+	}
+
+	e.ensurePage()
+	e.checkPageBreak(h)
+
+	e.currentPage.DrawImage(semImg, e.cursorX, e.cursorY-h, w, h, builder.ImageOptions{})
+	e.cursorY -= h
+	e.renderParagraphSpacing()
+}
+
+func (e *Engine) renderHTMLTable(n *html.Node) {
+	var rows []builder.TableRow
+	var headerRows int
+
+	processRow := func(tr *html.Node, isHeader bool) {
+		var cells []builder.TableCell
+		for c := tr.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type == html.ElementNode && (c.DataAtom == atom.Td || c.DataAtom == atom.Th) {
+				txt := extractText(c)
+				colSpan := 1
+				if val := getAttr(c, "colspan"); val != "" {
+					if v, err := strconv.Atoi(val); err == nil {
+						colSpan = v
+					}
+				}
+
+				bgColor := builder.Color{}
+				if isHeader || c.DataAtom == atom.Th {
+					bgColor = builder.Color{R: 0.9, G: 0.9, B: 0.9}
+				}
+
+				cells = append(cells, builder.TableCell{
+					Text:            txt,
+					ColSpan:         colSpan,
+					BackgroundColor: bgColor,
+					BorderWidth:     1,
+					Padding:         &builder.CellPadding{Top: 5, Bottom: 5, Left: 5, Right: 5},
+				})
+			}
+		}
+		if len(cells) > 0 {
+			rows = append(rows, builder.TableRow{Cells: cells})
+			if isHeader {
+				headerRows++
+			}
+		}
+	}
+
+	var f func(*html.Node)
+	f = func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			if n.DataAtom == atom.Tr {
+				isHeader := false
+				if n.Parent != nil && n.Parent.DataAtom == atom.Thead {
+					isHeader = true
+				}
+				processRow(n, isHeader)
+				return
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			f(c)
+		}
+	}
+	f(n)
+
+	if len(rows) == 0 {
+		return
+	}
+
+	maxCols := 0
+	for _, r := range rows {
+		cols := 0
+		for _, c := range r.Cells {
+			cols += c.ColSpan
+		}
+		if cols > maxCols {
+			maxCols = cols
+		}
+	}
+
+	if maxCols == 0 {
+		return
+	}
+
+	availWidth := e.pageWidth - e.Margins.Left - e.Margins.Right
+	colWidth := availWidth / float64(maxCols)
+	colWidths := make([]float64, maxCols)
+	for i := range colWidths {
+		colWidths[i] = colWidth
+	}
+
+	e.ensurePage()
+
+	var finalY float64
+	e.currentPage = e.currentPage.DrawTable(builder.Table{
+		Columns:    colWidths,
+		Rows:       rows,
+		HeaderRows: headerRows,
+	}, builder.TableOptions{
+		X:            e.cursorX,
+		Y:            e.cursorY,
+		BorderWidth:  1,
+		BorderColor:  builder.Color{R: 0, G: 0, B: 0},
+		DefaultFont:  e.DefaultFont,
+		DefaultSize:  e.DefaultFontSize,
+		LeftMargin:   e.Margins.Left,
+		TopMargin:    e.Margins.Top,
+		BottomMargin: e.Margins.Bottom,
+		FinalY:       &finalY,
+	})
+
+	e.cursorY = finalY
+	e.renderParagraphSpacing()
+}
+
+func imageToSemantic(img image.Image) *semantic.Image {
+	bounds := img.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+	data := make([]byte, w*h*3)
+	idx := 0
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			data[idx] = byte(r >> 8)
+			data[idx+1] = byte(g >> 8)
+			data[idx+2] = byte(b >> 8)
+			idx += 3
+		}
+	}
+	return &semantic.Image{
+		Width:            w,
+		Height:           h,
+		BitsPerComponent: 8,
+		ColorSpace:       semantic.DeviceColorSpace{Name: "DeviceRGB"},
+		Data:             data,
+	}
 }
